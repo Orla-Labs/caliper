@@ -103,7 +103,7 @@ export function sourceForm(state, { onChange, onFile, onConnect, api }) {
   const connect = h("button", { type: "submit", class: "wz-btn wz-btn-primary" }, "Connect & preview");
 
   if (kind === "upload") {
-    const input = h("input", { type: "file", class: "wz-sr", accept: ".csv,.tsv,.jsonl,.ndjson,.json,.parquet,.xlsx", id: nextId("file"),
+    const input = h("input", { type: "file", class: "wz-sr", "aria-label": "Data file", tabindex: "-1", accept: ".csv,.tsv,.jsonl,.ndjson,.json,.parquet,.xlsx", id: nextId("file"),
       onchange: (e) => onFile(e.target.files[0]) });
     const zone = h("div", { class: "wz-drop", ondragover: (e) => { e.preventDefault(); zone.classList.add("wz-drop-on"); },
       ondragleave: () => zone.classList.remove("wz-drop-on"),

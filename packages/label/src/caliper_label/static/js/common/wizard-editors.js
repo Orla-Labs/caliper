@@ -228,7 +228,7 @@ export function cardDesigner(el, ctx) {
   function refreshPreview() {
     const rows = ctx.rows || [];
     const row = rows[rowIdx];
-    clear(previewBox, renderCard(card.fields, row));
+    clear(previewBox, renderCard(card.fields, row, { options: ctx.options ? ctx.options() : [] }));
     navLabel.textContent = rows.length ? `Row ${rowIdx + 1} of ${rows.length}` : "No rows";
   }
 

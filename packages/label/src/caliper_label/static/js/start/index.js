@@ -101,7 +101,7 @@ export async function mount(el, { api, go }) {
       clear(recentBox, h("ul", { class: "st-list" }, res.recent.map((r) =>
         h("li", { class: `st-item${r.exists ? "" : " st-missing"}` },
           h("button", { type: "button", class: "st-item-open", disabled: !r.exists, onclick: () => openPath(r.path),
-            "aria-label": `Open ${r.name}${r.exists ? "" : " (folder missing)"}` },
+            title: r.exists ? `Open ${r.name}` : `${r.name}: folder missing` },
           h("span", { class: "st-item-name" }, r.name),
           h("span", { class: "st-item-path" }, r.path)),
           h("span", { class: "st-item-when" }, r.exists ? relTime(r.opened_at) : "missing"),
