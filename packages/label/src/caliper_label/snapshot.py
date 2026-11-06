@@ -98,13 +98,13 @@ def _lookup(row: dict[str, Any], path: str | None) -> Any:
 class _RowMapper:
     """Turns source rows into item tuples according to the project config."""
 
-    def __init__(self, config: ProjectConfig, connector: Connector, n_total: int | None):
+    def __init__(self, config: ProjectConfig, connector: Connector, width: int):
         self.cfg = config
         self.id_col = config.source.id_column or getattr(connector, "default_id_column", None)
         self.queue_col = config.workflow.queues.by
         self.cat_col = config.labels.category_column
         self.gold_col = config.workflow.golden.answer_column if config.workflow.golden else None
-        self.width = max(4, len(str(n_total))) if n_total is not None else 4
+        self.width = width  # zero-padding of row-number ids, fixed at the first snapshot
         self.columns: list[str] | None = None  # resolved on the first row
 
     def _resolve_columns(self, row: dict[str, Any]) -> list[str] | None:
@@ -139,7 +139,10 @@ class _RowMapper:
             queue = _scalar(_lookup(row, self.queue_col)) or "(none)"
         category = _scalar(_lookup(row, self.cat_col)) if self.cat_col else None
         golden = _scalar(_lookup(row, self.gold_col)) if self.gold_col else None
-        shown = row if self.columns is None else {c: row.get(c) for c in self.columns}
+        if self.columns is None:  # no card yet: every column except the hidden golden answer
+            shown = {k: v for k, v in row.items() if k != self.gold_col}
+        else:
+            shown = {c: row.get(c) for c in self.columns}
         display = _canonical(jsonable(shown))
         h = hashlib.sha256(
             _canonical([display, queue, category, golden]).encode("utf-8")
@@ -172,6 +175,18 @@ def _count_or_none(connector: Connector) -> int | None:
         return None
 
 
+def _row_id_width(store: ProjectStore, config: ProjectConfig, conn: Connector) -> int:
+    """Padding for ``row-0001`` ids: from the count at the first snapshot, then fixed, so a
+    source growing past 9,999 rows doesn't renumber every item on refresh."""
+    stored = store.meta("row_id_width")
+    if stored:
+        return int(stored)
+    if config.source.id_column or getattr(conn, "default_id_column", None):
+        return 4
+    n = _count_or_none(conn)
+    return max(4, len(str(n))) if n is not None else 4
+
+
 def _source_json(config: ProjectConfig) -> str:
     return _canonical(config.source.model_dump(mode="json", exclude_defaults=True))
 
@@ -189,7 +204,8 @@ def take(ctx: SnapshotContext, *, batch_size: int = BATCH) -> SnapshotInfo:
     existing = store.latest_snapshot()
     if existing is not None:
         return existing
-    mapper = _RowMapper(config, conn, None if config.source.id_column else _count_or_none(conn))
+    width = _row_id_width(store, config, conn)
+    mapper = _RowMapper(config, conn, width)
     n = 0
     with store.transaction() as db:
         for batch in conn.iter_rows(batch_size=batch_size):
@@ -214,6 +230,9 @@ def take(ctx: SnapshotContext, *, batch_size: int = BATCH) -> SnapshotInfo:
         )
         sid = cur.lastrowid
         db.execute("UPDATE items SET added_snapshot = ?", (sid,))
+        db.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES ('row_id_width', ?)", (str(width),)
+        )
         _bump(db)
     info = store.latest_snapshot()
     assert info is not None
@@ -225,7 +244,7 @@ def diff(ctx: SnapshotContext, *, batch_size: int = BATCH, sample: int = SAMPLE)
     store, config, conn = ctx.store, ctx.config, ctx.connector
     if not store.has_snapshot():
         raise ConnectorError("no snapshot yet", "start the project first (snapshot.take)")
-    mapper = _RowMapper(config, conn, None if config.source.id_column else _count_or_none(conn))
+    mapper = _RowMapper(config, conn, _row_id_width(store, config, conn))
     diff_id = uuid.uuid4().hex
     base = int(store.meta("items_version", "0") or 0)
     with store.transaction() as db:

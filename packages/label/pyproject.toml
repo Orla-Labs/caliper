@@ -16,6 +16,12 @@ dependencies = [
     "pytz>=2024.1",
 ]
 
+[project.optional-dependencies]
+# Phase 2 connector plugins (docs/label-connectors.md). Placeholders so the names are reserved;
+# they add nothing yet.
+snowflake = []
+bigquery = []
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

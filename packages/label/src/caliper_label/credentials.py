@@ -38,8 +38,10 @@ class CredentialCheck(BaseModel):
 
 # Env vars whose values are always scrubbed from error text, whatever the source.
 _SECRET_ENV = re.compile(
-    r"(PASSWORD|PASSWD|PWD|SECRET|TOKEN|KEY|DATABASE_URL|DSN|CREDENTIAL)", re.IGNORECASE
+    r"(^|_)(PASSWORD|PASSWD|PWD|PASS|SECRET|TOKEN|KEY|DSN|CREDENTIALS?)(_|$)|^DATABASE_URL$",
+    re.IGNORECASE,
 )
+_NOT_SECRET_ENV = {"PWD", "OLDPWD"}  # shell working directories, not passwords
 _URL_PASSWORD = re.compile(r"(?P<pre>[a-z][a-z0-9+.-]*://[^:/@\s]*:)(?P<pw>[^@\s]+)(?P<post>@)")
 _KV_PASSWORD = re.compile(r"(?P<pre>\b(password|pwd|secret)\s*[=:]\s*)(?P<pw>'[^']*'|\S+)", re.I)
 
@@ -54,7 +56,7 @@ def _env(name: str | None) -> str | None:
 def _secret_values(source: SourceConfig | None) -> list[str]:
     vals: set[str] = set()
     for k, v in os.environ.items():
-        if v and len(v) >= 4 and _SECRET_ENV.search(k):
+        if v and len(v) >= 4 and k.upper() not in _NOT_SECRET_ENV and _SECRET_ENV.search(k):
             vals.add(v)
     if source is not None:
         for name in [source.credentials.env, *source.credentials.env_map.values()]:

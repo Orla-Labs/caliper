@@ -252,6 +252,7 @@ requires-dist = [
     { name = "ruamel-yaml", specifier = ">=0.18" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
+provides-extras = ["snowflake", "bigquery"]
 
 [[package]]
 name = "caliper-monitor"
