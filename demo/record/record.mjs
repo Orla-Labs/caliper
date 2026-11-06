@@ -22,7 +22,7 @@ const ROOT = path.resolve(HERE, "..", "..");
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_CORE ?? "playwright-core");
 
-const EDITOR_URL = process.env.EDITOR_URL ?? "http://127.0.0.1:3456/?evalSet=invoice_totals";
+const EDITOR_URL = process.env.EDITOR_URL ?? "http://127.0.0.1:3456/?evalSet=invoice_spot_check";
 const FRAMES = path.resolve(ROOT, process.env.FRAMES_DIR ?? "build/record/frames");
 const W = 1200;
 const H = 760;
