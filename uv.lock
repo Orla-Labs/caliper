@@ -8,6 +8,7 @@ members = [
     "caliper-differ",
     "caliper-eval",
     "caliper-kappa",
+    "caliper-label",
     "caliper-monitor",
     "caliper-mutate",
     "caliper-rft",
@@ -128,6 +129,7 @@ dev = [
     { name = "caliper-differ" },
     { name = "caliper-eval" },
     { name = "caliper-kappa" },
+    { name = "caliper-label" },
     { name = "caliper-monitor" },
     { name = "caliper-mutate" },
     { name = "caliper-rft" },
@@ -147,6 +149,7 @@ dev = [
     { name = "caliper-differ", editable = "packages/differ" },
     { name = "caliper-eval", editable = "packages/eval" },
     { name = "caliper-kappa", editable = "packages/kappa" },
+    { name = "caliper-label", editable = "packages/label" },
     { name = "caliper-monitor", editable = "packages/monitor" },
     { name = "caliper-mutate", editable = "packages/mutate" },
     { name = "caliper-rft", editable = "packages/rft_compile" },
@@ -217,6 +220,29 @@ dependencies = [
 requires-dist = [
     { name = "caliper-sdk", editable = "packages/sdk" },
     { name = "pydantic", specifier = ">=2.7" },
+]
+
+[[package]]
+name = "caliper-label"
+version = "0.0.1"
+source = { editable = "packages/label" }
+dependencies = [
+    { name = "caliper-eval" },
+    { name = "caliper-kappa" },
+    { name = "fastapi" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "caliper-eval", editable = "packages/eval" },
+    { name = "caliper-kappa", editable = "packages/kappa" },
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
 
 [[package]]

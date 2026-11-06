@@ -64,6 +64,52 @@ class GoldenRow(BaseModel):
     label_approved: bool | None = None  # human approved the feature's output (calibration)
     stratum: str | None = None  # e.g. "positive" / "unsure" / "negative" from the sampler
     metadata: dict[str, Any] = Field(default_factory=dict)
+    # Phase 1b additions (all optional, additive):
+    label_source: LabelSource | None = None  # provenance of label/label_approved
+    label_stage: str | None = None  # e.g. "triage", "final_review"; free-form
+    split: Split | None = None  # selection hygiene: thresholds picked on val, test touched once
+    slices: list[str] = Field(default_factory=list)  # named hard slices this row belongs to
+
+
+# --------------------------------------------------------------------------- labels
+
+
+class LabelSource(StrEnum):
+    """Who produced a label. Agreement with LLM_TEACHER is 'teacher agreement', never accuracy."""
+
+    HUMAN_END_USER = "human_end_user"  # the feature's real users acted on the item
+    INTERNAL_REVIEWER = "internal_reviewer"  # staff labelling (e.g. via `caliper label`)
+    LLM_TEACHER = "llm_teacher"  # an LLM's verdict
+    HEURISTIC = "heuristic"  # a rule / weak label
+
+    @property
+    def is_human(self) -> bool:
+        return self in (LabelSource.HUMAN_END_USER, LabelSource.INTERNAL_REVIEWER)
+
+
+class Split(StrEnum):
+    TRAIN = "train"
+    VAL = "val"
+    TEST = "test"
+
+
+class LabelRecord(BaseModel):
+    """One labelling act. Append-only; several records per item when double-labelled."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: str
+    decision: str | None  # a configured decision key's value; None when skipped
+    skipped: bool = False
+    labeller: str
+    source: LabelSource = LabelSource.INTERNAL_REVIEWER
+    stage: str | None = None
+    labelled_at: str  # ISO-8601 UTC, e.g. "2026-11-06T12:00:00Z"
+    queue: str | None = None
+    category: str | None = None  # for inter-rater kappa by category
+    note: str | None = None
+    undoes: str | None = None  # record_id this record retracts (undo), if any
+    record_id: str  # stable unique id (e.g. sha256 of the other fields), assigned by the writer
 
 
 # --------------------------------------------------------------------------- candidates
@@ -193,3 +239,5 @@ class Price(BaseModel):
     cache_read: float | None = None  # defaults to input if None
     cache_write: float | None = None  # defaults to input if None
     source: str | None = None  # URL + date checked
+
+GoldenRow.model_rebuild()

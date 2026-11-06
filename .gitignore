@@ -37,5 +37,6 @@ docs/*
 !docs/02-technical-state.md
 !docs/03-graders-and-rewards.md
 !docs/eval.md
+!docs/label.md
 building/
 CLAUDE.md

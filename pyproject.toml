@@ -16,6 +16,7 @@ members = [
     "packages/store",
     "packages/server",
     "packages/eval",
+    "packages/label",
 ]
 
 [tool.uv.sources]
@@ -28,6 +29,7 @@ caliper-kappa = { workspace = true }
 caliper-store = { workspace = true }
 caliper-server = { workspace = true }
 caliper-eval = { workspace = true }
+caliper-label = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -44,6 +46,7 @@ dev = [
     "caliper-store",
     "caliper-server",
     "caliper-eval",
+    "caliper-label",
 ]
 
 [tool.ruff]
@@ -68,6 +71,7 @@ testpaths = [
     "packages/store/tests",
     "packages/server/tests",
     "packages/eval/tests",
+    "packages/label/tests",
     "examples/catalog_cleanup/tests",
 ]
 addopts = "-ra --strict-markers --import-mode=importlib"
