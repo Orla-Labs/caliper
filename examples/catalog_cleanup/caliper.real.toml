@@ -11,9 +11,9 @@
 # (for example a thinking setting a model does not accept) fails in seconds,
 # before the golden set is spent.
 #
-# Model IDs and prices checked 2026-11-06 against Anthropic's model/pricing
-# table. Prices change: re-check before trusting the dollar column, and note
-# that Bedrock and other resellers price separately.
+# Model IDs checked 2026-11-06. Prices change: re-check before trusting the
+# dollar column. Bedrock is priced approximately (first-party list price, with
+# a warning in the report).
 
 golden = "golden.jsonl"
 decide = "decide.py:decide"
@@ -74,16 +74,10 @@ replies_per_row = 3
 # params = { effort = "low", max_tokens = 4000 }
 # replies_per_row = 3
 
-[pricing."claude-sonnet-5-5"]   # USD per million tokens
-input = 2.0
-output = 10.0
-cache_read = 0.20
-source = "https://platform.claude.com/docs/en/about-claude/pricing (checked 2026-11-06)"
-
-[pricing."claude-haiku-5-5"]    # prompts up to 100K tokens
-input = 0.10
-output = 0.50
-source = "https://platform.claude.com/docs/en/about-claude/pricing (checked 2026-11-06)"
+# Anthropic models are priced from Caliper's built-in, cache-aware table
+# (copied from https://platform.claude.com/docs/en/about-claude/pricing on
+# 2026-11-06). Override any model with a [pricing."<model>"] table like the one
+# below. Models with no known price cost $0 and the report flags them.
 
 [pricing."your-open-weight-model"]   # your own hosting cost, if you want a dollar column
 input = 0.0

@@ -49,7 +49,7 @@ output = 4.0
 source = "fictional price for the fake provider"
 
 # What a changed outcome costs, relative to the reference run (arbitrary units:
-# think "minutes of someone's time"). Unlisted transitions cost 0.
+# think "minutes of someone's time"). A changed outcome not listed here costs 1.0.
 [costs]
 "auto_publish->needs_review" = 1.0   # a record a person now has to check
 "auto_publish->fallback" = 3.0       # a record typed in by hand
