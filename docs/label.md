@@ -1,69 +1,355 @@
 # `caliper label`
 
-`caliper label` is a local, keyboard-first labelling UI. It shows one item at a
-time as a card, records a decision with a single key, and writes every label
-to an append-only log. Exports go straight into `caliper eval` (golden rows
-with `label` / `label_approved`) and `caliper_kappa` (labeled rollouts).
-Nothing is installed in the browser, no account is needed, and the data never
-leaves your machine.
+`caliper label` is a local, keyboard-first labelling tool. It shows one item at a
+time as a card, records a decision with a single key (or a click or tap), and keeps
+every label in an append-only log. A *project* reads its items from wherever they
+live (CSV, Parquet, a folder of images, S3, Postgres, ...). Exports go straight into
+`caliper eval` and `caliper kappa`, or out as CSV, JSONL, Parquet, a database table
+or an S3 object. It runs as one process on your machine, and the data never leaves it.
+Team mode is the same server on a shared host, behind an access token.
 
 ![caliper label on the catalog_cleanup example](label.png)
+
+```bash
+uv run caliper label                 # start screen: new project / open project / try the demo
+uv run caliper label ./my-project    # straight into a project
+```
+
+- Setting up a project (the wizard, `caliper.label.yaml`, settings): [label-setup.md](label-setup.md)
+- Data sources, credentials and writing your own connector: [label-connectors.md](label-connectors.md)
+- This page: [labelling](#labelling), [keyboard](#keyboard), [label types](#label-types),
+  [golden checks](#golden-checks), [several labellers](#several-labellers),
+  [team mode](#team-mode), [dashboard](#dashboard), [adjudication](#adjudication),
+  [export](#export), [script it](#script-it-the-rest-api), [CLI](#cli-reference),
+  [legacy `serve`](#legacy-serve-datajsonl---config-labelyaml)
+
+## Labelling
+
+1. **Name.** On the first visit the page asks who is labelling. The name is kept
+   in this browser and recorded on every label. Click the name in the top bar to
+   change it.
+2. **Queue.** The queue list splits the project by `workflow.queues.by` (for example
+   the sampler's `stratum`). Each queue shows a progress bar and how many items are
+   left for you. "All items" walks every queue. Your choice is remembered, and
+   `#/label?queue=NAME` links straight to one queue.
+3. **Card.** Text, long text, numbers, badges, links, JSON and images, as designed
+   in the project. Click an image or press `Z` to see it full size. Decision keys
+   still work while it is open, and it stays open on the next card.
+4. **Decide.** One key per option, or click or tap it. The next card appears at
+   once: the next five cards and their images are already loaded, and the label
+   is saved in the background, in order. If a save fails, the card comes back with
+   the reason.
+5. **Skip / undo / note.** Skip puts the item behind everything else; it comes back,
+   marked "skipped earlier", when nothing else is left. Undo retracts your last
+   label or skip and brings that item back. A note (`N`) goes with the next
+   decision.
+6. **Done.** When a queue runs out you see "Queue … is done" with the other queues
+   that still have work. When everything is done you see "All done", with links to
+   the dashboard and the export.
+
+Every screen has designed loading, empty and error states. Errors say how to fix
+them (for example, "no project open: open a project from the start screen").
+Screen readers get labels on every decision ("Code correct (key 1)") and a polite
+live region that says what was saved and what is next. Focus is always visible, and
+colours meet WCAG AA in light and dark mode. Laptop: a queue sidebar. Tablet
+(1024 px and below): queues across the top and larger buttons. Phone: decision
+buttons stick to the bottom of the screen.
+
+**Speed.** Deciding swaps to the next card from memory. Measured in Chromium with
+`packages/label/e2e/label_e2e.mjs` over 30 keyboard decisions on the catalog
+example, from keypress to the next card painted: p50 about 12 ms, p95 about 24 ms.
+The target is under 100 ms. On a 1M-item project, `GET /api/next?n=6` takes about
+1 to 16 ms on the server.
+
+## Keyboard
+
+| key | action |
+| --- | --- |
+| option hotkeys (`1`..`9`, or whatever the project sets) | label the card and move on (multi-choice: toggle) |
+| `Enter` | multi-choice: save the selection; score / free text: save |
+| `/` | score / free text: jump into the answer box |
+| `S` | skip (`labels.keys.skip`) |
+| `Backspace` | undo your last label or skip (`labels.keys.undo`) |
+| `N` | note for the next decision; `Enter` or `Esc` returns to the keys (`labels.keys.note`) |
+| `Z` | image full size; `Z` again or `Esc` closes |
+| `Esc` | close an overlay, or leave a text box |
+| `?` | shortcut overlay |
+
+Shortcuts are off while a text box has focus. A bar along the bottom lists them all
+(hidden on phones). Adjudication uses the option hotkeys too, with `J` / `K` for the
+next and previous item.
+
+## Label types
+
+`labels.type` in `caliper.label.yaml`. `LabelRecord.decision` is a string, so every
+type has one stored form:
+
+| type | how you decide | stored `decision` | `human_label` in rollouts |
+| --- | --- | --- | --- |
+| `single` (default) | one key or button per option | the option `value` | option `score`, else 1 if `approved`, else 0 |
+| `yes_no_unsure` | Yes `1` / No `2` / Unsure `3` (default options) | `yes` / `no` / `unsure` | as single (Yes is approved) |
+| `multi` | hotkeys toggle, `Enter` saves | JSON array of values, sorted: `["damaged", "late"]` | the highest of the chosen options |
+| `score` | one button per value (`1`..`5`), or a number box | the number as text: `"4"`, `"2.5"` | (value − min) / (max − min) |
+| `free_text` | type, `Enter` saves (`Shift+Enter` new line) | the trimmed text | none; rollouts and kappa do not apply |
+
+Options without a hotkey get `1`..`9` automatically. An option with
+`requires_note: true` opens the note box when you choose it, and the server
+refuses it without a note (422, with a hint). Options marked `retired` in settings
+are hidden and refused for new labels. Labels that already use them are kept and
+show up in exports and the dashboard.
+
+## Golden checks
+
+With `workflow.golden: {answer_column: known, rate: 0.05}`, rows with a value in
+`known` are hidden known-answer items. They are mixed into each labeller's stream
+at the given rate. Each labeller sees each one once, and where they appear is
+drawn from an RNG seeded per labeller, so their position doesn't give them away.
+The answer column is never sent to the browser. A card looks the same as any other
+card, with no label counts on it. The answer may name an option by value, label or
+outcome, case-insensitive. For multi-choice, list several (`a,b` or a JSON array).
+
+The dashboard shows each labeller's accuracy on them. Golden items are a test,
+not data: they are left out of kappa, the progress counts and every export.
+
+## Several labellers
+
+Several people can label at once against one server. While a card is on someone's
+screen, or in their prefetch queue, it is leased to them for 10 minutes, so two
+people are not shown the same item when it needs only one more label.
+
+- **`workflow.double_label: N`.** Each item needs labels from N different people.
+  Nobody is served an item they already labelled. Items someone else has already
+  labelled come first, so the overlap set fills early.
+- **`workflow.assignment: open`** (default). Everyone works from the same queue in
+  data order.
+- **`workflow.assignment: round_robin`.** Each labeller gets a fixed share of the
+  items:
+  - people join the rotation in the order they first ask for work (or first appear
+    in the label log);
+  - item number *k* goes to labeller *k mod n*, and with double labelling to the
+    next `double_label − 1` labellers too;
+  - when someone new joins, the shares of the not-yet-labelled items are dealt
+    again, and labels already given stay where they are;
+  - with no more labellers than `double_label`, everyone sees everything.
+
+## Team mode
+
+```bash
+uv run caliper label ./my-project --host 0.0.0.0 --auth token
+# team mode: share this link (it carries the access token): http://127.0.0.1:8765/?token=...
+```
+
+- **The token.** It is generated at startup, or taken from `CALIPER_LABEL_TOKEN`, and
+  printed once in the share link. It is never logged after that:
+  - uvicorn's access log is off;
+  - any `token=` or `Bearer …` in a uvicorn log line is redacted.
+- **Sending it.** Every `/api` request needs it, except `/api/status`. Accepted forms:
+  - the header `Authorization: Bearer <token>` (scripts);
+  - `?token=<token>` (the share link);
+  - the `caliper_label_token` cookie. The server sets it (HttpOnly, SameSite=Strict) the
+    first time a header or link token checks out, so images and downloads work too.
+- **In the browser.** The page keeps the token and removes `?token=` from the
+  address bar.
+- **Checking.** The token is compared in constant time. A missing or wrong token gets
+  401 `{"detail": "access token required" | "wrong access token", "hint": ...}`. The
+  page then shows an "Access token needed" screen where the token can be pasted.
+- **Names.** Each labeller types a name. Nothing verifies it: one token is shared.
+  SSO and roles are Phase 2.
+- **Setup stays on the server machine.** In team mode these routes answer only
+  requests from the machine running `caliper label` (loopback); everyone else gets
+  403 with a hint:
+  - `/api/source/*`, `/api/setup/*`, `/api/projects*`;
+  - saving settings;
+  - `POST /api/export`, which writes files, S3 objects or tables with the server's
+    credentials.
+
+  Labelling, the dashboard, adjudication and downloads work for everyone. Behind a
+  reverse proxy every request looks local, so block those paths at the proxy.
+
+## Dashboard
+
+`#/dashboard` (or `GET /api/dashboard`) refreshes every 20 seconds:
+
+- **Totals:** items complete, labels, κ, and disagreements left to adjudicate.
+- **Per labeller:**
+  - labels;
+  - labels in the last hour;
+  - throughput in labels per hour of *active* time (a pause over 5 minutes counts as a break; shown after a minute of work);
+  - skips;
+  - golden accuracy;
+  - last label.
+- **Per queue:** complete / total and labels in the last hour.
+- **Agreement:** inter-annotator κ overall and by `labels.category_column`, with the
+  share of items where everyone agrees. κ comes from
+  `caliper_eval.inter_rater.inter_rater_from_records`: Cohen's for exactly two
+  raters on the overlap set, Fleiss' for three or more. Only human votes count.
+  LLM-teacher labels, adjudications and golden items are left out. When κ is
+  undefined (for example, every label is the same) it is shown as "–" with the
+  reason, never as a misleading 0. Free text has no κ.
+- **Disagreements:** the first 50, with who said what, linking to adjudication.
+
+## Adjudication
+
+`#/adjudicate` lists items with two or more votes that differ.
+
+- **Layout.** The card is on the left. Each labeller's label, note and time are side
+  by side on the right.
+- **Setting the final label.** The adjudicator picks it with a click or the option
+  hotkey and can add a note.
+- **What gets stored.** A `LabelRecord` with `source: adjudicated`, where `labeller`
+  is the adjudicator.
+- **Effect on votes.** None:
+  - the adjudicator's own vote, if any, stays as it was;
+  - the adjudication never counts towards `double_label` or κ;
+  - Undo (`Backspace`) cannot retract it.
+- **Changing it.** A later adjudication of the same item replaces it.
+- **Tabs.** "To decide", "Decided", "All".
+
+## Export
+
+From `#/export` or the CLI. Every export uses the same consensus:
+
+| situation | result |
+| --- | --- |
+| an adjudicated final label | that label, always (`status: adjudicated`) |
+| no labels | left out (`unlabelled`) |
+| fewer than `double_label` votes | left out (`incomplete`) |
+| votes agree | that label (`agreed`, or `single` with one label per item) |
+| votes disagree, `--conflicts exclude` (default) | left out (`conflict`) |
+| votes disagree, `--conflicts majority` | strict majority wins (`majority`); ties are left out |
+
+The conflict policy is always an explicit choice. The CLI summary and the export
+screen count each group and list every item left out, with who said what.
+
+| format | what | for |
+| --- | --- | --- |
+| `golden` | GoldenRow JSONL; only `label`, `label_approved`, `label_source`, `label_stage` and `metadata.labelling` change (with `project_version`) | `caliper eval` |
+| `rollouts` | EvalRow JSONL with `rollout.metadata.human_label` (0..1) plus provenance and `project_version` | `caliper kappa`, `caliper_kappa.compute_kappa` |
+| `records` | the raw `LabelRecord` log: every label, skip, undo and adjudication. Kept as pure `LabelRecord`, so `load_label_records` and `caliper kappa --labels` read it; the project version is in the other formats | your own analysis |
+| `csv`, `jsonl`, `parquet` | the label table: one row per item with its final label (`--rows items`, default), or one row per label (`--rows labels`) | spreadsheets, notebooks, BI |
+| `table` | the label table written back to a table in the project's database (created if missing, otherwise appended) | the system the data came from |
+
+**Provenance.** Every label-table row carries `labeller`, `labelled_at`, `note`,
+`source`, `stage` and `project_version`:
+
+- `labeller` is `;`-joined when several people agreed;
+- the adjudicator is named for adjudicated items;
+- the item's own columns follow, prefixed `item.`.
+
+An example row (`--format jsonl`, an adjudicated item):
+
+```json
+{"item_id": "t1", "queue": "low", "category": "shipping", "label": "wrong", "label_display": "Wrong",
+ "approved": false, "human_label": 0, "status": "adjudicated", "n_labels": 2,
+ "labeller": "lee", "labelled_at": "2026-11-06T22:13:42.543800Z", "note": "billing owns refunds",
+ "source": "adjudicated", "stage": "triage", "project_version": 3,
+ "item.ticket_id": "t1", "item.subject": "Fictional ticket 1", "item.team": "shipping"}
+```
+
+`project_version` is the config `revision`, bumped on every settings save, so you
+can tell which labels were made under which options.
+
+```bash
+caliper label export ./my-project --format csv --out labels.csv
+caliper label export ./my-project --format rollouts --out rollouts.jsonl --conflicts majority
+caliper label export ./my-project --format parquet --out s3://bucket/labels/labels.parquet [--overwrite]
+caliper label export ./my-project --format table --table triage_labels
+```
+
+Parquet, S3 and table exports go through the same connectors and credential rules
+as data sources ([label-connectors.md](label-connectors.md)). From the UI, file
+exports are written inside the project folder (default `exports/`).
+**Download** works from any machine, including in team mode.
+
+## Script it: the REST API
+
+The server documents its API at **`/docs`** (OpenAPI; the raw schema is at
+`/openapi.json`). Every error is `{"detail": "...", "hint": "..."}`.
+
+```bash
+B=http://127.0.0.1:8765
+H="Authorization: Bearer $CALIPER_LABEL_TOKEN"     # team mode only
+
+# list items (paginated), one item
+curl -s -H "$H" "$B/api/items?offset=0&limit=50&queue=high"
+curl -s -H "$H" "$B/api/items/t42"
+
+# what should ana label next? (n up to 20; leases them to ana)
+curl -s -H "$H" "$B/api/next?labeller=ana&n=5"
+
+# post a label (multi: a list; score: a number; free text: the text)
+curl -s -H "$H" -H 'Content-Type: application/json' -X POST "$B/api/labels" \
+  -d '{"item_id": "t42", "labeller": "ana", "decision": "wrong", "note": "refund, not shipping"}'
+
+# skip, undo
+curl -s -H "$H" -H 'Content-Type: application/json' -X POST "$B/api/labels" \
+  -d '{"item_id": "t43", "labeller": "ana", "skip": true}'
+curl -s -H "$H" -H 'Content-Type: application/json' -X POST "$B/api/undo" -d '{"labeller": "ana"}'
+
+# fetch labels (active ones; all=true for the raw log incl. skips, undos, adjudications)
+curl -s -H "$H" "$B/api/labels?labeller=ana&offset=0&limit=500"
+
+# progress, adjudication, export
+curl -s -H "$H" "$B/api/dashboard"
+curl -s -H "$H" -H 'Content-Type: application/json' -X POST "$B/api/adjudications" \
+  -d '{"item_id": "t7", "adjudicator": "lee", "decision": "correct"}'
+curl -s -H "$H" -o labels.csv "$B/api/export/download?format=csv&conflicts=exclude"
+```
+
+| status | when |
+| --- | --- |
+| 400 | unknown or retired option, empty answer, score off the scale |
+| 401 | team mode, missing or wrong token |
+| 403 | team mode, a setup or server-side export route from another machine |
+| 404 | unknown item or queue |
+| 409 | this labeller already labelled the item (undo first), or no project is open |
+| 422 | a required note is missing, or the request body is malformed |
+
+## CLI reference
+
+```
+caliper label [PROJECT_DIR] [--host 127.0.0.1] [--port 8765] [--auth token|none] [--no-browser]
+caliper label init ...                                   # headless project creation (label-setup.md)
+caliper label export [PROJECT_DIR] --format golden|rollouts|records|csv|jsonl|parquet|table
+                     (--out FILE|s3://... | --table NAME) [--rows items|labels]
+                     [--conflicts exclude|majority] [--include-unlabelled] [--overwrite]
+caliper label serve DATA.jsonl --config label.yaml [--labeller NAME] [--store labels.jsonl|.sqlite]
+                    [--host ...] [--port ...] [--auth token|none] [--no-browser]   # legacy
+caliper label export --data DATA.jsonl --config label.yaml --out OUT.jsonl
+                     [--store ...] [--format golden|rollouts|records]               # legacy
+```
+
+With no folder you get the start screen; with a folder, that project. The first open takes
+the snapshot of the source; later opens label from the snapshot even if the source
+is unreachable. Exit codes: 0 ok, 2 usage, config or connection error, which is
+printed as one line plus a `fix:` line.
+
+`scripts/smoke_label.py` runs both paths offline:
+- the legacy loop on the catalog example;
+- a team-mode project over a CSV snapshot, with three fictional labellers, a golden check, adjudication, a CSV export, and rollouts fed into `compute_kappa`.
+
+`packages/label/e2e/label_e2e.mjs` is the browser check. It covers the loop, latency,
+the dashboard, adjudication, export, and tablet and phone layouts. It needs
+`playwright-core` (set `PLAYWRIGHT_CORE`) and skips cleanly without it:
+
+```bash
+PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node packages/label/e2e/label_e2e.mjs --port 8788
+```
+
+## Legacy: `serve DATA.jsonl --config label.yaml`
+
+The original file-based mode still works, unchanged. It uses the same UI and API
+(including `/docs`), and keeps its old endpoints (`/api/label`, `/api/item/{id}`,
+`/api/config`, `/api/image/{id}/{n}`) for existing scripts.
 
 ```bash
 uv run caliper label serve examples/catalog_cleanup/golden.jsonl \
     --config examples/catalog_cleanup/label.yaml
 ```
 
-This opens `http://127.0.0.1:8765/`. Type your name, then press `1`, `2` or `3`.
 Labels go to `build/labels/golden.labels.jsonl` unless you pass `--store`.
 
-- [Workflow](#workflow)
-- [Keyboard](#keyboard)
-- [Input data](#input-data)
-- [Config reference](#config-reference)
-- [Storage](#storage)
-- [Several labellers and double labelling](#several-labellers-and-double-labelling)
-- [Export](#export)
-- [CLI reference](#cli-reference)
-
-## Workflow
-
-1. **Name.** On first visit the page asks who is labelling. The name is kept in
-   the browser (localStorage) and sent with every label. Click the name chip to
-   change it. `--labeller NAME` pre-fills the box.
-2. **Queue.** The sidebar splits the dataset into queues by `queue_key` (for
-   example the sampler's `stratum`). Each queue shows a progress bar (items
-   complete) and how many items are left for you. "All items" walks every queue
-   in data order. The choice is remembered.
-3. **Card.** Text, links, numbers, badges and images, as configured. Click an
-   image or press `Z` to see it full size. Decision keys still work while it is
-   open, and the zoom stays open on the next item, so an image-heavy queue can
-   be labelled entirely at full size.
-4. **Decide.** One key per decision. The label is saved before the next card
-   appears. A note (`N`) is attached to the next decision.
-5. **Skip / undo.** Skip puts the item behind everything else in the queue; it
-   comes back, marked "skipped earlier", when nothing else is left. Undo
-   retracts your last label or skip and brings that item back on screen.
-
-## Keyboard
-
-| key | action |
-| --- | --- |
-| decision keys (`1`/`2`/`3`, `t`/`u`/`f`, ...) | label the card and move on |
-| `S` | skip (configurable: `keys.skip`) |
-| `Backspace` | undo your last label or skip (configurable: `keys.undo`) |
-| `N` | add a note to the next decision; `Enter` or `Esc` returns to the keys (configurable: `keys.note`) |
-| `Z` | image full size; `Z` again or `Esc` closes |
-| `Esc` | close the zoom, help or agreement overlay |
-| `?` | shortcut overlay |
-
-Keys are case-insensitive. `Z`, `?`, `Esc`, `Enter`, `Tab` and `Space` are
-reserved. A config that binds a key twice, or binds a reserved key, is
-rejected at startup with the clashing pair named. Shortcuts are off while the
-note box has focus. A bar along the bottom lists them all (hidden on phones,
-where the decision buttons are large and sticky instead).
-
-## Input data
+### Input data
 
 `serve` and `export` take one JSONL file. Its kind is detected from the rows:
 
@@ -77,7 +363,7 @@ Ids must be unique. Labels refer to items by id, so you can re-sort or extend
 the data file and keep labelling. Labels for ids that are no longer in the file
 are kept in the log and reported at startup.
 
-## Config reference
+### Config reference
 
 YAML (`label.yaml`) or TOML (`label.toml`), same keys. The catalog example:
 
@@ -165,7 +451,7 @@ a sandboxing `Content-Security-Policy`.
 YAML 1.1 reads bare `yes`, `no`, `on` and `off` as booleans. A decision value
 written that way is rejected with a hint to quote it.
 
-## Storage
+### Storage
 
 The default store is a JSONL file of `LabelRecord`s
 (`caliper_eval.types.LabelRecord`), one per line:
@@ -193,35 +479,7 @@ The default store is a JSONL file of `LabelRecord`s
 - **SQLite:** pass `--store labels.sqlite` (or `.db`) to keep the same records in
   one SQLite table (WAL, synchronous writes). It behaves the same way.
 
-## Several labellers and double labelling
-
-Several people can label at once against one `serve` process (share the URL on
-your network with `--host 0.0.0.0`). There is no login: the name each person
-types is recorded on their labels.
-
-While a card is on someone's screen, it holds a 10-minute lease. Another
-labeller is not served an item whose remaining labels are all leased, so two
-people working one queue do not label the same item twice by accident.
-
-With `double_label: N` (N ≥ 2):
-
-- every item needs labels from N different people before it counts as complete;
-- a labeller is never served an item they already labelled;
-- items someone else has already labelled come first, so the overlap set fills
-  early;
-- the **Agreement** view (top right) shows inter-annotator kappa overall and by
-  `category_key`, the share of items where everyone agrees, and the items where
-  labellers disagree, with their notes.
-
-Kappa comes from `caliper_eval.inter_rater.inter_rater_from_records` (built on
-`caliper_kappa.inter_rater_kappa`). It uses Cohen's kappa when exactly two people
-labelled the overlap items and Fleiss' kappa for three or more, so rotating pairs
-work too. Only human sources (`internal_reviewer`, `human_end_user`) count:
-agreement with an `llm_teacher` is teacher agreement, not inter-annotator
-agreement. Kappa is shown as "undefined" when it is (for example, when every
-label is the same), never as a misleading 0.
-
-## Export
+### Legacy export
 
 ```bash
 uv run caliper label export --data examples/catalog_cleanup/golden.jsonl \
@@ -280,25 +538,3 @@ copied into the rollout's metadata.
 
 **`--format records`** writes the raw log (every label, skip and undo), for
 `caliper_eval.inter_rater.inter_rater_from_records` or your own analysis.
-
-## CLI reference
-
-```
-caliper label serve DATA.jsonl --config label.yaml [--port 8765] [--host 127.0.0.1]
-                    [--labeller NAME] [--store labels.jsonl|labels.sqlite] [--no-browser]
-
-caliper label export --data DATA.jsonl --config label.yaml --out OUT.jsonl
-                     [--store labels.jsonl] [--format golden|rollouts|records]
-                     [--conflicts exclude|majority] [--include-unlabelled]
-```
-
-`--store` defaults to `build/labels/<data stem>.labels.jsonl` for both commands.
-Exit codes: 0 ok, 2 usage or config error (bad config, unreadable data, missing
-store, golden export from non-golden input).
-
-`scripts/smoke_label.py` runs the whole loop offline. It has two fictional
-labellers label the catalog example through the HTTP API with double labelling
-on, then reads the agreement, exports both formats and computes `compute_kappa`
-on the rollouts. `packages/label/e2e/label_e2e.mjs` is an optional browser
-check. It needs `playwright-core`, set through `PLAYWRIGHT_CORE`, and skips
-cleanly without it.
