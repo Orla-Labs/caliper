@@ -22,6 +22,8 @@ Formats:
   has an approved option, a scored option, or a score label type. In the table an
   abstaining option (Unsure / Uncertain / Unknown ...) without a ``score`` gets
   ``human_label: null``, not 0. Golden and rollouts keep their own encoding.
+  ``retired_option`` is true when the label's option was retired in Settings after the
+  label was made (the label is kept, and flagged).
   CSV / parquet / table rows are flat (``item.<column>``); JSON lines nest the item
   (``"item": {...}``) with the card's JSON columns parsed.
 * ``table``    the label table written back to a database table (dev 1's sinks).
@@ -428,6 +430,13 @@ def is_abstain(option: Any) -> bool:
     return option.score is None and not option.approved and bool(names & ABSTAIN)
 
 
+def retired_option(rules: Any, decision: str | None) -> bool:
+    """Was (any of) the decision's option(s) retired in Settings after it was labelled?"""
+    if decision is None:
+        return False
+    return any(o.retired for o in rules.chosen(decision))
+
+
 def table_scores(rules: Any, decision: str) -> tuple[bool | None, float | int | None]:
     """(approved, human_label) for the label table: an abstaining option scores null."""
     chosen = rules.chosen(decision)
@@ -491,6 +500,7 @@ def table_rows(
                 "label": r.decision,
                 "label_display": rules.display(r.decision),
                 **_rec_row(session, r),
+                "retired_option": retired_option(rules, r.decision),
                 "record_id": r.record_id,
             }
             row.update({f"item.{k}": _flat(v) for k, v in _row_of(session, it).items()})
@@ -524,6 +534,7 @@ def table_rows(
                 "source": recs[0].source.value,
                 "stage": recs[0].stage,
                 "project_version": session.versions.get(last.record_id),
+                "retired_option": retired_option(rules, res.decision),
             }
         if not with_scores:
             row.pop("approved", None)

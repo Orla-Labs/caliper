@@ -109,16 +109,10 @@ test("keyboard only: start → wizard → label → help → dashboard → expor
   await page.keyboard.press("Enter");
   expect((await dl).suggestedFilename()).toMatch(/\.csv$/);
 
-  // LPF-C-5 (handoff/lpf-c-bugs.md): decision buttons, the current queue button and the
-  // dashboard's focusable table section show no focus ring. Reported, not hidden; the
-  // dedicated test below fails loudly once it is fixed so this filter gets removed.
-  const known = (m: string) => /\(key \d\)|complete, \d+ left|^section "Labellers/.test(m);
-  for (const m of noRing.filter(known)) test.info().annotations.push({ type: "known a11y bug", description: `LPF-C-5: no focus ring on ${m}` });
-  expect(noRing.filter((m) => !known(m)), "Tab stops without a visible focus indicator").toEqual([]);
+  expect(noRing, "Tab stops without a visible focus indicator").toEqual([]);
 });
 
 test("LPF-C-5: decision buttons show a keyboard focus ring", async ({ page, shared }) => {
-  test.fail(true, "LPF-C-5 open: .opt's own box-shadow overrides :focus-visible (handoff/lpf-c-bugs.md)");
   await page.goto(`${shared.base}/#/start`);
   await page.getByRole("button", { name: /try the demo/i }).click();
   const dialog = page.getByRole("dialog", { name: /who is labelling/i });

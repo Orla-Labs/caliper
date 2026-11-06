@@ -110,3 +110,27 @@ def test_formats_have_plain_titles(tmp_path: Path) -> None:
     assert fm["golden"]["title"] == "Answer key for evaluations"
     assert "caliper eval" in fm["golden"]["help"]  # the technical detail is still there
     assert all(f["title"] and f["plain"] for f in fm.values())
+
+
+def test_labels_on_a_retired_option_are_flagged(tmp_path: Path) -> None:
+    """LPF-C-9: retiring an option keeps its labels and flags them in the API and exports."""
+    ctx = make_ctx(tmp_path)
+    c = client_for(ctx)
+    post(c, "t0", "correct")
+    post(c, "t1", "wrong")
+    ctx.session.rules.option("wrong").retired = True  # what a Settings save does to the option
+    recs = {r["item_id"]: r for r in c.get("/api/labels").json()["labels"]}
+    assert recs["t1"]["retired_option"] is True and recs["t0"]["retired_option"] is False
+    rows = {r["item_id"]: r for r in _jsonl(c)}
+    assert rows["t1"]["label"] == "wrong" and rows["t1"]["retired_option"] is True
+    assert rows["t0"]["retired_option"] is False
+    per_label = {r["item_id"]: r for r in _jsonl(c, "&rows=labels")}
+    assert per_label["t1"]["retired_option"] is True
+    flat = {
+        r["item_id"]: r
+        for r in csv.DictReader(io.StringIO(c.get("/api/export/download?format=csv").text))
+    }
+    assert flat["t1"]["retired_option"] == "True"
+    # rollouts keep their encoding: no new key
+    roll = [json.loads(x) for x in c.get("/api/export/download?format=rollouts").text.splitlines()]
+    assert all("retired_option" not in r["rollout"]["metadata"] for r in roll)

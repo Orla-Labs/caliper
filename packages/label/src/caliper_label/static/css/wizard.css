@@ -45,6 +45,8 @@
 .wz-root *, .wz-dialog * { box-sizing: border-box; }
 .wz-root button, .wz-root input, .wz-root select, .wz-root textarea,
 .wz-dialog button, .wz-dialog input, .wz-dialog textarea { font: inherit; color: inherit; }
+/* LPF-C-1: the reset above (0,1,1) must not beat filled buttons' white ink */
+.wz-root .wz-btn-primary, .wz-dialog .wz-btn-primary, .st-root .st-new { color: var(--wz-accent-ink); }
 .wz-sr { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .wz-muted { color: var(--wz-muted); }
 .wz-root [hidden], .wz-dialog [hidden] { display: none !important; }
@@ -234,6 +236,8 @@ fieldset.wz-panel legend + * { clear: both; }
 .wz-colbtn[aria-pressed=true] .wz-colbtn-mark { background: var(--wz-accent); border-color: var(--wz-accent); color: var(--wz-accent-ink); }
 .wz-colbtn-name { font-weight: 650; }
 .wz-colbtn-type { color: var(--wz-muted); font-weight: 400; font-size: 11.5px; }
+/* LPF-C-3: on the tinted selected header the muted grey drops under 4.5:1 */
+.wz-col-on .wz-colbtn-type, .wz-colbtn[aria-pressed=true] .wz-colbtn-type { color: color-mix(in srgb, var(--wz-ink) 82%, var(--wz-muted)); }
 .wz-table th > .wz-colbtn-name, .wz-table th > .wz-colbtn-type { display: block; }
 .wz-table tbody td { cursor: default; }
 .wz-designer .wz-table tbody td { cursor: pointer; }
