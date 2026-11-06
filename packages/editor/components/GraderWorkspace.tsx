@@ -24,9 +24,12 @@ export function GraderWorkspace({
   const [results, setResults] = useState<DryRunResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [evalSet, setEvalSet] = useState<string>(DEFAULT_EVAL_SET);
 
-  // Hydrate from localStorage on mount.
+  // Hydrate from localStorage (and the optional ?evalSet= query param) on mount.
   useEffect(() => {
+    const fromQuery = new URLSearchParams(window.location.search).get("evalSet");
+    if (fromQuery) setEvalSet(fromQuery);
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
       if (stored !== null && stored.length > 0) {
@@ -51,7 +54,7 @@ export function GraderWorkspace({
     setLoading(true);
     setError(null);
     try {
-      const data = await dryRun(source, DEFAULT_EVAL_SET);
+      const data = await dryRun(source, evalSet);
       setResults(data);
     } catch (e) {
       const err = e as DryRunError;
@@ -60,7 +63,7 @@ export function GraderWorkspace({
     } finally {
       setLoading(false);
     }
-  }, [source]);
+  }, [source, evalSet]);
 
   return (
     <main
@@ -98,9 +101,11 @@ export function GraderWorkspace({
                 "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
             }}
           >
-            {graderName} <span style={{ opacity: 0.6 }}>·</span> v{graderVersion}
+            {results?.grader_name ?? graderName}{" "}
+            <span style={{ opacity: 0.6 }}>·</span> v
+            {results?.grader_version ?? graderVersion}
             <span style={{ opacity: 0.6 }}> · </span>eval set:{" "}
-            <span style={{ color: "#cfcfcf" }}>{DEFAULT_EVAL_SET}</span>
+            <span style={{ color: "#cfcfcf" }}>{evalSet}</span>
           </div>
         </div>
         <button
