@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -184,6 +185,8 @@ class StoreItems:
         self.store = store
         self.config = config
         self._golden: list[str] | None = None
+        self._counts: dict[str | None, tuple[int, float]] = {}
+        self._queues: tuple[list[str], float] | None = None
 
     def _view(self, row: Any) -> ItemView:
         disp = _get(row, "fields", "display", "display_json")
@@ -199,14 +202,32 @@ class StoreItems:
         )
 
     def queues(self) -> list[str]:
-        if hasattr(self.store, "queues"):
-            return [
-                q if isinstance(q, str) else _get(q, "name", "queue") for q in self.store.queues()
-            ]
-        return ["all"]
+        """Queue names in snapshot order. ``ProjectStore.queues()`` gives (name, n_active)."""
+        now = time.monotonic()
+        if self._queues and now - self._queues[1] < self.COUNT_TTL:
+            return list(self._queues[0])
+        if not hasattr(self.store, "queues"):
+            return ["all"]
+        names: list[str] = []
+        for q in self.store.queues():
+            if isinstance(q, tuple):
+                names.append(str(q[0]))
+                self._counts[str(q[0])] = (int(q[1]), now)  # the counts come for free
+            else:
+                names.append(str(q))
+        self._queues = (names, now)
+        return list(names)
+
+    COUNT_TTL = 5.0  # seconds; counts only change on "refresh from source"
 
     def count(self, queue: str | None = None) -> int:
-        return int(self.store.count(queue))
+        now = time.monotonic()
+        hit = self._counts.get(queue)
+        if hit and now - hit[1] < self.COUNT_TTL:
+            return hit[0]
+        n = int(self.store.count(queue))
+        self._counts[queue] = (n, now)
+        return n
 
     def page(self, offset: int, limit: int, queue: str | None = None) -> list[ItemView]:
         return [self._view(r) for r in self.store.items(offset, limit, queue)]
@@ -325,6 +346,9 @@ class ProjectContext:
                     self.items.config = config
                 if hasattr(self.items, "_golden"):
                     self.items._golden = None
+                if hasattr(self.items, "_counts"):
+                    self.items._counts.clear()
+                    self.items._queues = None
             rev = getattr(self.config, "revision", None)
             self.version = int(rev) if rev and rev > self.version else self.version + 1
             if hasattr(self.store, "set_project_version"):
