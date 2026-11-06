@@ -15,7 +15,7 @@ test("CSV wizard end to end: upload → card → labels → workflow → review 
   const t0 = Date.now();
 
   // ------------------------------------------------------------------ start → connect
-  await page.goto(`${shared.base}/`);
+  await page.goto(`${shared.base}/#/start`);
   await page.getByRole("button", { name: /new project/i }).click();
   await expect(page.getByRole("heading", { level: 1, name: /connect data/i })).toBeVisible();
   await expect(page.getByRole("radio", { name: /upload a file/i })).toBeChecked();
