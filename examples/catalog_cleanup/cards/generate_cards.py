@@ -1,4 +1,3 @@
-# ruff: noqa: E501  (SVG markup template)
 """Regenerate the fictional product placeholder cards used by label.yaml.
 
     uv run python examples/catalog_cleanup/cards/generate_cards.py
@@ -8,6 +7,7 @@ placeholder with the item name from the listing. Deterministic; no real
 products, brands or photos.
 """
 
+# ruff: noqa: E501  (SVG markup template below)
 from __future__ import annotations
 
 import hashlib

@@ -83,6 +83,13 @@ class DecisionSpec(BaseModel):
     def _key(cls, v: Any) -> str:
         return _norm_key(str(v))
 
+    @field_validator("value", "label", "outcome", mode="before")
+    @classmethod
+    def _text(cls, v: Any) -> Any:
+        if isinstance(v, bool):  # YAML 1.1 reads yes/no/on/off as booleans
+            raise ValueError(f'read as a boolean ({v}); quote it in YAML, e.g. value: "yes"')
+        return str(v) if isinstance(v, int | float) else v
+
     @property
     def human_label(self) -> float:
         if self.score is not None:
