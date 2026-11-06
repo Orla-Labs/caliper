@@ -374,25 +374,51 @@ def test_run_eval_decide_errors_and_reply_errors(project: Path):
     assert all(rep.error for r in boom for rep in r.replies)
 
 
-def test_run_eval_retry_errors(project: Path):
+def test_run_eval_retry_errors(project: Path, monkeypatch):
     cfg = load_config(project / "eval.toml")
-    rows = load_golden(cfg.golden_path)
-    rows[1].request["messages"][0]["content"] = "boom"
     out = project / "r.jsonl"
-    run_eval(cfg, results_path=out, rows=rows)
-    fixed = load_golden(cfg.golden_path)
+    monkeypatch.setenv("CALIPER_TEST_OUTAGE", "r1")
+    run_eval(cfg, results_path=out)
+    monkeypatch.delenv("CALIPER_TEST_OUTAGE")
     calls = []
-    run_eval(cfg, results_path=out, rows=fixed, progress=lambda r, d, t: calls.append(r.key))
+    run_eval(cfg, results_path=out, progress=lambda r, d, t: calls.append(r.key))
     assert calls == []  # errored rows count as done by default
     run_eval(
         cfg,
         results_path=out,
-        rows=fixed,
         retry_errors=True,
         progress=lambda r, d, t: calls.append(r.key),
     )
     assert sorted(calls) == [("baseline", "r1", 0), ("baseline", "r1", 1), ("small", "r1", 0)]
     assert not any(rep.error for r in ResultsStore(out).latest().values() for rep in r.replies)
+
+
+def test_resume_reruns_stale_rows(project: Path):
+    cfg = load_config(project / "eval.toml")
+    out = project / "r.jsonl"
+    first = run_eval(cfg, results_path=out)
+    assert all(r.candidate_sha256 for r in first)
+    # same candidate name, different model => every "small" row is stale
+    changed = cfg.model_copy(deep=True)
+    changed.candidates[1].model = "fake-large"
+    calls = []
+    res = run_eval(changed, results_path=out, progress=lambda r, d, t: calls.append(r.key))
+    assert {k[0] for k in calls} == {"small"} and len(calls) == 6
+    assert all(r.replies[0].served_by.model == "fake-large" for r in res if r.candidate == "small")
+    # same row id, edited request => that row is stale for every candidate
+    rows = load_golden(cfg.golden_path)
+    rows[2].request["messages"][0]["content"] = "record 2 is bad"
+    calls.clear()
+    run_eval(changed, results_path=out, rows=rows, progress=lambda r, d, t: calls.append(r.key))
+    assert sorted(calls) == [("baseline", "r2", 0), ("baseline", "r2", 1), ("small", "r2", 0)]
+
+
+def test_run_id_ignores_budget_and_ci(project: Path):
+    cfg = load_config(project / "eval.toml")
+    other = cfg.model_copy(update={"budget_usd": 99.0, "costs": {}})
+    a = run_eval(cfg, results_path=project / "a.jsonl")
+    b = run_eval(other, results_path=project / "b.jsonl")
+    assert {r.run_id for r in a} == {r.run_id for r in b}
 
 
 def test_run_eval_budget_stops_and_resumes(project: Path):

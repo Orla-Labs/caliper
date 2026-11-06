@@ -32,6 +32,7 @@ from caliper_eval.types import (
     GoldenRow,
     Reply,
     RowResult,
+    candidate_sha256,
     request_sha256,
 )
 
@@ -49,12 +50,23 @@ def plan_keys(config: EvalConfig, rows: list[GoldenRow]) -> list[Key]:
 
 
 def default_run_id(config: EvalConfig, rows: list[GoldenRow]) -> str:
-    """Content-derived id: same config + same golden set => same run_id."""
-    h = hashlib.sha256(config.fingerprint().encode())
+    """Content-derived id from what produces replies: the candidates and the
+    golden set. Budget, CI or cost settings do not change it."""
+    h = hashlib.sha256()
+    for c in config.candidates:
+        h.update(candidate_sha256(c).encode())
     for row in rows:
         h.update(row.id.encode())
         h.update(request_sha256(row.request).encode())
     return h.hexdigest()[:12]
+
+
+def is_current(stored: RowResult, candidate: Candidate, row: GoldenRow) -> bool:
+    """A stored result is reusable only if it came from the same request and the
+    same candidate settings (a renamed-in-place model or edited row is stale)."""
+    return stored.request_sha256 == request_sha256(
+        row.request
+    ) and stored.candidate_sha256 == candidate_sha256(candidate)
 
 
 def coerce_decision(value: Any) -> Decision:
@@ -97,6 +109,7 @@ def run_row(
         row_id=row.id,
         replica=replica,
         request_sha256=request_sha256(row.request),
+        candidate_sha256=candidate_sha256(candidate),
         replies=replies,
         decision=decision,
         error=error,
@@ -122,6 +135,10 @@ def run_eval(
     """Run the eval and return results for every planned key, in plan order.
 
     * ``resume``: skip keys already in the results file (else start it fresh).
+      A stored row is reused only if its request and candidate settings hashes
+      match; otherwise it is re-run and the new line supersedes it. Changes to
+      ``decide`` or to a fake script's code are NOT detected: use
+      ``resume=False`` (or re-decide from stored replies) after editing them.
     * ``retry_errors``: with resume, also redo rows whose stored result has an
       error (a newer line for the same key supersedes the old one).
     * ``budget``: defaults to ``Budget(config.budget_usd)``. Raises
@@ -136,12 +153,16 @@ def run_eval(
     if not resume:
         store.reset()
     latest = store.latest()
-    done = (
-        {k for k, r in latest.items() if not (retry_errors and has_error(r))} if resume else set()
-    )
-
     by_id = {row.id: row for row in rows}
     keys = plan_keys(config, rows)
+    done: set[Key] = set()
+    if resume:
+        for key in keys:
+            stored = latest.get(key)
+            if stored is None or (retry_errors and has_error(stored)):
+                continue
+            if is_current(stored, config.candidate(key[0]), by_id[key[1]]):
+                done.add(key)
     total = len(keys)
     # per-candidate [cost, count] of known rows, for the budget estimate
     spend: dict[str, list[float]] = {}
