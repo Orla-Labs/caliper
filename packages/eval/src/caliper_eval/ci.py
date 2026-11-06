@@ -12,7 +12,9 @@ A candidate fails when any of these holds:
    (``matches_request=False``);
 3. **errors**: its error rate (results with no decision) exceeds
    ``max_error_rate`` (default 0);
-4. **incomplete**: rows present on one side only (the run did not finish).
+4. **incomplete**: rows present on one side only (the run did not finish);
+5. **stale**: results whose ``request_sha256`` no longer matches the golden
+   row (a resumed results file from an older golden set).
 
 Rules 2-4 also apply to the reference. Exit code 0 = pass, 1 = fail.
 """
@@ -80,6 +82,11 @@ def evaluate_gate(
             reasons.append(
                 f"error rate {c.error_rate:.1%} > allowed {max_error_rate:.1%} "
                 f"(no decision: {c.decide_errors}, provider errors: {c.provider_errors})"
+            )
+        if c.stale_results:
+            reasons.append(
+                f"{c.stale_results} results recorded for a different request than the "
+                "current golden set; re-run with --no-resume"
             )
         gates.append(CandidateGate(name=c.name, passed=not reasons, reasons=reasons))
     passed = all(g.passed for g in gates)

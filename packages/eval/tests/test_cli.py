@@ -37,6 +37,22 @@ def test_eval_ci_fails_on_regression_and_is_deterministic(in_project, capsys):
     assert len(lines) == 6 * 2 + 6  # reference x2 + small x1
 
 
+def test_stale_resumed_results_fail_the_gate(in_project, capsys):
+    cfg = (in_project / "eval.toml").read_text().replace("max_regression = 0.02",
+                                                         "max_regression = 10.0")
+    (in_project / "eval.toml").write_text(cfg)
+    code, _, _ = run(capsys, "eval", "--config", "eval.toml", "--ci", "--n-boot", "50")
+    assert code == 0
+    golden = (in_project / "golden.jsonl").read_text().replace("record 0 is", "record 0 now is")
+    (in_project / "golden.jsonl").write_text(golden)
+    code, out, _ = run(capsys, "eval", "--config", "eval.toml", "--ci", "--n-boot", "50")
+    assert code == 1
+    assert "results recorded for a different request" in out
+    code, _, _ = run(capsys, "eval", "--config", "eval.toml", "--ci", "--n-boot", "50",
+                     "--no-resume")
+    assert code == 0
+
+
 def test_eval_without_ci_exits_zero(in_project, capsys):
     code, out, _ = run(capsys, "eval", "--config", "eval.toml", "--out", "o", "--n-boot", "50")
     assert code == 0

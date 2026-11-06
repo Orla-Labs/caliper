@@ -31,7 +31,7 @@ from ._stats import DEFAULT_N_BOOT, nearest_rank
 from .calibration import Calibration, compute_calibration
 from .noise import NoiseFloor, compute_noise_floor, index_results
 from .transitions import Transitions, compute_transitions
-from .types import Candidate, GoldenRow, RowResult
+from .types import Candidate, GoldenRow, RowResult, request_sha256
 
 
 class Tokens(BaseModel):
@@ -65,6 +65,7 @@ class CandidateReport(BaseModel):
     served_models: list[str] = Field(default_factory=list)  # "provider:model", sorted
     served_mismatches: int = 0  # replies with matches_request=False
     served_unknown: int = 0  # non-error replies with no served_by
+    stale_results: int = 0  # results recorded for a different request than the golden row now has
     transitions: Transitions | None = None
     excess_regression: float | None = None
     calibration: Calibration | None = None
@@ -187,6 +188,12 @@ def build_report(
         )
     noise_upper = noise.cost_weighted_flip_rate.high if noise is not None else 0.0
 
+    want_sha = {g.id: request_sha256(g.request) for g in golden}
+    stale: dict[str, int] = {}
+    for r in latest:
+        if r.row_id in want_sha and r.request_sha256 != want_sha[r.row_id]:
+            stale[r.candidate] = stale.get(r.candidate, 0) + 1
+
     by_cand: dict[str, list[RowResult]] = {}
     for r in sorted(latest, key=lambda r: r.key):
         by_cand.setdefault(r.candidate, []).append(r)
@@ -196,6 +203,12 @@ def build_report(
         is_ref = cand.name == reference
         cres = by_cand.get(cand.name, [])
         rep = _candidate_report(cand, cres, is_reference=is_ref)
+        rep.stale_results = stale.get(cand.name, 0)
+        if rep.stale_results:
+            warnings.append(
+                f"{cand.name}: {rep.stale_results} results were recorded for a different "
+                "request than the golden set now holds; re-run with --no-resume"
+            )
         if not is_ref:
             rep.transitions = compute_transitions(
                 latest, cand.name, reference, costs=costs, seed=seed, n_boot=n_boot

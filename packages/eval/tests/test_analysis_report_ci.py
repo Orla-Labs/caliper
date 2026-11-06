@@ -11,6 +11,7 @@ from caliper_eval.types import (
     RowResult,
     ServedBy,
     Usage,
+    request_sha256,
 )
 
 N = 30
@@ -45,7 +46,7 @@ def _rr(cand, model, i, outcome, score, replica=0, **kw):
         candidate=cand,
         row_id=f"sku-{i:03d}",
         replica=replica,
-        request_sha256="x",
+        request_sha256=request_sha256({"messages": []}),
         replies=[_reply(model, i=i, **kw)],
         decision=None if err else Decision(outcome=outcome, score=score),
         error=err,
@@ -206,3 +207,65 @@ def test_markdown_golden():
     config, res, golden = fixture()
     rep = build_report(config, res, golden, n_boot=200, target_precision=0.9)
     assert render_markdown(rep, evaluate_gate(rep)) == EXPECTED_MD
+
+
+EXPECTED_TEXT = """\
+caliper eval: 3 candidates, 30 golden rows, reference=baseline, seed=0, bootstrap n=200
+noise floor (baseline x2, 30 rows): flip 3.3%, cost-weighted 0.050 [0.000, 0.150]
+
+candidate       rows  errors  tokens in/out/cache  p50/p95 ms  cost $  who answered       \
+                   flips  regression [95% CI]   excess  gate
+--------------  ----  ------  -------------------  ----------  ------  \
+------------------------------------  -----  --------------------  ------  ----
+baseline (ref)  30    0p/0d   6000/600/3000        125/148     0.0120  fake-large         \
+                   -      -                     -       PASS
+small           30    0p/0d   3000/300/1500        125/148     0.0060  fake-small         \
+                   10/30  0.667 [0.333, 1.000]  0.517   FAIL
+swapped         30    1p/1d   3000/300/1500        125/148     0.0060  \
+fake-medium,fake-other (MISMATCH x2)  0/29   0.000 [0.000, 0.000]  -0.150  FAIL
+
+transitions baseline -> small:
+          high -> high            10
+          high -> low             10  (cost 2 each)
+           low -> low             10
+  flipped: sku-001 (high->low), sku-004 (high->low), sku-007 (high->low), sku-010 \
+(high->low), sku-013 (high->low), sku-016 (high->low), sku-019 (high->low), sku-022 \
+(high->low) +2 more
+
+transitions baseline -> swapped:
+          high -> high            19
+           low -> low             10
+  errored rows: 1, missing rows: 0
+
+calibration baseline: 30 labeled rows, 20 approved, ECE 0.167, recommended threshold 0.50 \
+(target precision 90.0%)
+  score >=  auto  coverage  precision  approved->review  kappa
+  --------  ----  --------  ---------  ----------------  -----
+  0.50      20    66.7%     100.0%     0.0%              1.000
+  0.85      20    66.7%     100.0%     0.0%              1.000
+
+calibration small: 30 labeled rows, 20 approved, ECE 0.133, recommended threshold 0.50 \
+(target precision 90.0%)
+  score >=  auto  coverage  precision  approved->review  kappa
+  --------  ----  --------  ---------  ----------------  -----
+  0.50      10    33.3%     100.0%     50.0%             0.400
+  0.85      0     0.0%      -          100.0%            0.000
+
+calibration swapped: 29 labeled rows, 19 approved, ECE 0.169, recommended threshold 0.50 \
+(target precision 90.0%)
+  score >=  auto  coverage  precision  approved->review  kappa
+  --------  ----  --------  ---------  ----------------  -----
+  0.50      19    65.5%     100.0%     0.0%              1.000
+  0.85      19    65.5%     100.0%     0.0%              1.000
+
+CI gate: FAIL
+  small: cost-weighted regression 0.667 > noise upper 0.150 + allowed 0.020 (10 rows flipped)
+  swapped: 2 replies served by a model other than requested (fake:fake-medium, fake:fake-other)
+  swapped: error rate 3.3% > allowed 0.0% (no decision: 1, provider errors: 1)
+"""
+
+
+def test_text_golden():
+    config, res, golden = fixture()
+    rep = build_report(config, res, golden, n_boot=200, target_precision=0.9)
+    assert render_text(rep, evaluate_gate(rep)) == EXPECTED_TEXT
