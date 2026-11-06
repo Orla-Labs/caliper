@@ -427,12 +427,17 @@ def get_templates() -> dict[str, Any]:
 
 class TemplateIn(BaseModel):
     categories: str | None = None
+    natural_order: bool = False  # put known scales (low/medium/high) in severity order
 
 
 @router.post("/api/setup/templates/{template_id}")
 def post_template(template_id: str, body: TemplateIn | None = None) -> dict[str, Any]:
     try:
-        labels = template_labels(template_id, body.categories if body else None)
+        labels = template_labels(
+            template_id,
+            body.categories if body else None,
+            natural_order=bool(body and body.natural_order),
+        )
     except ValueError as exc:
         raise SetupError(404, str(exc), "see GET /api/setup/templates") from None
     return {"labels": labels.model_dump(mode="json")}

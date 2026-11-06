@@ -68,6 +68,10 @@ export function uploadFile(file, draft, onProgress) {
 }
 
 export function credentialList(creds) {
+  // "local files" / "plugin-defined" are not credentials: nothing to show (#17). Keep the
+  // informative ones (an S3 endpoint, env vars, AWS chains) and anything unresolved.
+  creds = (creds || []).filter((c) => !(c.kind === "none" && c.resolved && !/^endpoint /.test(c.name)));
+  if (!creds.length) return null;
   return h("ul", { class: "wz-creds", "aria-label": "Credentials" }, creds.map((c) =>
     h("li", { class: `wz-cred ${c.resolved ? "wz-cred-ok" : "wz-cred-missing"}` },
       h("span", { class: "wz-cred-icon", "aria-hidden": "true" }, c.resolved ? "✓" : "!"),
@@ -106,7 +110,10 @@ export function sourceForm(state, { onChange, onFile, onConnect, api }) {
       ondrop: (e) => { e.preventDefault(); zone.classList.remove("wz-drop-on"); const f = e.dataTransfer.files[0]; if (f) onFile(f); } },
     h("div", { class: "wz-drop-icon", "aria-hidden": "true" }, "⇪"),
     state.upload
-      ? h("p", {}, h("strong", {}, state.upload.name), ` · ${(state.upload.size / 1024).toFixed(1)} KB uploaded`)
+      ? h("p", {}, h("strong", {}, state.upload.name), ` · ${(state.upload.size / 1024).toFixed(1)} KB uploaded`,
+        state.preview && state.preview.ok
+          ? h("span", { class: "wz-drop-ok" }, h("span", { "aria-hidden": "true" }, " ✓ "), `${state.preview.count ?? state.preview.rows.length} rows read`)
+          : null)
       : h("p", {}, h("strong", {}, "Drop a file here"), " or"),
     h("button", { type: "button", class: "wz-btn wz-btn-primary", onclick: () => input.click() }, state.upload ? "Choose another file" : "Choose a file"),
     h("p", { class: "wz-help" }, "CSV, TSV, JSONL, JSON, Parquet or Excel. The file is copied into the project folder."),

@@ -8,6 +8,8 @@ import { h, clear, nextId, announce, slug, markdown, dialog, kbd, confirmDialog 
 import { DISPLAY_TYPES, renderCard } from "./wizard-card.js";
 
 export const PALETTE = ["#2e7d32", "#c62828", "#a15c00", "#1565c0", "#6a1b9a", "#00695c", "#ad1457", "#5d4037", "#455a64"];
+// Plain categories: no green/red/amber, so new options don't read as good/bad (project_setup.CATEGORY_PALETTE).
+const CATEGORY_PALETTE = ["#1565c0", "#6a1b9a", "#00695c", "#ad1457", "#5d4037", "#283593", "#4e342e"];
 const RESERVED = { z: "zoom", "?": "help", escape: "Esc", enter: "Enter", tab: "Tab", " ": "Space" };
 const SPECIAL = new Set(["backspace", "delete", "escape", "enter", "tab", "space"]);
 const MODIFIERS = new Set(["Shift", "Control", "Alt", "Meta", "CapsLock", "Fn", "AltGraph", "Dead", "Unidentified"]);
@@ -301,7 +303,7 @@ export function labelsEditor(el, ctx) {
     ctx.onTemplate && ctx.onTemplate(ctx.fromTemplate);
   }
 
-  async function applyTemplate(id, categories) {
+  async function applyTemplate(id, categories, extra = {}) {
     const hasLabels = L.options.some((o) => counts[o.value]);
     if (L.options.length && (hasLabels || !untouched()) && !(await confirmDialog({
       title: "Replace the options?",
@@ -311,7 +313,7 @@ export function labelsEditor(el, ctx) {
       ok: "Replace",
     }))) return;
     try {
-      const res = await ctx.api.post(`/api/setup/templates/${id}`, categories ? { categories } : {});
+      const res = await ctx.api.post(`/api/setup/templates/${id}`, categories ? { categories, ...extra } : {});
       const keepRetired = L.options.filter((o) => o.retired);
       L.type = res.labels.type;
       L.options = [...res.labels.options, ...keepRetired];
@@ -322,6 +324,37 @@ export function labelsEditor(el, ctx) {
     } catch (err) {
       announce(`Template failed: ${err.message}`);
     }
+  }
+
+  // #14: low-cardinality columns of the data, offered as ready-made options.
+  const keyOf = (v) => slug(String(v));
+  function suggestionsBox() {
+    const sugg = (ctx.suggestions || []).filter((sg) => sg.values.length >= 2);
+    if (!sugg.length || !["single", "multi"].includes(L.type)) return null;
+    const optKeys = new Set(L.options.filter((o) => !o.retired).map((o) => o.value));
+    const used = sugg.find((sg) => sg.values.every((v) => optKeys.has(keyOf(v))));
+    const onCard = used && ctx.card && (ctx.card.fields || []).some((f) => f.column === used.column && !f.hidden);
+    return h("section", { class: "wz-panel wz-suggest", "aria-labelledby": "wz-sugg-h" },
+      h("h3", { id: "wz-sugg-h" }, "From your data"),
+      used
+        ? h("p", { class: "wz-help" }, "The options are the values of ", h("code", {}, used.column), ".")
+        : h("p", { class: "wz-help" }, "These columns have only a few values (in the first rows). Use one as the options?"),
+      used ? null : h("ul", { class: "wz-suggest-list" }, sugg.slice(0, 2).map((sg) =>
+        h("li", {},
+          h("code", {}, sg.column), " ",
+          h("span", { class: "wz-muted wz-suggest-vals", title: sg.values.join(", ") }, sg.values.join(", ")),
+          h("button", { type: "button", class: "wz-btn wz-btn-small", "data-fid": `sugg-${sg.column}`,
+            onclick: () => applyTemplate("categories", sg.values.join("\n"), { natural_order: true }) },
+          `Use these ${sg.values.length}`)))),
+      onCard ? h("div", { class: "wz-warn", role: "note" },
+        h("strong", {}, `${used.column} is on the card. `),
+        "Labellers who can see the current value tend to just agree with it. Remove it from the card unless they are meant to check it.",
+        " ", h("button", { type: "button", class: "wz-btn wz-btn-small", "data-fid": "sugg-hide",
+          onclick: () => {
+            ctx.card.fields = ctx.card.fields.filter((f) => f.column !== used.column);
+            announce(`${used.column} removed from the card`);
+            changed();
+          } }, "Remove from the card")) : null);
   }
 
   function pasteCategories() {
@@ -342,7 +375,7 @@ export function labelsEditor(el, ctx) {
     let name = `Option ${n + 1}`;
     let value = slug(name);
     while (L.options.some((o) => o.value === value)) value += "_";
-    L.options.push({ value, label: name, hotkey: nextFreeKey(L), color: PALETTE[L.options.length % PALETTE.length] });
+    L.options.push({ value, label: name, hotkey: nextFreeKey(L), color: CATEGORY_PALETTE[L.options.length % CATEGORY_PALETTE.length] });
     announce(`${name} added`);
     ctx.onChange && ctx.onChange();
     render();
@@ -471,6 +504,7 @@ export function labelsEditor(el, ctx) {
                 },
               }),
               h("span", { class: "wz-radio-title" }, t), h("span", { class: "wz-radio-desc" }, d))))),
+        choice ? suggestionsBox() : null,
         choice ? h("section", { class: "wz-panel" },
           h("div", { class: "wz-row-between" },
             h("h3", {}, "Options"),

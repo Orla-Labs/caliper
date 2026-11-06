@@ -187,6 +187,10 @@ export async function mount(el, ctx) {
       changed();
       saveNow();
       showResult();
+      if (state.kind === "upload") renderForm(); // the drop zone repeats the row count
+      // the confirmation is below the source form: bring it into view (#17)
+      const sum = result.querySelector(".wz-preview-summary") || result.firstElementChild;
+      if (sum && sum.scrollIntoView) sum.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     }
 
     function defaultName() {
@@ -209,8 +213,9 @@ export async function mount(el, ctx) {
         return;
       }
       const parts = [];
-      if (p.credentials && p.credentials.length) parts.push(credentialList(p.credentials));
+      const creds = p.credentials && p.credentials.length ? credentialList(p.credentials) : null;
       if (!p.ok) {
+        parts.push(creds);
         parts.push(errorBox({ message: (p.error && p.error.detail) || "Could not read the data", hint: p.error && p.error.hint }, runPreview));
         return clear(result, parts);
       }
@@ -220,6 +225,7 @@ export async function mount(el, ctx) {
           h("span", { class: "wz-ok-dot", "aria-hidden": "true" }), h("strong", {}, "Connected. "),
           `${plural(p.count ?? p.rows.length, "row")} · ${plural(p.columns.length, "column")}`,
           p.count && p.count > p.rows.length ? h("span", { class: "wz-muted" }, ` · showing the first ${p.rows.length}`) : null),
+        creds,
         h("div", { class: "wz-inline-field" },
           h("label", { for: idSel }, "Item id column"),
           h("select", { id: idSel, onchange: (e) => {
@@ -254,6 +260,7 @@ export async function mount(el, ctx) {
         state.config.source = { kind: "file", path: up.path };
         state.config.name = "";
         state.touched.card = false;
+        state.preview = null;
         renderForm();
         state.touched.id = false;
         await runPreview();
@@ -328,6 +335,32 @@ export async function mount(el, ctx) {
       suggestions: optionSuggestions(), card: state.config.card,
       onChange: () => { state.touched.labels = true; changed(); } };
     labelsEditor(box, ed);
+  }
+
+  // #14: columns with a handful of short values, as label option candidates.
+  function optionSuggestions() {
+    const p = state.preview;
+    if (!p || !p.ok) return [];
+    const idCol = state.config.source.id_column;
+    const hint = /(priority|severity|category|label|sentiment|class|type|status|intent|topic|verdict|rating)/i;
+    const out = [];
+    for (const c of p.columns) {
+      if (c.name === idCol || !["badge", "text"].includes(c.display || "text")) continue;
+      const freq = new Map();
+      let n = 0;
+      for (const r of p.rows) {
+        const v = r[c.name];
+        if (v === null || v === undefined || v === "" || typeof v === "object") continue;
+        const s = String(v).trim();
+        if (!s || s.length > 40) { n = -1; break; }
+        freq.set(s, (freq.get(s) || 0) + 1);
+        n++;
+      }
+      if (n < 4 || freq.size < 2 || freq.size > 12 || freq.size > n / 2) continue;
+      const values = [...freq.entries()].sort((a, b) => b[1] - a[1]).map(([v]) => v);
+      out.push({ column: c.name, values, score: hint.test(c.name) ? 0 : 1 });
+    }
+    return out.sort((a, b) => a.score - b.score);
   }
 
   function renderWorkflow() {

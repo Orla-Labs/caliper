@@ -187,8 +187,39 @@ def auto_colors(options: list[LabelOption]) -> list[LabelOption]:
     ]
 
 
-def template_labels(template: str, categories: str | list[str] | None = None) -> LabelsConfig:
-    """LabelsConfig for a template id (see TEMPLATES)."""
+def severity_order(names: list[str]) -> list[str] | None:
+    """`names` in their natural order if they form a known scale, else None.
+
+    Severity words and P-levels go least to most severe; verdict / sentiment words go
+    positive, unsure, neutral, negative.
+    """
+    keys = [slug(n) for n in names]
+    if all(k in _SEVERITY_RANK for k in keys):
+        return [
+            n for _, n in sorted(zip(keys, names, strict=True), key=lambda t: _SEVERITY_RANK[t[0]])
+        ]
+    if all(k in _SEMANTIC_OF for k in keys):
+        rank = {GOOD: 0, UNSURE: 1, NEUTRAL: 2, BAD: 3}
+        return [
+            n
+            for _, n in sorted(
+                zip(keys, names, strict=True), key=lambda t: rank[_SEMANTIC_OF[t[0]]]
+            )
+        ]
+    if all(_P_LEVEL.match(k) for k in keys):  # P3 (least) .. P0 (most)
+        return sorted(names, key=lambda n: -int(_P_LEVEL.match(slug(n)).group(2)))  # type: ignore[union-attr]
+    return None
+
+
+def template_labels(
+    template: str, categories: str | list[str] | None = None, *, natural_order: bool = False
+) -> LabelsConfig:
+    """LabelsConfig for a template id (see TEMPLATES).
+
+    ``natural_order``: categories that form a known scale (low/medium/high, P0-P3) are put in
+    severity order, so hotkeys 1..n go from least to most severe. Used for values suggested
+    from the data, which arrive in frequency order.
+    """
     green, red, amber = PALETTE[0], PALETTE[1], PALETTE[2]
     if template == "correct_wrong_unsure":
         opts = [
@@ -228,6 +259,8 @@ def template_labels(template: str, categories: str | list[str] | None = None) ->
     elif template == "categories":
         lines = categories.splitlines() if isinstance(categories, str) else list(categories or [])
         names = [ln.strip() for ln in lines if ln.strip()]
+        if natural_order:
+            names = severity_order(names) or names
         seen: set[str] = set()
         opts = []
         for name in names:

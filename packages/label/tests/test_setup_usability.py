@@ -194,3 +194,22 @@ def test_positive_warning_only_when_eval_exports_are_used() -> None:
     }
     issues = validate_project(ProjectConfig.model_validate(with_golden))
     assert any("positive" in i.message and i.severity == "warning" for i in issues)
+
+
+# --------------------------------------------------------------------------- #14 options from data
+
+
+def test_suggested_values_come_back_in_severity_order(setup_client) -> None:
+    r = setup_client.post(
+        "/api/setup/templates/categories",
+        json={"categories": "medium\nhigh\nlow", "natural_order": True},
+    )
+    opts = r.json()["labels"]["options"]
+    assert [(o["value"], o["hotkey"]) for o in opts] == [
+        ("low", "1"),
+        ("medium", "2"),
+        ("high", "3"),
+    ]
+    # pasted lists keep the order the user typed
+    r = setup_client.post("/api/setup/templates/categories", json={"categories": "medium\nlow"})
+    assert [o["value"] for o in r.json()["labels"]["options"]] == ["medium", "low"]

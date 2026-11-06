@@ -67,7 +67,8 @@ writeFileSync(csv, "ticket_id,subject,body,priority\n" + Array.from({ length: 40
   `T-${1000 + i},${subjects[i % 4]},"Fictional ticket ${i}: the customer explains the problem in a sentence.",p${(i % 3) + 1}`).join("\n") + "\n");
 
 const server = spawn("uv", ["run", "--project", ROOT, "caliper", "label", "--port", String(PORT), "--no-browser"], {
-  cwd: work, env: { ...process.env, CALIPER_LABEL_HOME: home }, stdio: ["ignore", "pipe", "pipe"],
+  // CALIPER_LABEL_PROJECTS: new projects default to <it>/<name> instead of ~/caliper-projects
+  cwd: work, env: { ...process.env, CALIPER_LABEL_HOME: home, CALIPER_LABEL_PROJECTS: join(work, "projects") }, stdio: ["ignore", "pipe", "pipe"],
 });
 let log = "";
 server.stdout.on("data", (d) => (log += d));
