@@ -18,6 +18,12 @@ Formats:
 * ``jsonl`` / ``csv`` / ``parquet`` a label table: one row per item with its final
   label (``rows="items"``, default) or one row per label (``rows="labels"``). Every
   row carries labeller, timestamp, note, source, stage and project version.
+  ``approved`` / ``human_label`` are only there when they mean something: the project
+  has an approved option, a scored option, or a score label type. In the table an
+  abstaining option (Unsure / Uncertain / Unknown ...) without a ``score`` gets
+  ``human_label: null``, not 0. Golden and rollouts keep their own encoding.
+  CSV / parquet / table rows are flat (``item.<column>``); JSON lines nest the item
+  (``"item": {...}``) with the card's JSON columns parsed.
 * ``table``    the label table written back to a database table (dev 1's sinks).
 """
 
@@ -63,6 +69,38 @@ FORMAT_HELP = {
     "csv": "label table as CSV (opens in a spreadsheet)",
     "parquet": "label table as Parquet",
     "table": "label table written to a database table",
+}
+# Plain words first for people (usability #11); FORMAT_HELP keeps the technical detail.
+FORMAT_TITLE = {
+    "csv": ("Spreadsheet (CSV)", "one row per item; opens in Excel, Sheets or Numbers"),
+    "jsonl": ("JSON lines", "one JSON object per item, for scripts and pipelines"),
+    "parquet": ("Parquet", "a compact table for data tools (pandas, DuckDB, Spark)"),
+    "golden": (
+        "Answer key for evaluations",
+        "your labels as reference answers for an eval run",
+    ),
+    "rollouts": (
+        "Human scores to compare with a judge",
+        "each item with a 0-1 human score, to measure how well a judge agrees",
+    ),
+    "records": ("Full label history", "every label, skip, undo and adjudication, in order"),
+    "table": ("Database table", "the label table, written into a database"),
+}
+
+# Options that mean "I can't tell": no numeric meaning in the label table unless scored.
+ABSTAIN = {
+    "unsure",
+    "uncertain",
+    "unknown",
+    "not_sure",
+    "not sure",
+    "maybe",
+    "cant_tell",
+    "can't tell",
+    "cannot tell",
+    "dont_know",
+    "don't know",
+    "idk",
 }
 
 
@@ -376,6 +414,60 @@ def _flat(v: Any) -> Any:
     return v
 
 
+def scored(rules: Any) -> bool:
+    """Do approved / human_label mean anything for this project's labels?"""
+    from .project import LabelType
+
+    if rules.type is LabelType.SCORE:
+        return True
+    return any(o.approved or o.score is not None for o in rules.options)
+
+
+def is_abstain(option: Any) -> bool:
+    names = {str(option.value).strip().lower(), str(option.label or "").strip().lower()}
+    return option.score is None and not option.approved and bool(names & ABSTAIN)
+
+
+def table_scores(rules: Any, decision: str) -> tuple[bool | None, float | int | None]:
+    """(approved, human_label) for the label table: an abstaining option scores null."""
+    chosen = rules.chosen(decision)
+    if chosen and all(is_abstain(o) for o in chosen):
+        return None, None
+    hl = rules.human_label(decision)
+    return rules.approved(decision), None if hl is None else _human_label(hl)
+
+
+def json_columns(session: Session) -> set[str]:
+    """Columns the card shows as JSON: parsed into objects in JSON lines exports."""
+    cfg = getattr(session.items, "config", None)
+    card = getattr(cfg, "card", None)
+    if card is None:
+        return set()
+    from .project import DisplayType
+
+    return {f.column for f in card.fields if f.type is DisplayType.JSON and f.column}
+
+
+def nest_item(row: dict[str, Any], parse: set[str] = frozenset()) -> dict[str, Any]:
+    """``item.<col>`` keys -> ``item: {col: ...}`` (one level: column names may hold dots)."""
+    out: dict[str, Any] = {}
+    item: dict[str, Any] = {}
+    for k, v in row.items():
+        if k.startswith("item."):
+            col = k[5:]
+            if col in parse and isinstance(v, str):
+                try:
+                    v = json.loads(v)
+                except ValueError:
+                    pass
+            item[col] = v
+        else:
+            out[k] = v
+    if item:
+        out["item"] = item
+    return out
+
+
 def table_rows(
     session: Session,
     cons: Consensus,
@@ -384,6 +476,7 @@ def table_rows(
 ) -> Iterator[dict[str, Any]]:
     """The label table. Item columns come after the label columns, prefixed ``item.``."""
     rules = session.rules
+    with_scores = scored(rules)
     if mode is RowsMode.LABELS:
         for r in session.active:
             if r.skipped or r.decision is None or session.is_golden(r.item_id):
@@ -414,15 +507,15 @@ def table_rows(
         else:
             recs = sorted(res.records, key=lambda r: r.labelled_at)
             last = recs[-1]
-            hl = rules.human_label(res.decision)
+            approved, hl = table_scores(rules, res.decision)
             row = {
                 "item_id": it.id,
                 "queue": it.queue,
                 "category": it.category,
                 "label": res.decision,
                 "label_display": rules.display(res.decision),
-                "approved": rules.approved(res.decision),
-                "human_label": None if hl is None else _human_label(hl),
+                "approved": approved,
+                "human_label": hl,
                 "status": res.status,
                 "n_labels": len(res.votes or res.records),
                 "labeller": ";".join(r.labeller for r in recs),
@@ -432,6 +525,9 @@ def table_rows(
                 "stage": recs[0].stage,
                 "project_version": session.versions.get(last.record_id),
             }
+        if not with_scores:
+            row.pop("approved", None)
+            row.pop("human_label", None)
         row.update({f"item.{k}": _flat(v) for k, v in _row_of(session, it).items()})
         yield row
 
@@ -541,7 +637,11 @@ def session_rows(
         if legacy:
             return rollout_rows(session.dataset, session.config, cons), cons
         return project_rollout_rows(session, cons), cons
-    return table_rows(session, cons, rows, include_unlabelled), cons
+    table = table_rows(session, cons, rows, include_unlabelled)
+    if fmt is ExportFormat.JSONL:
+        parse = json_columns(session)
+        return (nest_item(r, parse) for r in table), cons
+    return table, cons
 
 
 # --------------------------------------------------------------------------- writing
