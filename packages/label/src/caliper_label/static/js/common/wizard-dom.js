@@ -208,3 +208,19 @@ export function appbarSlot(...children) {
 export function projectChanged() {
   window.dispatchEvent(new Event("caliper:project-changed"));
 }
+
+// Move focus to a step's heading (screen readers announce the new step) without a focus ring,
+// unless the person is driving with the keyboard: the ring then shows where focus went.
+let lastInputKeyboard = false;
+if (typeof document !== "undefined" && !document.__wzInputTracked) {
+  document.__wzInputTracked = true;
+  document.addEventListener("keydown", (e) => { if (!e.metaKey && !e.ctrlKey && !e.altKey) lastInputKeyboard = true; }, true);
+  document.addEventListener("pointerdown", () => { lastInputKeyboard = false; }, true);
+}
+export function focusHeading(el) {
+  if (!el) return;
+  el.tabIndex = -1;
+  el.classList.toggle("wz-quiet-focus", !lastInputKeyboard);
+  el.addEventListener("blur", () => el.classList.remove("wz-quiet-focus"), { once: true });
+  el.focus({ preventScroll: true });
+}

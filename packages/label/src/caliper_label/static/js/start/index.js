@@ -88,6 +88,18 @@ export async function mount(el, { api, go }) {
       h("a", { href: "#/label", class: "wz-btn", id: "st-continue" }, "Continue labelling →")));
   }).catch(() => { /* no status: nothing to continue */ });
 
+  // "/Users/ana/work/labels/tickets" -> "~/…/tickets" (the full path is in the tooltip)
+  function shortPath(path, home) {
+    let p = String(path || "");
+    if (home && (p === home || p.startsWith(home + "/") || p.startsWith(home + "\\"))) p = "~" + p.slice(home.length);
+    const parts = p.split(/[\\/]/).filter((x, i) => x || i === 0);
+    if (parts.length <= 3) return p;
+    return `${parts[0] || ""}/…/${parts[parts.length - 1]}`;
+  }
+  const progressText = (pg) => (pg.labelled === undefined
+    ? ` · ${pg.items} items`
+    : ` · ${pg.labelled} / ${pg.items} labelled`);
+
   async function loadRecent() {
     try {
       const res = await api.get("/api/projects");
@@ -102,8 +114,9 @@ export async function mount(el, { api, go }) {
         h("li", { class: `st-item${r.exists ? "" : " st-missing"}` },
           h("button", { type: "button", class: "st-item-open", disabled: !r.exists, onclick: () => openPath(r.path),
             title: r.exists ? `Open ${r.name}` : `${r.name}: folder missing` },
-          h("span", { class: "st-item-name" }, r.name),
-          h("span", { class: "st-item-path" }, r.path)),
+          h("span", { class: "st-item-name" }, r.name,
+            r.progress ? h("span", { class: "st-item-progress" }, progressText(r.progress)) : null),
+          h("span", { class: "st-item-path", title: r.path }, shortPath(r.path, res.home))),
           h("span", { class: "st-item-when" }, r.exists ? relTime(r.opened_at) : "missing"),
           h("button", { type: "button", class: "wz-icon wz-icon-x", "aria-label": `Remove ${r.name} from the recent list`,
             onclick: async () => { await api.post("/api/projects/forget", { path: r.path }); announce(`${r.name} removed from the list`); loadRecent(); } }, "×")))));

@@ -362,3 +362,28 @@ def test_settings_rejects_invalid(client: TestClient, tmp_path: Path) -> None:
     cfg["labels"]["options"][0]["hotkey"] = "z"
     r = client.put("/api/settings", json={"config": cfg})
     assert r.status_code == 422 and "reserved" in r.json()["detail"]
+
+
+def test_recent_projects_show_progress(client: TestClient, tmp_path: Path) -> None:
+    """Start screen: "2 / 30 labelled" (usability re-test #5)."""
+    _create(client, tmp_path)
+    ctx = client.app.state.ctx
+
+    def lab(item: str, who: str, decision: str | None, n: int, **kw: Any) -> None:
+        rec = LabelRecord(
+            item_id=item,
+            decision=decision,
+            labeller=who,
+            labelled_at="2026-11-06T12:00:00Z",
+            record_id=f"r{n}",
+            **kw,
+        )
+        ctx.store.append_label(rec, ctx.version)
+
+    lab("t0", "ana", "a", 1)
+    lab("t1", "ana", "a", 2)
+    lab("t1", "bo", "a", 3)  # double-labelled: still one item
+    lab("t2", "ana", "a", 4)
+    lab("t2", "ana", None, 5, undoes="r4")  # undone: not labelled
+    recent = client.get("/api/projects").json()["recent"]
+    assert recent[0]["progress"] == {"items": 30, "labelled": 2}

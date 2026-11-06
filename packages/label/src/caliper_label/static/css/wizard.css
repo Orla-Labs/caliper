@@ -413,3 +413,12 @@ fieldset.wz-panel legend + * { clear: both; }
 .wz-suggest h3 { display: inline; margin-right: 8px; }
 .wz-suggest > p.wz-help { display: inline; }
 .wz-suggest .wz-warn { margin-top: 10px; }
+/* r3 #6: a heading focused for screen readers shows no ring after mouse/initial focus */
+.wz-quiet-focus:focus, .wz-quiet-focus:focus-visible { outline: none; box-shadow: none; }
+.wz-media-warns { display: grid; gap: 8px; margin: 0 0 14px; }
+.wz-media-fix { margin-top: 4px; overflow-wrap: anywhere; }
+.wz-media-warn { margin: 0; padding: 10px 14px; background: var(--wz-panel); border: 1px solid var(--wz-line); border-left: 4px solid var(--wz-warn); border-radius: 10px; }
+.wz-media-warn .wz-help { color: var(--wz-muted); }
+.wz-suggest > p.wz-bias-note { display: block; margin: 8px 0 0; }
+.wz-needs-note { color: var(--wz-muted); font-size: 13px; }
+.wz-decision-note { font-size: 12px; font-weight: 500; opacity: .92; }

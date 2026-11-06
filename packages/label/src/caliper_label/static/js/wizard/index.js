@@ -2,7 +2,7 @@
 //   data -> card -> labels -> workflow -> review
 // The draft lives in sessionStorage, so a reload or Back keeps everything.
 
-import { h, clear, ensureCss, announce, stateBox, errorBox, plural, debounce, nextId, kbd, confirmDialog, hasAppBar, appbarSlot, projectChanged } from "../common/wizard-dom.js";
+import { h, clear, ensureCss, announce, stateBox, errorBox, plural, debounce, nextId, kbd, confirmDialog, hasAppBar, appbarSlot, projectChanged, focusHeading } from "../common/wizard-dom.js";
 import { cardDesigner, labelsEditor, workflowEditor, columnsTable, hotkeyIssues } from "../common/wizard-editors.js";
 import { SOURCE_KINDS, sourceForm, credentialList, cleanConfig, uploadFile, folderPicker, suggestFields } from "../common/wizard-source.js";
 
@@ -177,7 +177,9 @@ export async function mount(el, ctx) {
         state.preview = res;
         if (res.ok) {
           if (!src.id_column && !state.touched.id) src.id_column = guessId(res.columns);
-          if (!state.touched.card) state.config.card.fields = suggestFields(res.columns, src.id_column);
+          clear(result, stateBox("loading", "Checking that images will load…", "Trying a few image links the way the labeller will."));
+          state.mediaIssues = await checkImages(res);
+          if (!state.touched.card) state.config.card.fields = suggestFields(res.columns, src.id_column, Object.keys(state.mediaIssues));
           if (!state.config.name) state.config.name = defaultName();
           announce(`Connected. ${plural(res.count ?? res.rows.length, "row")}, ${plural(res.columns.length, "column")}.`);
         } else announce(`Could not read the data: ${res.error && res.error.detail}`);
@@ -191,6 +193,23 @@ export async function mount(el, ctx) {
       // the confirmation is below the source form: bring it into view (#17)
       const sum = result.querySelector(".wz-preview-summary") || result.firstElementChild;
       if (sum && sum.scrollIntoView) sum.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    }
+
+    // r3 #1: image columns whose links the server signs (s3://, gs://) are tried now, so a
+    // missing credential shows up at the card step instead of on every card later.
+    async function checkImages(res) {
+      const issues = {};
+      const signed = /^(s3|gs|gcs|r2):\/\//i;
+      const cols = res.columns.filter((c) => c.display === "image" && res.rows.some((r) => signed.test(String(r[c.name] ?? ""))));
+      for (const c of cols) {
+        try {
+          const body = { source: cleanConfig(state.config.source), column: c.name, n: 3 };
+          if (state.kind === "upload" && state.draftDir) body.project_dir = state.draftDir;
+          const chk = await api.post("/api/source/media-check", body);
+          if (chk.ok === false && chk.failed > 0) issues[c.name] = { detail: chk.detail || "the image links could not be loaded", hint: chk.hint || null };
+        } catch { /* the check itself is unavailable: say nothing rather than guess */ }
+      }
+      return issues;
     }
 
     function defaultName() {
@@ -231,7 +250,7 @@ export async function mount(el, ctx) {
           h("select", { id: idSel, onchange: (e) => {
             state.config.source.id_column = e.target.value || null;
             state.touched.id = true;
-            if (!state.touched.card) state.config.card.fields = suggestFields(p.columns, state.config.source.id_column);
+            if (!state.touched.card) state.config.card.fields = suggestFields(p.columns, state.config.source.id_column, Object.keys(state.mediaIssues || {}));
             changed();
           } },
             h("option", { value: "" }, "row number (no id column)"),
@@ -256,6 +275,7 @@ export async function mount(el, ctx) {
           if (t) t.textContent = `${pct}% of ${(file.size / 1e6).toFixed(1)} MB`;
         });
         state.draft = up.draft;
+        state.draftDir = up.dir || null;
         state.upload = { name: file.name, size: up.size };
         state.config.source = { kind: "file", path: up.path };
         state.config.name = "";
@@ -312,7 +332,7 @@ export async function mount(el, ctx) {
       h("h1", { class: "wz-h1" }, "Design the card"),
       h("p", { class: "wz-lead" }, "Choose what a labeller sees for each item. Types are detected; change them if they look wrong."),
       box);
-    cardDesigner(box, { card: state.config.card, columns: p.columns, rows: p.rows, options: () => state.config.labels.options, onChange: () => { state.touched.card = true; changed(); } });
+    cardDesigner(box, { card: state.config.card, columns: p.columns, rows: p.rows, options: () => state.config.labels.options, mediaIssues: state.mediaIssues || {}, onChange: () => { state.touched.card = true; changed(); } });
   }
 
   async function renderLabels() {
@@ -470,7 +490,8 @@ export async function mount(el, ctx) {
                 p.count !== undefined && p.count !== null ? h("span", { class: "wz-muted" }, ` · ${plural(p.count, "item")}`) : null),
               h("dt", {}, "Card"), h("dd", {}, cfg.card.fields.map((f) => f.label || f.column || f.template).join(", ") || "—"),
               h("dt", {}, "Labels"), h("dd", {}, cfg.labels.type === "free_text" ? "Free text" : cfg.labels.type === "score" ? `Score ${cfg.labels.score?.min}–${cfg.labels.score?.max}` :
-                opts.map((o, i) => [i ? ", " : "", o.hotkey ? kbd(o.hotkey) : null, " ", o.label || o.value])),
+                opts.map((o, i) => [i ? ", " : "", o.hotkey ? kbd(o.hotkey) : null, " ", o.label || o.value,
+                  o.requires_note ? h("span", { class: "wz-needs-note" }, " (needs a note)") : null])),
               h("dt", {}, "Workflow"), h("dd", {},
                 [W.queues.by ? `queues by ${W.queues.by}` : "one queue", W.double_label > 1 ? `${W.double_label} labels per item` : "1 label per item",
                   W.assignment === "round_robin" ? "round-robin" : "open assignment", W.golden ? `golden checks (${Math.round(W.golden.rate * 100)}%)` : null].filter(Boolean).join(" · ")))),
@@ -511,7 +532,7 @@ export async function mount(el, ctx) {
   await renderers[step]();
   updateNav();
   const h1 = body.querySelector("h1");
-  if (h1) { h1.tabIndex = -1; h1.focus({ preventScroll: true }); }
+  focusHeading(h1);
   document.title = `${STEPS[idx(step)][1]} · New project · caliper label`;
 
   return () => {

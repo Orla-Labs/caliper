@@ -362,12 +362,62 @@ class DemoIn(BaseModel):
     reset: bool = False
 
 
+PROGRESS_MAX_LABELS = 200_000  # above this the start screen shows the item count only
+
+
+def project_progress(project_dir: Path) -> dict[str, int] | None:
+    """`{items, labelled}` for the start screen, read-only. None when there is no store yet.
+
+    Items are the active, non-golden snapshot items; an item counts as labelled when it has
+    an active (not undone, not skipped) decision or an adjudication, as on the dashboard.
+    """
+    import sqlite3
+
+    from .project_store import DB_FILENAME
+
+    db = project_dir / STATE_DIRNAME / DB_FILENAME
+    if not db.is_file():
+        return None
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=0.5)
+    except sqlite3.Error:
+        return None
+    try:
+        items = {
+            r[0]
+            for r in con.execute(
+                "SELECT item_id FROM items WHERE removed = 0 AND golden_answer IS NULL"
+            )
+        }
+        out = {"items": len(items)}
+        n = con.execute("SELECT count(*) FROM labels").fetchone()[0]
+        if n > PROGRESS_MAX_LABELS:
+            return out
+        from caliper_eval.types import LabelRecord
+
+        from .state import fold
+
+        recs = [
+            LabelRecord.model_validate_json(b) for (b,) in con.execute("SELECT body FROM labels")
+        ]
+        states, _ = fold(recs)
+        out["labelled"] = sum(
+            1 for i, st in states.items() if i in items and (st.labels or st.adjudication)
+        )
+        return out
+    except (sqlite3.Error, ValueError):
+        return None
+    finally:
+        con.close()
+
+
 @router.get("/api/projects")
 def get_projects() -> dict[str, Any]:
     rows = []
     for r in read_recent():
         p = Path(r["path"])
-        rows.append({**r, "exists": (p / CONFIG_FILENAME).is_file()})
+        exists = (p / CONFIG_FILENAME).is_file()
+        rows.append({**r, "exists": exists, "progress": project_progress(p) if exists else None})
     return {
         "recent": rows,
         "demo_available": demo_dir() is not None,
@@ -480,7 +530,14 @@ async def put_upload(request: Request, filename: str, draft: str | None = None) 
             saved = save_upload(data_dir, filename, tmp)
         except ConnectorError as exc:
             raise SetupError(400, exc.message, exc.hint) from None
-    return {"draft": draft, "path": f"data/{saved.name}", "size": size, "name": saved.name}
+    # `dir`: where relative paths resolve until create (for /api/source/* calls on the draft)
+    return {
+        "draft": draft,
+        "path": f"data/{saved.name}",
+        "size": size,
+        "name": saved.name,
+        "dir": str(d.resolve()),
+    }
 
 
 class PreviewIn(BaseModel):

@@ -53,7 +53,7 @@ export function fieldValue(field, row) {
 
 const isUrl = (s) => /^https?:\/\//i.test(s);
 
-export function renderValue(field, raw, options = []) {
+export function renderValue(field, raw, options = [], broken = null) {
   const type = field.type || "text";
   if (raw === undefined || raw === null || raw === "") return h("span", { class: "wz-missing", "aria-label": "no value" }, "—");
   const asText = typeof raw === "string" ? raw : JSON.stringify(raw, null, 2);
@@ -79,6 +79,10 @@ export function renderValue(field, raw, options = []) {
         img.addEventListener("error", () => img.replaceWith(h("span", { class: "wz-v-imgph" }, "Image did not load: ", h("code", {}, asText))));
         return img;
       }
+      if (broken) {
+        return h("span", { class: "wz-v-imgph wz-v-imgbad" }, h("span", { "aria-hidden": "true" }, "⚠ "),
+          `Won't show while labelling: ${broken}`, h("br"), h("code", {}, asText));
+      }
       const where = /^s3:\/\//i.test(asText) ? "S3 image: shown through a short-lived link while labelling"
         : /^gs:\/\//i.test(asText) ? "GCS image: shown while labelling"
           : "Local image: served from the project folder while labelling";
@@ -99,7 +103,7 @@ export function renderValue(field, raw, options = []) {
   }
 }
 
-export function renderCard(fields, row, { title, options } = {}) {
+export function renderCard(fields, row, { title, options, broken = {} } = {}) {
   const shown = (fields || []).filter((f) => !f.hidden);
   if (!shown.length) {
     return h("div", { class: "wz-card wz-card-empty" },
@@ -110,5 +114,5 @@ export function renderCard(fields, row, { title, options } = {}) {
     shown.map((f) =>
       h("div", { class: `wz-card-field wz-card-${f.type || "text"}` },
         h("div", { class: "wz-card-label" }, f.label || f.column || f.template),
-        h("div", { class: "wz-card-value" }, renderValue(f, fieldValue(f, row), options)))));
+        h("div", { class: "wz-card-value" }, renderValue(f, fieldValue(f, row), options, (f.column && broken[f.column]) || null)))));
 }

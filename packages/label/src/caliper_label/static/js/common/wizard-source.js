@@ -26,8 +26,16 @@ export function cleanConfig(obj) {
   return obj;
 }
 
-export function suggestFields(columns, idCol) {
-  const skip = (n) => n === idCol || /^(id|uuid|_?row_?id)$/i.test(n);
+// "review_text" -> "Review text", "createdAt" -> "Created at": the default card caption.
+export function humanizeColumn(name) {
+  const s = String(name || "").split(".").pop().replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").trim().toLowerCase();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : String(name || "");
+}
+
+// `leaveOff`: columns not to put on the card by default (e.g. images that won't load).
+export function suggestFields(columns, idCol, leaveOff = []) {
+  const off = new Set(leaveOff);
+  const skip = (n) => n === idCol || off.has(n) || /^(id|uuid|_?row_?id)$/i.test(n);
   const rank = { image: 0, long_text: 1, text: 1, badge: 2, datetime: 3, number: 3, link: 4, json: 5 };
   return columns
     .filter((c) => !skip(c.name))
@@ -36,7 +44,7 @@ export function suggestFields(columns, idCol) {
     .sort((a, b) => (rank[a.c.display] ?? 9) - (rank[b.c.display] ?? 9) || a.i - b.i)
     .slice(0, 4)
     .sort((a, b) => a.i - b.i)
-    .map(({ c }) => ({ column: c.name, type: c.display || "text" }));
+    .map(({ c }) => ({ column: c.name, type: c.display || "text", label: humanizeColumn(c.name) }));
 }
 
 function token() {

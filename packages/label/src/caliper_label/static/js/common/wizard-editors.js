@@ -6,6 +6,7 @@
 
 import { h, clear, nextId, announce, slug, markdown, dialog, kbd, confirmDialog } from "./wizard-dom.js";
 import { DISPLAY_TYPES, renderCard } from "./wizard-card.js";
+import { humanizeColumn } from "./wizard-source.js";
 
 export const PALETTE = ["#2e7d32", "#c62828", "#a15c00", "#1565c0", "#6a1b9a", "#00695c", "#ad1457", "#5d4037", "#455a64"];
 // Plain categories: no green/red/amber, so new options don't read as good/bad (project_setup.CATEGORY_PALETTE).
@@ -131,6 +132,13 @@ export function columnsTable({ columns, rows, selected, onToggle, maxRows = 50, 
 
 // --------------------------------------------------------------------------- card designer
 
+export function plainMediaProblem(detail) {
+  const d = String(detail || "");
+  if (/credentials not found|no aws credentials|can't sign s3/i.test(d)) return "no AWS credentials for s3:// links";
+  if (/gcs|gs:\/\//i.test(d) && /credential/i.test(d)) return "no Google Cloud credentials for gs:// links";
+  return d.replace(/^can't sign [^:]+: /i, "").replace(/\.$/, "") || "the image links could not be loaded";
+}
+
 export function cardDesigner(el, ctx) {
   // ctx: {card, columns, rows, onChange}
   let rowIdx = 0;
@@ -146,7 +154,7 @@ export function cardDesigner(el, ctx) {
       card.fields.splice(i, 1);
       announce(`${c.name} removed from the card`);
     } else {
-      card.fields.push({ column: c.name, type: c.display || "text" });
+      card.fields.push({ column: c.name, type: c.display || "text", label: humanizeColumn(c.name) });
       announce(`${c.name} added to the card, position ${card.fields.length}`);
     }
     changed();
@@ -228,8 +236,23 @@ export function cardDesigner(el, ctx) {
   function refreshPreview() {
     const rows = ctx.rows || [];
     const row = rows[rowIdx];
-    clear(previewBox, renderCard(card.fields, row, { options: ctx.options ? ctx.options() : [] }));
+    const broken = Object.fromEntries(Object.entries(ctx.mediaIssues || {}).map(([c, i]) => [c, plainMediaProblem(i.detail)]));
+    clear(previewBox, renderCard(card.fields, row, { options: ctx.options ? ctx.options() : [], broken }));
     navLabel.textContent = rows.length ? `Row ${rowIdx + 1} of ${rows.length}` : "No rows";
+  }
+
+  // r3 #1: image columns that failed the media check (wizard only)
+  function mediaWarnings() {
+    const issues = ctx.mediaIssues || {};
+    const cols = Object.keys(issues);
+    if (!cols.length) return null;
+    return h("div", { class: "wz-media-warns" }, cols.map((c) => {
+      const on = card.fields.some((f) => f.column === c);
+      return h("div", { class: "wz-warn wz-media-warn", role: "note" },
+        h("strong", {}, `Images won't show: ${plainMediaProblem(issues[c].detail)}.`), " ",
+        on ? `${c} is on the card, so labellers will see an empty image box.` : `${c} is left off the card; click the column to add it anyway.`,
+        issues[c].hint ? h("div", { class: "wz-help wz-media-fix" }, "Fix: ", issues[c].hint) : null);
+    }));
   }
 
   function render() {
@@ -237,6 +260,7 @@ export function cardDesigner(el, ctx) {
       const selected = new Set(card.fields.map((f) => f.column).filter(Boolean));
       const rows = ctx.rows || [];
       clear(el,
+        mediaWarnings(),
         h("div", { class: "wz-designer" },
           h("section", { class: "wz-panel wz-designer-cols", "aria-labelledby": "wz-cols-h" },
             h("h3", { id: "wz-cols-h" }, "Columns"),
@@ -303,7 +327,8 @@ export function labelsEditor(el, ctx) {
     ctx.onTemplate && ctx.onTemplate(ctx.fromTemplate);
   }
 
-  async function applyTemplate(id, categories, extra = {}) {
+  // returns true when the options were replaced; `from` names the source in the announcement
+  async function applyTemplate(id, categories, extra = {}, from = "the template") {
     const hasLabels = L.options.some((o) => counts[o.value]);
     if (L.options.length && (hasLabels || !untouched()) && !(await confirmDialog({
       title: "Replace the options?",
@@ -311,7 +336,7 @@ export function labelsEditor(el, ctx) {
         ? h("p", {}, "Some options already have labels. They will be kept and flagged as retired when you save.")
         : h("p", {}, "The current options will be replaced by the template."),
       ok: "Replace",
-    }))) return;
+    }))) return false;
     try {
       const res = await ctx.api.post(`/api/setup/templates/${id}`, categories ? { categories, ...extra } : {});
       const keepRetired = L.options.filter((o) => o.retired);
@@ -319,11 +344,35 @@ export function labelsEditor(el, ctx) {
       L.options = [...res.labels.options, ...keepRetired];
       ctx.fromTemplate = optsKey(L.options);
       ctx.onTemplate && ctx.onTemplate(ctx.fromTemplate);
-      announce(`${res.labels.options.length} options from the template`);
+      if (from) announce(`${res.labels.options.length} options from ${from}`);
       changed();
+      return res.labels.options.length;
     } catch (err) {
       announce(`Template failed: ${err.message}`);
+      return false;
     }
+  }
+
+  // r3 #2: a column used as the options comes off the card (labellers would just copy it).
+  let biasRemoved = null; // {column, fields: [[index, field]]}
+  async function useColumnValues(sg) {
+    const n = await applyTemplate("categories", sg.values.join("\n"), { natural_order: true }, null);
+    if (!n) return;
+    const fields = (ctx.card && ctx.card.fields) || [];
+    const gone = fields.map((f, i) => [i, f]).filter(([, f]) => f.column === sg.column);
+    if (!gone.length) { announce(`${n} options from your data`); return; }
+    ctx.card.fields = fields.filter((f) => f.column !== sg.column);
+    biasRemoved = { column: sg.column, fields: gone };
+    announce(`${n} options from your data. Removed ${sg.column} from the card so labellers aren't biased; Undo is below the suggestions.`);
+    ctx.onChange && ctx.onChange();
+    render();
+  }
+  function undoBiasRemoval() {
+    if (!biasRemoved) return;
+    for (const [i, f] of biasRemoved.fields) ctx.card.fields.splice(Math.min(i, ctx.card.fields.length), 0, f);
+    announce(`${biasRemoved.column} is back on the card`);
+    biasRemoved = null;
+    changed();
   }
 
   // #14: low-cardinality columns of the data, offered as ready-made options.
@@ -344,8 +393,13 @@ export function labelsEditor(el, ctx) {
           h("code", {}, sg.column), " ",
           h("span", { class: "wz-muted wz-suggest-vals", title: sg.values.join(", ") }, sg.values.join(", ")),
           h("button", { type: "button", class: "wz-btn wz-btn-small", "data-fid": `sugg-${sg.column}`,
-            onclick: () => applyTemplate("categories", sg.values.join("\n"), { natural_order: true }) },
+            onclick: () => useColumnValues(sg) },
           `Use these ${sg.values.length}`)))),
+      used && biasRemoved && biasRemoved.column === used.column && !onCard
+        ? h("p", { class: "wz-help wz-bias-note", role: "note" },
+          "Removed ", h("code", {}, used.column), " from the card so labellers aren't biased · ",
+          h("button", { type: "button", class: "wz-link", "data-fid": "sugg-undo", onclick: undoBiasRemoval }, "Undo"))
+        : null,
       onCard ? h("div", { class: "wz-warn", role: "note" },
         h("strong", {}, `${used.column} is on the card. `),
         "Labellers who can see the current value tend to just agree with it. Remove it from the card unless they are meant to check it.",
@@ -481,7 +535,8 @@ export function labelsEditor(el, ctx) {
     clear(buttonsBox, L.options.filter((o) => !o.retired).map((o) =>
       h("span", { class: "wz-decision", style: { "--opt": o.color || "#455a64" } },
         o.hotkey ? kbd(o.hotkey) : null, h("span", {}, o.label || o.value),
-        o.approved ? h("span", { class: "wz-decision-flag", title: "counts as a positive answer" }, "✓") : null)));
+        o.approved ? h("span", { class: "wz-decision-flag", title: "counts as a positive answer" }, "✓") : null,
+        o.requires_note ? h("span", { class: "wz-decision-note" }, "✎ needs a note") : null)));
   }
 
   function render() {
