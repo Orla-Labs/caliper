@@ -4,7 +4,7 @@
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 [![Python >=3.12](https://img.shields.io/badge/python-%3E%3D3.12-blue.svg)](./pyproject.toml)
-[![tests: 559 passing](https://img.shields.io/badge/tests-559%20passing-brightgreen.svg)](#run-the-tests)
+[![tests: 561 passing](https://img.shields.io/badge/tests-561%20passing-brightgreen.svg)](#run-the-tests)
 
 Caliper is for teams shipping an LLM feature on a frontier API: classification, extraction, judging, scoring. These teams change prompts and models often. Before each change, `caliper eval` replays a golden set of real requests through the candidates. It applies your feature's own decision logic and tells you what the feature would do differently, how much that costs, and whether the difference is larger than the noise you already live with. In CI it posts the verdict on the pull request and fails the build when a change regresses.
 
@@ -220,7 +220,7 @@ Caliper is built by [Orla Labs](https://orlalabs.com).
 
 ```bash
 uv sync
-uv run pytest -q              # 559 tests
+uv run pytest -q              # 561 tests
 uv run ruff check packages examples
 ```
 

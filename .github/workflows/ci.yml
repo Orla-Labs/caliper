@@ -69,6 +69,18 @@ jobs:
       - name: eval demo transcript (byte-exact)
         run: scripts/demo_eval.sh --check
 
+      - name: smoke_compile_targets
+        run: uv run python scripts/smoke_compile_targets.py
+
+      - name: smoke_label
+        run: uv run python scripts/smoke_label.py
+
+      - name: smoke_mutate_classification
+        run: uv run python scripts/smoke_mutate_classification.py
+
+      - name: RFT demo transcript (byte-exact)
+        run: scripts/demo.sh --check
+
   editor:
     name: editor typecheck + build
     runs-on: ubuntu-latest
