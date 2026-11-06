@@ -246,6 +246,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--cap-per-stratum", type=int, default=None)
     s.add_argument("--seed", type=int, default=0)
     s.set_defaults(func=cmd_sample)
+
+    try:  # `caliper label` lives in caliper-label (optional; lazy heavy imports)
+        from caliper_label.cli import register as register_label
+    except ImportError:
+        pass
+    else:
+        register_label(sub)
     return p
 
 
