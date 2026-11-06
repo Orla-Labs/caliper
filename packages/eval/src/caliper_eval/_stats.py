@@ -92,6 +92,32 @@ def bootstrap_mean_ci(
     )
 
 
+def paired_bootstrap_delta(
+    a: Sequence[float],
+    b: Sequence[float],
+    *,
+    seed: int,
+    n_boot: int = DEFAULT_N_BOOT,
+    confidence: float = DEFAULT_CONFIDENCE,
+) -> CI:
+    """Paired percentile bootstrap CI of ``mean(a) - mean(b)``.
+
+    ``a[i]`` and ``b[i]`` are measured on the same row. Each draw resamples
+    row *indices* once and computes the delta on those same rows, so the
+    between-row variation the two series share cancels. This is the CI to
+    use for any "candidate beats / is no worse than the reference" claim;
+    comparing two separately bootstrapped intervals ignores the pairing.
+    """
+    if len(a) != len(b):
+        raise ValueError(f"paired series differ in length: {len(a)} != {len(b)}")
+    return bootstrap_mean_ci(
+        [x - y for x, y in zip(a, b, strict=True)],
+        seed=seed,
+        n_boot=n_boot,
+        confidence=confidence,
+    )
+
+
 def transition_cost(costs: Mapping[str, float], src: str, dst: str) -> float:
     """Cost of an outcome change ``src -> dst``; unchanged = 0, unlisted = 1.0."""
     if src == dst:

@@ -132,12 +132,18 @@ def cmd_eval(args: argparse.Namespace) -> int:
     for name, warning in sorted(pricing_warnings(config.candidates, config.pricing).items()):
         report.warnings.append(f"pricing {name}: {warning}")
 
+    retouched = _record_test_touches(args, config, golden)
+
     gate = None
     if args.ci:
         max_err = args.max_error_rate
         if max_err is None:
             max_err = _extra(config.ci, "max_error_rate") or 0.0
-        gate = evaluate_gate(report, max_error_rate=float(max_err))
+        gate = evaluate_gate(
+            report,
+            max_error_rate=float(max_err),
+            retouched=None if args.allow_test_retouch else retouched,
+        )
 
     print(render_text(report, gate), end="")
     print(f"results: {results_path}")
@@ -153,6 +159,29 @@ def cmd_eval(args: argparse.Namespace) -> int:
     if gate is not None and not gate.passed:
         return EXIT_GATE
     return EXIT_OK
+
+
+def _record_test_touches(args: argparse.Namespace, config: Any, golden: Any) -> dict[str, int]:
+    """Append this run's test-split touches to the ledger; warn on stderr about re-touches."""
+    from caliper_eval.ledger import record_touches
+
+    path = args.test_ledger or os.path.join(args.out, "test_ledger.jsonl")
+    try:
+        retouches = record_touches(path, config.candidates, golden, config.reference)
+    except (OSError, ValueError) as exc:
+        _err(f"warning: could not update the test ledger {path}: {exc}")
+        return {}
+    for r in retouches:
+        verdict = (
+            "accepted (--allow-test-retouch)"
+            if args.allow_test_retouch
+            else ("fails the gate under --ci" if args.ci else "warning")
+        )
+        _err(
+            f"test split re-touched: {r.candidate} was already reported on this test set "
+            f"{r.previous_touches}x with the same settings ({verdict}; ledger {path})"
+        )
+    return {r.candidate: r.previous_touches for r in retouches}
 
 
 # --------------------------------------------------------------------------- sample
@@ -232,6 +261,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="CI error-rate allowance (default: [ci].max_error_rate or 0)",
     )
     e.add_argument("--n-boot", type=int, default=1000, help="bootstrap resamples (default 1000)")
+    e.add_argument(
+        "--test-ledger",
+        default=None,
+        help="test-split touch ledger (default: OUT/test_ledger.jsonl)",
+    )
+    e.add_argument(
+        "--allow-test-retouch",
+        action="store_true",
+        help="do not fail --ci when a candidate's test split was already reported",
+    )
     e.set_defaults(func=cmd_eval)
 
     s = sub.add_parser("sample", help="build a golden set from production logs")

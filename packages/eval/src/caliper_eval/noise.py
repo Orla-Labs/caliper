@@ -44,6 +44,54 @@ def index_results(results: Iterable[RowResult]) -> dict[tuple[str, str, int], Ro
     return {r.key: r for r in results}
 
 
+def _reference_rows(
+    results: Iterable[RowResult], reference: str
+) -> dict[str, dict[int, RowResult]]:
+    by_row: dict[str, dict[int, RowResult]] = {}
+    for key, res in index_results(results).items():
+        if key[0] != reference:
+            continue
+        by_row.setdefault(res.row_id, {})[res.replica] = res
+    return by_row
+
+
+def _row_noise(outs: list[str], costs: Mapping[str, float]) -> tuple[float, float]:
+    """(flip share, symmetrized cost) of replicas 1.. vs replica 0 for one row."""
+    base, others = outs[0], outs[1:]
+    flip = sum(1 for o in others if o != base) / len(others)
+    cost = sum(
+        (transition_cost(costs, base, o) + transition_cost(costs, o, base)) / 2 for o in others
+    ) / len(others)
+    return flip, cost
+
+
+def noise_row_costs(
+    results: Iterable[RowResult],
+    reference: str,
+    *,
+    costs: Mapping[str, float] | None = None,
+) -> dict[str, float]:
+    """Per-row symmetrized replay cost of the reference (rows with every replica decided).
+
+    Empty when the reference was replayed fewer than 2 times. This is the
+    per-row noise term the paired gate subtracts from a candidate's cost.
+    """
+    costs = costs or {}
+    by_row = _reference_rows(results, reference)
+    n_replicas = max((max(reps) + 1 for reps in by_row.values()), default=0)
+    if n_replicas < 2:
+        return {}
+    out: dict[str, float] = {}
+    for row_id, reps in by_row.items():
+        if any(i not in reps for i in range(n_replicas)):
+            continue
+        decisions = [reps[i].decision for i in range(n_replicas)]
+        if any(d is None for d in decisions):
+            continue
+        out[row_id] = _row_noise([d.outcome for d in decisions if d is not None], costs)[1]
+    return out
+
+
 def compute_noise_floor(
     results: Iterable[RowResult],
     reference: str,
@@ -54,11 +102,7 @@ def compute_noise_floor(
 ) -> NoiseFloor | None:
     """Noise floor of ``reference``; ``None`` if it was not replayed >= 2x."""
     costs = costs or {}
-    by_row: dict[str, dict[int, RowResult]] = {}
-    for key, res in index_results(results).items():
-        if key[0] != reference:
-            continue
-        by_row.setdefault(res.row_id, {})[res.replica] = res
+    by_row = _reference_rows(results, reference)
     n_replicas = max((max(reps) + 1 for reps in by_row.values()), default=0)
     if n_replicas < 2:
         return None
@@ -77,14 +121,7 @@ def compute_noise_floor(
         if any(d is None for d in decisions):
             errored.append(row_id)
             continue
-        outs = [d.outcome for d in decisions if d is not None]
-        base = outs[0]
-        others = outs[1:]
-        flip = sum(1 for o in others if o != base) / len(others)
-        cost = sum(
-            (transition_cost(costs, base, o) + transition_cost(costs, o, base)) / 2
-            for o in others
-        ) / len(others)
+        flip, cost = _row_noise([d.outcome for d in decisions if d is not None], costs)
         flips.append(flip)
         weighted.append(cost)
         if flip > 0:
@@ -108,4 +145,4 @@ def compute_noise_floor(
     )
 
 
-__all__ = ["NoiseFloor", "compute_noise_floor", "index_results"]
+__all__ = ["NoiseFloor", "compute_noise_floor", "index_results", "noise_row_costs"]

@@ -21,7 +21,7 @@ def test_eval_ci_fails_on_regression_and_is_deterministic(in_project, capsys):
                          "--summary-md", "pr/summary.md")
     assert code == 1
     assert "preflight ok" in err
-    assert "CI gate: FAIL" in out and "small: cost-weighted regression" in out
+    assert "CI gate: FAIL" in out and "small: paired excess regression" in out
     assert "results: caliper-out/results.jsonl" in out
     assert str(in_project) not in out
     md = (in_project / "pr" / "summary.md").read_text()

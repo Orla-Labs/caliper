@@ -2,12 +2,18 @@
 
 A candidate fails when any of these holds:
 
-1. **regression**: its cost-weighted regression rate (point estimate) exceeds
-   the noise floor's upper CI bound by more than ``max_regression``::
+1. **regression** (paired against replay noise). For every row decided on the
+   reference's replica 0 and on the candidate::
 
-       regression.estimate > noise.cost_weighted_flip_rate.high + max_regression
+       d_i = cost(ref replica 0 -> candidate) - n_i
+       n_i = mean over replicas k >= 1 of (cost(r0 -> rk) + cost(rk -> r0)) / 2
+             (0 when the row has no complete reference replays / no noise floor)
 
-   (no noise floor => upper bound 0, and the report carries a warning);
+   ``excess = mean(d)`` with a paired percentile bootstrap CI (rows resampled
+   once per draw, both terms on the same rows). With ``[ci].require``:
+
+   * ``non_inferiority`` (default): fail when ``excess.high > max_regression``;
+   * ``no_evidence_of_regression``: fail when ``excess.low > max_regression``;
 2. **who answered**: any reply was served by a different model than requested
    (``matches_request=False``);
 3. **errors**: its error rate (results with no decision) exceeds
@@ -17,13 +23,21 @@ A candidate fails when any of these holds:
    row, or whose ``candidate_sha256`` (when recorded) no longer matches the
    candidate settings (a resumed results file from an older config).
 
-Rules 2-4 also apply to the reference. Exit code 0 = pass, 1 = fail.
+6. **slices**: any ``[[slices]]`` rule fails for it (one reason per slice);
+7. **test re-touch**: under ``--ci`` the test split was already reported for
+   these candidate settings and this test set (see :mod:`caliper_eval.ledger`),
+   unless ``--allow-test-retouch``.
+
+Rules 2-5 also apply to the reference. Exit code 0 = pass, 1 = fail.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from pydantic import BaseModel, ConfigDict, Field
 
+from .config import GateRequirement
 from .report import EvalReport
 
 EXIT_PASS = 0
@@ -45,7 +59,7 @@ class GateResult(BaseModel):
     exit_code: int
     max_regression: float
     max_error_rate: float
-    noise_upper: float
+    require: str
     candidates: list[CandidateGate] = Field(default_factory=list)
 
     @property
@@ -58,20 +72,29 @@ def evaluate_gate(
     *,
     max_regression: float | None = None,
     max_error_rate: float = 0.0,
+    retouched: Mapping[str, int] | None = None,
 ) -> GateResult:
+    """Gate ``report``. ``retouched`` maps candidate -> previous test touches."""
     max_reg = report.max_regression if max_regression is None else max_regression
-    upper = report.noise_upper
+    require = GateRequirement(report.require)
+    upper = require == GateRequirement.NON_INFERIORITY
     gates: list[CandidateGate] = []
     for c in report.candidates:
         reasons: list[str] = []
         t = c.transitions
-        if t is not None:
-            limit = upper + max_reg
-            if t.regression.estimate > limit:
+        p = c.paired_excess
+        if p is not None and p.n_rows:
+            d = p.delta
+            bound = d.high if upper else d.low
+            if bound > max_reg:
+                flipped = len(t.flipped) if t is not None else 0
                 reasons.append(
-                    f"cost-weighted regression {t.regression.estimate:.3f} > noise upper "
-                    f"{upper:.3f} + allowed {max_reg:.3f} ({len(t.flipped)} rows flipped)"
+                    f"paired excess regression {d.estimate:.3f} [{d.low:.3f}, {d.high:.3f}]: "
+                    f"{'upper' if upper else 'lower'} bound {bound:.3f} > allowed "
+                    f"{max_reg:.3f} (regression {p.regression:.3f} - noise {p.noise:.3f}; "
+                    f"{flipped} rows flipped)"
                 )
+        if t is not None:
             if t.n_missing:
                 reasons.append(f"{t.n_missing} rows missing on one side (incomplete run)")
         if c.served_mismatches:
@@ -89,6 +112,15 @@ def evaluate_gate(
                 f"{c.stale_results} results recorded for a different request or candidate "
                 "settings than the current config; re-run with --no-resume"
             )
+        for r in c.slices:
+            if not r.passed:
+                reasons.append(f"slice {r.slice} ({r.rule}): {r.detail}")
+        if retouched and c.name in retouched:
+            n = retouched[c.name]
+            reasons.append(
+                f"test split already reported for these settings ({n} earlier touch"
+                f"{'es' if n != 1 else ''}); pass --allow-test-retouch to accept"
+            )
         gates.append(CandidateGate(name=c.name, passed=not reasons, reasons=reasons))
     passed = all(g.passed for g in gates)
     return GateResult(
@@ -96,7 +128,7 @@ def evaluate_gate(
         exit_code=EXIT_PASS if passed else EXIT_FAIL,
         max_regression=max_reg,
         max_error_rate=max_error_rate,
-        noise_upper=upper,
+        require=require.value,
         candidates=gates,
     )
 

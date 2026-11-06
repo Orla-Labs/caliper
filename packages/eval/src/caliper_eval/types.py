@@ -240,4 +240,5 @@ class Price(BaseModel):
     cache_write: float | None = None  # defaults to input if None
     source: str | None = None  # URL + date checked
 
+
 GoldenRow.model_rebuild()
