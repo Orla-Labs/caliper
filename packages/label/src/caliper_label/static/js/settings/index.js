@@ -25,6 +25,7 @@ export async function mount(el, { api, go, args }) {
   let data = null; // GET /api/settings
   let cfg = null; // working copy
   let preview = null;
+  let needsRefresh = false;
 
   const root = h("div", { class: "wz-root se-root" });
   clear(el, root);
@@ -100,7 +101,8 @@ export async function mount(el, { api, go, args }) {
       cfg = structuredClone(res.config);
       const renamed = (res.changes || []).filter((c) => c.kind === "renamed").length;
       projectChanged();
-      toast(`Saved · revision ${res.revision}${renamed ? ` · ${renamed} renamed (history kept)` : ""}`);
+      needsRefresh = needsRefresh || !!res.needs_refresh;
+      toast(`Saved · revision ${res.revision}${renamed ? ` · ${renamed} renamed (history kept)` : ""}${res.needs_refresh ? " · refresh from source to update items" : ""}`);
       announce(`Saved. Revision ${res.revision}.`);
       render();
     } catch (err) {
@@ -151,6 +153,47 @@ export async function mount(el, { api, go, args }) {
           h("dt", {}, "Revision"), h("dd", {}, String(data.revision), h("span", { class: "wz-muted" }, " · every save adds one; labels record the revision they were made under")),
           h("dt", {}, "Labels so far"), h("dd", {}, plural(Object.values(data.label_counts || {}).reduce((a, b) => a + b, 0), "label")))),
     ];
+  }
+
+  function refreshPanel() {
+    const out = h("div", { "aria-live": "polite" });
+    const panel = h("section", { class: "wz-panel se-refresh", "aria-labelledby": "se-refresh-h" },
+      h("div", { class: "wz-row-between" },
+        h("h3", { id: "se-refresh-h" }, "Refresh from source"),
+        h("button", { type: "button", class: "wz-btn", id: "se-refresh-check", onclick: check }, "Check for changes")),
+      h("p", { class: "wz-help" }, "Labelling uses a snapshot of the items. Read the source again to see new, removed and changed items, then apply."),
+      needsRefresh ? h("p", { class: "wz-warn" }, "You changed the source or the card's columns: refresh so the items match.") : null,
+      out);
+    async function check() {
+      clear(out, stateBox("loading", "Reading the source…"));
+      try {
+        const d = await api.post("/api/source/refresh", {});
+        const total = d.n_new + d.n_removed + d.n_changed;
+        clear(out,
+          h("ul", { class: "se-diff" },
+            h("li", {}, h("strong", {}, d.n_new.toLocaleString()), " new"),
+            h("li", {}, h("strong", {}, d.n_removed.toLocaleString()), " removed"),
+            h("li", {}, h("strong", {}, d.n_changed.toLocaleString()), " changed"),
+            h("li", { class: "wz-muted" }, `${d.n_unchanged.toLocaleString()} unchanged`)),
+          d.removed_with_labels ? h("p", { class: "wz-warn" }, `${plural(d.removed_with_labels, "removed item")} already have labels. They are kept and marked removed.`) : null,
+          d.warning ? h("p", { class: "wz-warn" }, d.warning) : null,
+          total
+            ? h("button", { type: "button", class: "wz-btn wz-btn-primary", id: "se-refresh-apply", onclick: async (e) => {
+              e.target.disabled = true;
+              try {
+                await api.post("/api/source/refresh/apply", { diff_id: d.diff_id });
+                needsRefresh = false;
+                projectChanged();
+                toast("Items updated from the source");
+                clear(out, stateBox("empty", "Up to date", "The snapshot now matches the source."));
+              } catch (err) { clear(out, errorBox(err, check)); }
+            } }, `Apply ${plural(total, "change")}`)
+            : stateBox("empty", "Up to date", "The source matches the snapshot."));
+      } catch (err) {
+        clear(out, errorBox(err, check));
+      }
+    }
+    return panel;
   }
 
   function dataTab() {
@@ -205,6 +248,7 @@ export async function mount(el, { api, go, args }) {
         })(),
         h("div", { class: "wz-form-actions" }, h("button", { type: "button", class: "wz-btn", onclick: test }, "Test connection & preview"))),
       result,
+      refreshPanel(),
     ];
     showPreview();
     return box;

@@ -90,3 +90,25 @@ def test_team_mode_is_local_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     remote = TestClient(app, client=("203.0.113.9", 5000))
     r = remote.get("/api/setup/browse", headers={"Authorization": "Bearer tok"})
     assert r.status_code == 403 and r.json()["hint"]
+
+
+def test_settings_card_change_then_refresh(client: TestClient, tmp_path: Path) -> None:
+    up = client.put("/api/setup/upload?filename=t.csv", content=CSV.encode()).json()
+    body = {"dir": "p", "config": _config(up["path"]), "draft": up["draft"]}
+    assert client.post("/api/setup/create", json=body).status_code == 200
+    cfg = client.get("/api/settings").json()["config"]
+    cfg["card"]["fields"].append({"column": "ticket_id", "type": "text"})
+    r = client.put("/api/settings", json={"config": cfg, "revision": 1})
+    assert r.status_code == 200 and r.json()["needs_refresh"] is True
+    d = client.post("/api/source/refresh").json()
+    assert d["n_changed"] == 10 and d["n_new"] == 0
+    r = client.post("/api/source/refresh/apply", json={"diff_id": d["diff_id"]})
+    assert r.status_code == 200
+    assert client.post("/api/source/refresh").json()["n_changed"] == 0
+    # a source change re-opens the connector: refresh now reads the new file
+    (tmp_path / "p" / "data" / "more.csv").write_text(CSV + "t99,Subject 99,p1\n")
+    cfg = client.get("/api/settings").json()["config"]
+    cfg["source"]["path"] = "data/more.csv"
+    r = client.put("/api/settings", json={"config": cfg, "revision": 2})
+    assert r.status_code == 200 and r.json()["needs_refresh"] is True
+    assert client.post("/api/source/refresh").json()["n_new"] == 1

@@ -161,6 +161,28 @@ def put_settings(body: SaveIn, request: Request) -> dict[str, Any]:
     else:
         ctx.config = new
     ctx = _ctx(request)  # reload may replace the context object
+    source_changed = new.source != on_disk.source
+    if source_changed and hasattr(ctx, "connector"):
+        _reopen_connector(ctx, new)
     out = _payload(ctx)
     out["changes"] = [c.model_dump() for c in plan.changes]
+    # items come from the snapshot: a new source or new card columns need "Refresh from source"
+    cols = lambda c: [(f.column, f.template) for f in c.card.fields]  # noqa: E731
+    out["needs_refresh"] = source_changed or cols(new) != cols(on_disk)
     return out
+
+
+def _reopen_connector(ctx: Any, cfg: ProjectConfig) -> None:
+    """The open project reads the new source from now on (refresh diffs against it)."""
+    from .connectors import ConnectorError, open_connector
+
+    old = getattr(ctx, "connector", None)
+    try:
+        ctx.connector = open_connector(cfg.source, Path(ctx.project_dir))
+    except ConnectorError:
+        ctx.connector = None  # labelling continues from the snapshot; refresh reports why
+    if old is not None and old is not ctx.connector and hasattr(old, "close"):
+        try:
+            old.close()
+        except Exception:  # noqa: S110 - best effort
+            pass
