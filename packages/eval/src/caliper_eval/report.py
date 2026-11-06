@@ -537,7 +537,8 @@ def render_text(report: EvalReport, gate: Any = None) -> str:
         for sd in report.slices:
             rule = sd.rule + (f" <= {sd.threshold:g}" if sd.rule == "max_regression" else "")
             rule = rule if sd.rule != "min_precision" else f"min_precision >= {sd.threshold:g}"
-            lines.append(f"  {sd.name} ({rule}; {sd.n_rows} rows, {sd.n_report_rows} on test)")
+            on_test = f", {sd.n_report_rows} on test" if report.provenance.has_splits else ""
+            lines.append(f"  {sd.name} ({rule}; {sd.n_rows} rows{on_test})")
             for c in report.candidates:
                 for r in c.slices:
                     if r.slice == sd.name:

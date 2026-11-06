@@ -57,7 +57,7 @@ class Retouch(BaseModel):
     previous_touches: int
 
 
-def test_set_sha256(golden: Iterable[GoldenRow]) -> str | None:
+def split_sha256(golden: Iterable[GoldenRow]) -> str | None:
     """Hash of the test rows (sorted by id); ``None`` when there are none."""
     rows = sorted((g for g in golden if g.split == Split.TEST), key=lambda g: g.id)
     if not rows:
@@ -102,7 +102,7 @@ def record_touches(
 
     Does nothing (and returns ``[]``) when the golden set has no test rows.
     """
-    test_hash = test_set_sha256(golden)
+    test_hash = split_sha256(golden)
     if test_hash is None:
         return []
     n_test = sum(1 for g in golden if g.split == Split.TEST)
@@ -136,4 +136,4 @@ def record_touches(
     return retouches
 
 
-__all__ = ["Retouch", "TestTouch", "read_ledger", "record_touches", "test_set_sha256"]
+__all__ = ["Retouch", "TestTouch", "read_ledger", "record_touches", "split_sha256"]

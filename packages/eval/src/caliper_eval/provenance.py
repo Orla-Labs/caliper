@@ -42,7 +42,9 @@ _KINDS = {
 
 def source_key(row: GoldenRow) -> str:
     """The row's label source as a string; ``"unknown"`` when not recorded."""
-    return row.label_source.value if row.label_source is not None else UNKNOWN
+    # str() of a LabelSource is its value; also tolerates a plain string assigned
+    # after validation.
+    return str(row.label_source) if row.label_source is not None else UNKNOWN
 
 
 def is_human(key: str) -> bool:
