@@ -12,7 +12,9 @@
 from __future__ import annotations
 
 import mimetypes
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from ..project import SourceConfig, SourceKind
 from .base import ConnectorError, MediaRef
@@ -28,6 +30,13 @@ MEDIA_TYPES = {
     ".bmp": "image/bmp",
 }
 PRESIGN_SECONDS = 300
+PROBE_SECONDS = 4.0
+S3_MEDIA_HINT = (
+    "the images are s3:// links, which the server signs with this source's AWS settings: set "
+    "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (or source.credentials.aws_profile, or run "
+    "`aws sso login`), and for S3-compatible storage (MinIO, RustFS, R2) set "
+    "source.credentials.endpoint_url"
+)
 _REMOTE = ("s3://", "gs://", "gcs://", "http://", "https://", "r2://")
 
 
@@ -103,7 +112,16 @@ def presign_s3(url: str, source: SourceConfig | None, expires: int = PRESIGN_SEC
     import boto3
     from botocore.config import Config
 
-    creds = aws_credentials(src)
+    try:
+        creds = aws_credentials(src)
+    except ConnectorError as exc:
+        if src.kind is SourceKind.S3:
+            raise
+        # A database/file source holding s3:// links: its own config has no AWS settings
+        # unless the user added them, so say where they go.
+        raise ConnectorError(
+            f"can't sign s3:// image links: {exc.message}", S3_MEDIA_HINT
+        ) from None
     endpoint = src.credentials.endpoint_url
     client = boto3.client(
         "s3",
@@ -146,3 +164,123 @@ def resolve_ref(ref: str, roots: list[Path], source: SourceConfig | None = None)
         prefix = prefix if prefix.endswith("/") else prefix.rsplit("/", 1)[0] + "/"
         return presign_s3(prefix + ref.lstrip("/"), source, expires)
     return resolve_local(ref, roots)
+
+
+# --------------------------------------------------------------------------- media check
+
+
+def _probe(url: str, timeout: float = PROBE_SECONDS) -> tuple[int | None, str | None]:
+    """GET the first byte of a URL the server signed itself. (status, error text)."""
+    import urllib.error
+    import urllib.request
+
+    if not url.lower().startswith(("http://", "https://")):
+        return None, "not an http(s) link"
+    req = urllib.request.Request(url, headers={"Range": "bytes=0-0"}, method="GET")  # noqa: S310
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - signed by us
+            return int(resp.status), None
+    except urllib.error.HTTPError as exc:
+        return int(exc.code), None
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        reason = getattr(exc, "reason", exc)
+        return None, str(reason) or type(exc).__name__
+
+
+def _host(url: str) -> str:
+    from urllib.parse import urlsplit
+
+    return urlsplit(url).netloc or url
+
+
+def explain_status(status: int, host: str, source: SourceConfig | None) -> tuple[str, str]:
+    """(detail, hint) for a storage server's answer to a signed link."""
+    endpoint = source.credentials.endpoint_url if source else None
+    where = "source.credentials.endpoint_url" + (f" (now {endpoint})" if endpoint else "")
+    if status == 404:
+        return (
+            f"the image is not in the bucket ({host} answered 404)",
+            "check the path in the data, and that the bucket is the right one",
+        )
+    if status == 403:
+        return (
+            f"{host} refused the signed link (403)",
+            "the credentials can't read this object: check the IAM policy / bucket permissions, "
+            "and that the keys belong to this endpoint",
+        )
+    if status in (400, 301, 307):
+        return (
+            f"{host} rejected the signed link ({status})",
+            "the bucket is probably on another endpoint or region: set "
+            f"{where} for S3-compatible storage, or source.credentials.region",
+        )
+    return (f"{host} answered HTTP {status}", "check the storage server and the link")
+
+
+def check_ref(
+    ref: Any,
+    resolve: Callable[[str], MediaRef],
+    source: SourceConfig | None = None,
+    *,
+    probe: bool = True,
+) -> dict[str, Any]:
+    """Can the browser be served this media value? Never returns a signed URL.
+
+    ``{ok, kind, status, detail, hint}``: ``kind`` is file / signed / url; ``ok`` is None for
+    plain http(s) links, which the browser loads directly (the server never fetches them).
+    """
+    from ..credentials import redact
+
+    if not isinstance(ref, str) or not ref.strip():
+        return {
+            "ok": False,
+            "kind": None,
+            "status": None,
+            "detail": "empty media value",
+            "hint": "this row has no image",
+        }
+    low = ref.lower()
+    if low.startswith(("http://", "https://")):
+        return {
+            "ok": None,
+            "kind": "url",
+            "status": None,
+            "detail": "a web link: the browser loads it directly",
+            "hint": "if it doesn't show, open the link in a new tab: the host may need a login "
+            "or block embedding",
+        }
+    try:
+        ref_ = resolve(ref)
+    except ConnectorError as exc:
+        return {
+            "ok": False,
+            "kind": None,
+            "status": None,
+            "detail": redact(exc.message, source),
+            "hint": exc.hint and redact(exc.hint, source),
+        }
+    if ref_.kind == "file":
+        return {"ok": True, "kind": "file", "status": 200, "detail": None, "hint": None}
+    if not probe or not ref_.url:
+        return {"ok": True, "kind": "signed", "status": None, "detail": None, "hint": None}
+    status, err = _probe(ref_.url)
+    host = _host(ref_.url)
+    if status is None:
+        return {
+            "ok": False,
+            "kind": "signed",
+            "status": None,
+            "detail": redact(f"could not reach {host}: {err}", source),
+            "hint": "check source.credentials.endpoint_url (S3-compatible storage) and that the "
+            "storage server is running and reachable from this machine",
+        }
+    if status in (200, 206):
+        return {"ok": True, "kind": "signed", "status": status, "detail": None, "hint": None}
+    detail, hint = explain_status(status, host, source)
+    return {
+        "ok": False,
+        "kind": "signed",
+        "status": status,
+        "detail": redact(detail, source),
+        "hint": hint,
+    }
