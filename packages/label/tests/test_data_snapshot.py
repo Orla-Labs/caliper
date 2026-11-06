@@ -226,3 +226,26 @@ def test_session_runs_on_project_store(tmp_path: Path, make_session) -> None:
     sess = Session(legacy.dataset, legacy.config, store)
     rec = sess.label("g0", "ana", "correct")
     assert store.load()[0].record_id == rec.record_id
+
+
+def test_row_number_ids_stay_stable_when_source_grows(tmp_path: Path) -> None:
+    ctx = make_ctx(
+        tmp_path, {"card": {"fields": []}, "source": {"kind": "file", "path": "tickets.jsonl"}}
+    )
+    path = ctx.project_dir / "tickets.jsonl"
+    path.write_text("".join(json.dumps({"n": i}) + "\n" for i in range(9999)))
+    snapshot.take(ctx)
+    assert ctx.store.items(limit=1)[0].item_id == "row-0000"
+    with path.open("a") as fh:
+        fh.write(json.dumps({"n": 9999}) + "\n")
+    d = snapshot.diff(ctx)
+    assert (d.n_new, d.n_removed, d.n_changed) == (1, 0, 0) and d.new == ["row-9999"]
+
+
+def test_golden_answer_hidden_without_card_fields(tmp_path: Path) -> None:
+    ctx = make_ctx(tmp_path, {"card": {"fields": []}})
+    write_rows(ctx.project_dir / "tickets.jsonl", rows(2))
+    snapshot.take(ctx)
+    it = ctx.store.item("T-0000")
+    assert "answer" not in it.fields and it.golden_answer == "correct"
+    assert "internal" in it.fields

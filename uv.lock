@@ -250,6 +250,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
+provides-extras = ["snowflake", "bigquery"]
 
 [[package]]
 name = "caliper-monitor"

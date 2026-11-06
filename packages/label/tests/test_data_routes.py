@@ -240,3 +240,50 @@ def test_secrets_never_leak(
     for f in proj.rglob("*"):
         if f.is_file():
             assert SENTINEL.encode() not in f.read_bytes()
+
+
+def test_redact_keeps_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("PWD", str(tmp_path))
+    monkeypatch.setenv("OLDPWD", str(tmp_path))
+    monkeypatch.setenv("MYSQL_PWD", SENTINEL)
+    monkeypatch.setenv("KEYBOARD_LAYOUT", "us-international")  # not a secret: no word match
+    text = f"{tmp_path}/data/x.csv not found; us-international; {SENTINEL}"
+    out = redact(text)
+    assert f"{tmp_path}/data/x.csv" in out and "us-international" in out
+    assert SENTINEL not in out
+
+
+def test_gcs_credentials(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    import builtins
+
+    for v in ("GCS_HMAC_KEY_ID", "GCS_HMAC_SECRET", "GOOGLE_APPLICATION_CREDENTIALS"):
+        monkeypatch.delenv(v, raising=False)
+    monkeypatch.setenv("CLOUDSDK_CONFIG", str(tmp_path / "no-gcloud"))
+    real_import = builtins.__import__
+
+    def no_gcsfs(name, *a, **kw):
+        if name == "gcsfs":
+            raise ImportError("no gcsfs")
+        return real_import(name, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", no_gcsfs)
+    gcs = SourceConfig(kind="gcs", path="gs://fictional-bucket/batch.jsonl")
+    st = credential_status(gcs)
+    assert not st[0].resolved and "gcloud auth application-default login" in st[0].hint
+    with pytest.raises(Exception) as e:
+        open_connector(gcs, tmp_path).count()
+    assert "GCS credentials not found" in str(e.value)
+    assert "GCS_HMAC_KEY_ID" in e.value.hint and "gcloud" in e.value.hint
+    monkeypatch.setenv("GCS_HMAC_KEY_ID", "GOOGFICTIONAL0000")
+    monkeypatch.setenv("GCS_HMAC_SECRET", SENTINEL)
+    st = credential_status(gcs)
+    assert st[0].resolved and st[0].name == "GCS_HMAC_KEY_ID, GCS_HMAC_SECRET"
+    conn = open_connector(gcs, tmp_path)
+    try:
+        conn.con()  # setup creates the in-memory secret; no network needed
+    except Exception as exc:  # only acceptable failure: httpfs not downloadable offline
+        assert "extension 'httpfs'" in str(exc)
+    else:
+        rows = conn.con().execute("SELECT name, type FROM duckdb_secrets()").fetchall()
+        assert ("caliper_gcs", "gcs") in rows
+        assert SENTINEL not in str(conn.con().execute("FROM duckdb_secrets()").fetchall())
