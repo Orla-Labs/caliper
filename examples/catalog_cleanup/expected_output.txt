@@ -54,8 +54,8 @@ transitions baseline -> small-thinking:
 
 slices:
   rare_code (must_not_lose; 14 rows, 7 on test)
-    small           FAIL  loses 4 of 7 labelled rows on test the reference handles right (internal_reviewer 4): lst-0032, lst-0053, lst-0132, lst-0240
-    small-thinking  FAIL  loses 1 of 7 labelled rows on test the reference handles right (internal_reviewer 1): lst-0053
+    small           FAIL  7 human-labelled rows on test: baseline loses 0, small loses 4; 4 lost vs baseline: lst-0032, lst-0053, lst-0132, lst-0240
+    small-thinking  FAIL  7 human-labelled rows on test: baseline loses 0, small-thinking loses 1; 1 lost vs baseline: lst-0053
   lookalike (max_regression <= 0.5; 8 rows, 4 on test)
     small           FAIL  paired excess 0.500 [0.125, 0.875], upper bound 0.875 > 0.500; flipped lst-0013, lst-0035, lst-0193, lst-0227
     small-thinking  PASS  paired excess 0.000 [0.000, 0.000], upper bound 0.000 <= 0.500
@@ -95,9 +95,9 @@ calibration small-thinking (sweep on val: 28 rows labelled by internal_reviewer;
 
 CI gate: FAIL (pass when paired excess upper bound <= 0.1)
   small: paired excess regression 0.263 [0.163, 0.362]: upper bound 0.362 > allowed 0.100 (regression 0.300 - noise 0.037; 20 rows flipped)
-  small: slice rare_code (must_not_lose): loses 4 of 7 labelled rows on test the reference handles right (internal_reviewer 4): lst-0032, lst-0053, lst-0132, lst-0240
+  small: slice rare_code (must_not_lose): 7 human-labelled rows on test: baseline loses 0, small loses 4; 4 lost vs baseline: lst-0032, lst-0053, lst-0132, lst-0240
   small: slice lookalike (max_regression): paired excess 0.500 [0.125, 0.875], upper bound 0.875 > 0.500; flipped lst-0013, lst-0035, lst-0193, lst-0227
-  small-thinking: slice rare_code (must_not_lose): loses 1 of 7 labelled rows on test the reference handles right (internal_reviewer 1): lst-0053
+  small-thinking: slice rare_code (must_not_lose): 7 human-labelled rows on test: baseline loses 0, small-thinking loses 1; 1 lost vs baseline: lst-0053
 results: build/catalog-eval/results.jsonl
 summary: build/catalog-eval/summary.md
 
@@ -144,6 +144,6 @@ labels (80 rows): internal_reviewer 63 (human truth), llm_teacher 13 (teacher ag
 **Gate failures** (pass when paired excess upper bound <= 0.1)
 
 - `small`: paired excess regression 0.263 [0.163, 0.362]: upper bound 0.362 > allowed 0.100 (regression 0.300 - noise 0.037; 20 rows flipped)
-- `small`: slice rare_code (must_not_lose): loses 4 of 7 labelled rows on test the reference handles right (internal_reviewer 4): lst-0032, lst-0053, lst-0132, lst-0240
+- `small`: slice rare_code (must_not_lose): 7 human-labelled rows on test: baseline loses 0, small loses 4; 4 lost vs baseline: lst-0032, lst-0053, lst-0132, lst-0240
 - `small`: slice lookalike (max_regression): paired excess 0.500 [0.125, 0.875], upper bound 0.875 > 0.500; flipped lst-0013, lst-0035, lst-0193, lst-0227
-- `small-thinking`: slice rare_code (must_not_lose): loses 1 of 7 labelled rows on test the reference handles right (internal_reviewer 1): lst-0053
+- `small-thinking`: slice rare_code (must_not_lose): 7 human-labelled rows on test: baseline loses 0, small-thinking loses 1; 1 lost vs baseline: lst-0053

@@ -58,6 +58,8 @@ class SourceLosses(BaseModel):
     n_rows: int
     reference: SideLosses
     candidate: SideLosses
+    candidate_lost: list[str] = Field(default_factory=list)  # every row the candidate loses
+    reference_lost: list[str] = Field(default_factory=list)  # every row the reference loses
     candidate_only: list[str] = Field(default_factory=list)  # ref right, candidate wrong
     reference_only: list[str] = Field(default_factory=list)  # candidate right, ref wrong
     delta: CI  # paired: mean(candidate lost) - mean(reference lost) per row
@@ -84,6 +86,14 @@ class MatchedOperatingPoint(BaseModel):
     @property
     def candidate_only(self) -> list[str]:
         return sorted(r for s in self.by_source for r in s.candidate_only)
+
+    @property
+    def candidate_lost(self) -> list[str]:
+        return sorted(r for s in self.by_source for r in s.candidate_lost)
+
+    @property
+    def reference_lost(self) -> list[str]:
+        return sorted(r for s in self.by_source for r in s.reference_lost)
 
 
 def _match_threshold(scores: Sequence[float | None], target: float) -> float | None:
@@ -172,6 +182,8 @@ def compute_matched_operating_point(
                 n_rows=len(items),
                 reference=side([(i, ok, ra) for i, ok, ra, _ in items]),
                 candidate=side([(i, ok, ca) for i, ok, _, ca in items]),
+                candidate_lost=[i for (i, *_), cw in zip(items, cand_wrong, strict=True) if cw],
+                reference_lost=[i for (i, *_), rw in zip(items, ref_wrong, strict=True) if rw],
                 candidate_only=[
                     i
                     for (i, *_), rw, cw in zip(items, ref_wrong, cand_wrong, strict=True)

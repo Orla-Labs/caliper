@@ -27,6 +27,7 @@ from caliper_eval.types import (
     Candidate,
     Decision,
     GoldenRow,
+    LabelSource,
     ProviderKind,
     RowResult,
     request_sha256,
@@ -197,6 +198,8 @@ def test_calibration_picks_on_val_human_rows_and_reports_per_source_on_test():
     assert by["llm_teacher"].metric == "teacher agreement"
     assert by["llm_teacher"].kind == "teacher_agreement"
     assert by["unknown"].metric == "agreement (unknown source)"
+    assert list(cal.sweep_by_source) == ["internal_reviewer", "llm_teacher"]  # val sources
+    assert cal.sweep_by_source["llm_teacher"][0].n_auto == 4  # teacher rows kept apart
 
 
 def test_calibration_without_splits_or_sources_keeps_old_numbers():
@@ -316,7 +319,21 @@ def test_must_not_lose_fails_on_any_lost_row_and_passes_when_none():
     must = SliceConfig(name="must", rule="must_not_lose")
     (r,) = evaluate_slices([must], golden, results, "new", "ref", mop=m)
     assert not r.passed and r.value == 2 and r.rows == ["r11", "r12"]
-    assert "loses 2 of 2 labelled rows on test" in r.detail
+    assert (r.reference_lost, r.candidate_lost) == (0, 2)
+    assert r.detail == (
+        "2 human-labelled rows on test: ref loses 0, new loses 2; 2 lost vs ref: r11, r12"
+    )
+    # teacher verdicts are not truth: ignored by default, "disagreements" when asked for
+    for g in golden:
+        if g.id == "r11":
+            g.label_source = LabelSource.LLM_TEACHER
+    (rh,) = evaluate_slices([must], golden, results, "new", "ref", mop=m)
+    assert rh.rows == ["r12"]
+    teach = SliceConfig(name="must", rule="must_not_lose", label_sources=["llm_teacher"])
+    (rt,) = evaluate_slices([teach], golden, results, "new", "ref", mop=m)
+    assert not rt.passed and rt.rows == ["r11"]
+    assert "teacher agreement" in rt.metric and "disagreements vs ref" in rt.detail
+    assert "loses" not in rt.detail and "precision" not in rt.detail
     other = SliceConfig(name="other", rule="must_not_lose", where={"stratum": "none"})
     (r2,) = evaluate_slices([other], golden, results, "new", "ref", mop=m)
     assert not r2.passed and "cannot show nothing is lost" in r2.detail  # fails closed
