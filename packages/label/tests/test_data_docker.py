@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import time
 import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
@@ -48,9 +49,10 @@ def _up(port: int) -> bool:
 
 @pytest.fixture(scope="module", autouse=True)
 def services() -> None:
-    down = [
-        n for n, p in (("postgres", PG_PORT), ("mysql", MY_PORT), ("s3", S3_PORT)) if not _up(p)
-    ]
+    ports = (("postgres", PG_PORT), ("mysql", MY_PORT), ("s3", S3_PORT))
+    deadline = time.monotonic() + 60  # the S3 container has no healthcheck: give it a moment
+    while (down := [n for n, p in ports if not _up(p)]) and time.monotonic() < deadline:
+        time.sleep(1)
     if down:
         pytest.fail(
             f"docker services not reachable: {', '.join(down)}. Start them with "

@@ -81,6 +81,38 @@ jobs:
       - name: RFT demo transcript (byte-exact)
         run: scripts/demo.sh --check
 
+  label-docker:
+    name: label connectors (Postgres, MySQL, S3 via docker compose)
+    runs-on: ubuntu-latest
+    needs: python
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync workspace
+        run: uv sync
+
+      - name: Start test services
+        run: docker compose -f packages/label/docker/compose.yml -p caliper-label-test up -d --wait
+
+      - name: Docker-gated tests
+        run: uv run pytest -m docker -q
+
+      - name: Service logs on failure
+        if: failure()
+        run: docker compose -f packages/label/docker/compose.yml -p caliper-label-test logs --tail 100
+
+      - name: Stop test services
+        if: always()
+        run: docker compose -f packages/label/docker/compose.yml -p caliper-label-test down -v
+
   editor:
     name: editor typecheck + build
     runs-on: ubuntu-latest
