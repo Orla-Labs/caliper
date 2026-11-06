@@ -36,12 +36,12 @@ is not "does the small model answer like the big one". It is "would the
 | File | What it is |
 | --- | --- |
 | `logs.jsonl` | 300 rows of a fake production log: the exact request sent, the outcome, the code, and the reviewer verdict where a person looked. Rare product families are a few percent of traffic. |
-| `golden.jsonl` | 80 labeled `GoldenRow`s built from those logs. It keeps every rare, mixed, lookalike and unrecognised listing, plus 30 common ones. Each row holds the request as sent, `reference_outcome` (what production decided), and `label_approved` (did a person approve production's output). |
+| `golden.jsonl` | 80 labeled `GoldenRow`s built from those logs. It keeps every rare, mixed, lookalike and unrecognised listing, plus 30 common ones. Each row holds the request as sent, `reference_outcome` (what production decided), `label_approved` (was production's output approved), `label_source` (who said so), `split` (`val` or `test`) and `slices` (`rare_code`, `lookalike`). |
 | `decide.py` | The feature's logic as `decide(replies) -> Decision`. This is what Caliper grades. |
 | `feature_rule.py` | The same rule as production code would write it: raw strings in, its own action names out. |
 | `tests/test_parity.py` | `assert_parity` proves `decide.py` matches `feature_rule.py` on every sequence of 0 to 3 replies from a 12-shape alphabet. The alphabet covers a score exactly at the threshold, `true` and `NaN` confidences, truncated JSON, errors and parsed-only replies. A second test shows an off-by-one mirror gets caught. |
 | `fake_models.py` | The deterministic fake provider: `respond(...)` plus a `supports(...)` preflight. |
-| `caliper.toml` | Offline eval: `baseline` (fake-large, the reference), `small` (fake-small), `small-thinking` (fake-small with thinking on). |
+| `caliper.toml` | Offline eval: `baseline` (fake-large, the reference), `small` (fake-small), `small-thinking` (fake-small with thinking on). Also the paired gate allowance, the operating point and two named slices. |
 | `caliper.preflight.toml` | A candidate shape the fake provider rejects (fake-small, thinking on and `json_schema` output). Preflight stops it before any spend. |
 | `caliper.real.toml` | The same golden set on real providers: Claude Sonnet 5.5 as baseline, Claude Haiku 5.5 with thinking off and on, and an OpenAI-compatible endpoint. Needs keys and costs money. Not run in CI. |
 | `generate.py` | Regenerates both JSONL files deterministically. |
@@ -63,6 +63,19 @@ is not "does the small model answer like the big one". It is "would the
 
 Every random-looking choice comes from a sha256 digest of (model, thinking,
 row, replica, sample), never from Python's `hash()`. Runs are byte-identical.
+
+### Who labelled what
+
+* **63 rows by an internal reviewer** (human truth). Every rare-code and
+  unrecognised listing is among them.
+* **13 rows by an LLM teacher.** The teacher is fooled by the same misleading
+  keyword as the production model, so it "approves" every lookalike it labels.
+  Its numbers are reported as *teacher agreement*, never as precision.
+* **4 common rows with no recorded source**, shown as `unknown`.
+
+Within each stratum, rows alternate between `val` (40) and `test` (40), so
+every hard case appears on both sides. Thresholds are picked on val and
+reported on test.
 
 ## Run it
 
@@ -86,37 +99,62 @@ uv run python examples/catalog_cleanup/generate.py    # regenerate the data (opt
 
 **Golden set.** `caliper sample` keeps all 16 rows production sent to review and samples 40 of
 the 284 auto-published rows. Rare classes survive the sampling. The labeled
-golden set has 80 rows. A person approved production's output on 67 of them.
+golden set has 80 rows: 63 labelled by an internal reviewer, 13 by an LLM
+teacher and 4 with no recorded source, split 40 val / 40 test.
 
 **Preflight.** `small-thinking-schema` asks for `json_schema` output with thinking on. The
 fake provider refuses that shape, so `caliper eval` exits 3 before running a single row.
 
 **Noise floor.** The baseline is replayed twice. 1 of 80 rows (1.2%) changes
-outcome between the two replays, with a cost-weighted flip rate of 0.037 (95% bootstrap CI 0.000 to
-0.113). Differences below that line are noise, not regressions.
+outcome between the two replays, a cost-weighted flip rate of 0.037.
 
-**Transitions vs the baseline, cost-weighted.** In `[costs]`, a record that newly needs a
-person costs 1. A record that goes live without the check it would have had costs 5.
+**The aggregate gate, paired.** In `[costs]`, a record that newly needs a person costs 1. A
+record that goes live without the check it would have had costs 5. Row by row, the
+gate subtracts the baseline's own replay cost from the candidate's cost and
+bootstraps the difference. It passes a candidate only when the upper end of that
+95% interval is within `max_regression = 0.10`.
 
-| candidate | flips | regression [95% CI] | cost $ (fake prices) | gate |
-| --- | ---: | --- | ---: | --- |
-| `baseline` (ref) | - | - | 0.6068 | PASS |
-| `small` | 20/80 | 0.300 [0.175, 0.463] | 0.0799 | **FAIL** |
-| `small-thinking` | 4/80 | 0.050 [0.013, 0.113] | 0.3150 | PASS |
+| candidate | flips | regression [95% CI] | excess vs noise (paired) | cost $ (fake prices) | gate |
+| --- | ---: | --- | --- | ---: | --- |
+| `baseline` (ref) | - | - | - | 0.6068 | PASS |
+| `small` | 20/80 | 0.300 [0.175, 0.463] | 0.263 [0.163, 0.362] | 0.0799 | **FAIL** |
+| `small-thinking` | 4/80 | 0.050 [0.013, 0.113] | 0.013 [-0.087, 0.087] | 0.3150 | **FAIL** (slice) |
 
-`small` changes 20 outcomes: 14 rare-family listings (every `rare_code` row), 4
-lookalikes whose misleading keyword it does not know, and 2 mixed listings. Of
-those 20, 19 are records that used to publish automatically and now need a person. `small-thinking` stays inside the
-noise floor plus the 0.02 allowance, at about half the baseline's cost.
+`small` changes 20 outcomes, 19 of which are records that used to publish
+automatically and now need a person. `small-thinking` is non-inferior overall:
+its upper bound, 0.087, is within 0.10, at about half the baseline's cost. The
+allowance is 0.10 rather than 0.02 because on 80 rows the paired interval is
+about ±0.09 wide. A tighter allowance needs a bigger golden set.
 
-**Calibration of the 0.75 threshold.** Against human approvals, the baseline's
-auto-published records at score 0.75 or more are 84.4% approved, at 80% coverage. The
-lookalikes are confidently wrong. With `target_precision = 0.95`, Caliper
-recommends 0.85: 100% precision at 63.7% coverage. The cost of that safety is
-visible: 23.9% of approved records would go to a person.
+**Named slices.** `rare_code` is *must not lose*. On test, at the matched
+operating point, `small` loses 4 of the 7 rare-code rows the baseline handles
+right. `small-thinking` loses 1 (`lst-0053`, a blood-pressure cuff it scores 0.61). That
+single record blocks it, even though the aggregate gate passes. `lookalike`
+allows a paired excess of up to 0.5. `small` exceeds it (upper bound 0.875);
+`small-thinking` does not move a single lookalike.
 
-**CI verdict.** `caliper eval --ci` exits 1 because `small` fails. `summary.md` is
-the markdown a CI step posts on the pull request.
+**Matched operating point.** The baseline auto-publishes 77.5% of val rows.
+`small-thinking` matches that coverage at score >= 0.807. On the 35 test rows
+labelled by a reviewer it loses 11 rows to the baseline's 10. The paired
+delta is +0.029 [-0.057, +0.114]: it is not shown to be worse, nor better. On
+the 4 teacher-labelled test rows the report only talks about disagreements with
+the teacher.
+
+**Calibration, picked on val, reported on test.** On the 28 reviewer-labelled
+val rows, the baseline reaches 95.2% precision at score 0.70, so that is the
+recommendation for `target_precision = 0.95`. On test, the same threshold
+gives **85.7% precision** (reviewer rows). The lookalikes that are confidently
+wrong pull it down, and val was optimistic. On the teacher's rows, the same
+threshold shows 75.0% *teacher agreement*.
+
+**Test ledger.** The run records one test touch per candidate in
+`build/catalog-eval/test_ledger.jsonl`. Re-running the same candidates on the
+same test set with `--ci` fails unless you pass `--allow-test-retouch`. The demo
+starts from an empty `build/` each time, so its output never changes.
+
+**CI verdict.** `caliper eval --ci` exits 1: `small` fails the aggregate gate
+and both slices, and `small-thinking` fails the `rare_code` slice. `summary.md`
+is the markdown a CI step posts on the pull request.
 
 ## What this example does not show
 
@@ -125,5 +163,9 @@ the markdown a CI step posts on the pull request.
   If a candidate publishes `CTX-510` where the reference published `CTX-520`,
   both outcomes are `auto_publish`. To see code changes in the matrix, put the code in
   the outcome (for example `auto_publish:CTX-520`) and list the costs you care about.
+* **Content correctness in the matched operating point.** `label_approved`
+  says whether production's output for that row was approved. A candidate
+  that auto-publishes a rare listing with a *different* code counts as
+  handling it. The operating point measures routing, not the code.
 * **Real-world accuracy.** The fake provider is a simulation built to exercise the
   method. Run `caliper.real.toml` to measure your own models.

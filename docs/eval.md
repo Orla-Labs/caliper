@@ -85,7 +85,10 @@ times (default 2). Per row, replicas 1 and up are compared with replica 0:
 - **95% bootstrap CI**: rows resampled with replacement (`--n-boot`, default 1000),
   with a seed derived from `seed`.
 
-A candidate's regressions only count above the *upper* bound of this interval.
+The gate does not compare the candidate's interval with this one. It pairs
+them row by row: on each row, the reference's own replay cost is subtracted
+from the candidate's cost on that same row, and the bootstrap runs on those
+differences (see [CI gate](#ci-gate)).
 
 ### Transitions and costs
 
@@ -103,7 +106,9 @@ and the list of rows that flipped. Not every change is equally bad, so
 Keys are exact `"from->to"` outcome strings. An unchanged outcome costs 0. A
 change not listed costs **1.0**. The **regression** of a candidate is the sum
 of transition costs divided by the rows compared. It can exceed 1 when costs
-exceed 1, and it gets a bootstrap CI like the noise floor.
+exceed 1, and it gets a bootstrap CI like the noise floor. The report's
+**excess vs noise (paired)** column is the paired bootstrap CI of
+`regression - noise` per row, which is what the gate reads.
 
 Transitions are only as fine-grained as your outcome. If the outcome is
 `auto_publish` and the detail that changed (say, the tax code) lives in
@@ -198,30 +203,168 @@ cache read and cache write are priced separately.
 Dollars and tokens include every replica, so the reference's noise replays are
 counted.
 
+### Label provenance: truth vs teacher agreement
+
+A label is only as good as whoever produced it. Each golden row can say where
+its `label` / `label_approved` came from (`label_source`) and at which step
+(`label_stage`, free-form):
+
+| `label_source` | is | the approved share among auto-handled rows is called |
+| --- | --- | --- |
+| `human_end_user` | human truth | **precision** |
+| `internal_reviewer` | human truth | **precision** |
+| `llm_teacher` | an LLM's verdict | **teacher agreement** |
+| `heuristic` | a rule / weak label | **heuristic agreement** |
+| (missing) | `unknown` | **agreement (unknown source)** |
+
+Every label-based number (the calibration sweep and its kappa, the matched
+operating point, slice precision) is reported **per source** and named by it.
+Agreement with an LLM teacher is never called accuracy or precision, in the
+terminal, in the markdown, or in `report.json`, whose rates use the neutral key
+`auto_approved_rate` next to a `metric` field that names it. The report's
+`labels` line counts rows per source. When no row has a human source it says
+**NO HUMAN-TRUTH LABELS** and asks for a human-labelled slice (for example
+through `caliper label`). A teacher that is fooled by the same thing as your
+model agrees with it. That proves nothing about truth.
+
+### Selection hygiene: pick on val, report on test, touch test once
+
+A threshold chosen and measured on the same rows is optimistic. Give golden
+rows a `split` (`train`, `val`, `test`):
+
+- Thresholds (the calibration recommendation, the matched-operating-point
+  threshold) are picked on `split = "val"` rows only, and reported on
+  `split = "test"` rows. `train` rows are not used by either.
+- With no `split` on any row, selection and reporting use every row, as before,
+  and the report says `splits: none ... (optimistic)`. Rows without a split in
+  a split golden set are used by transitions, the noise floor and
+  `max_regression` slices, but not for picking or reporting thresholds.
+- Transitions, the noise floor and the regression gate always use every row:
+  nothing is selected there.
+
+**The test ledger.** Every completed run that reports candidates on test rows
+appends one line per candidate to `OUT/test_ledger.jsonl` (or `--test-ledger
+PATH`): candidate name, `candidate_sha256` (the candidate settings),
+`test_set_sha256` (id, request and labels of the test rows), the number of test
+rows, whether it is the reference, and a UTC timestamp. The timestamp is only in
+the ledger, so stdout and `report.json` stay byte-deterministic.
+
+A **re-touch** is a non-reference candidate reported again with the same
+settings on the same test set. It prints a warning on stderr. Under `--ci` it
+fails that candidate unless you pass `--allow-test-retouch`. The reference is
+recorded but never counts as a re-touch, because nothing is selected for it. A
+changed candidate (model, params, ...) or a changed test row counts as a first
+touch. An edited `decide` does not: re-checking test after tuning the decision
+rule is exactly what the ledger exists to catch. `--no-resume` does not clear
+the ledger. A CI job with a fresh `--out` starts with an empty one, so point
+`--test-ledger` at a file you persist (commit it or cache it) to catch
+re-touches across jobs. Golden sets with no `test` rows record nothing.
+
 ### Calibration of a confidence threshold
 
 When golden rows carry `label_approved` (did a person approve the feature's
 output for that row?), Caliper sweeps the rule "auto-accept when `score >= t`"
-over `[calibration].thresholds`. For each threshold it reports:
+over `[calibration].thresholds`. The sweep reads the **selection rows**: `val`
+rows when the golden set is split (all rows otherwise), and among those the
+human-labelled rows when there are any (all labelled rows otherwise, named by
+their source). For each threshold it reports:
 
 - **auto / coverage**: rows that would be auto-accepted.
-- **precision**: share of auto-accepted rows a person approved.
+- **precision** (or teacher agreement, ...): share of auto-accepted rows the
+  labels approve.
 - **approved -> review**: approved rows that would still go to a person.
 - **kappa**: Cohen's kappa between the rule and the approvals (from
   `caliper-kappa`). It is reported only when defined.
 
 The report also gives a 10-bin reliability ECE. With `target_precision` set, it
-recommends the **lowest threshold whose precision reaches the target**. That is
-the most automation you can have at the precision you asked for. Calibration is
-computed per candidate, so you can see whether a new model's scores mean the
-same thing as the old one's.
+recommends the **lowest threshold whose precision reaches the target** on the
+selection rows. It then reports that threshold **on test, once per label
+source**: precision for human rows, teacher agreement for `llm_teacher` rows,
+and so on. Expect test to be lower than val: that gap is what picking on val
+hides. The full sweep is printed for the first calibrated candidate (normally
+the reference). Other candidates get their picked threshold and test numbers,
+and `report.json` holds every sweep.
+
+### Matched operating point
+
+"The new model has 97% precision at 0.8 and the old one 95% at 0.75" mixes
+score quality with how much each side automates. The matched operating point
+compares them **at the same coverage**:
+
+1. The reference's coverage on val is the share of val rows whose outcome is in
+   `[operating_point].auto_outcomes` (auto-published, expensive call skipped,
+   ...), which is the incumbent as deployed.
+2. The candidate's threshold is the one among its distinct val scores whose
+   coverage (`score >= t`) is closest to that. Ties go to the higher threshold. A
+   `None` score (a fallback) is never auto-handled. A candidate with no scores
+   is compared on its own outcomes. Labels are not used to pick the threshold.
+3. On test, each side **loses** a labelled row when it is wrong about it: an
+   approved row not auto-handled (*missed*) or an unapproved row auto-handled
+   (*bad auto*). A row is **lost vs the reference** when the reference is right
+   and the candidate is wrong.
+
+Losses are reported per label source. Human rows give "loses", other sources
+give "disagreements". Each source also gets a paired bootstrap CI of
+`candidate lost - reference lost` per row. A `must_not_lose` slice (below)
+requires zero rows lost vs the reference.
+
+`label_approved` is a row-level verdict. The matched operating point measures
+**routing** (was this row handled automatically when it should have been?),
+not whether the candidate's content was right. In the example, a candidate
+that auto-publishes a rare listing with a wrong tax code still counts as
+handling it, because the label approved production's output for that row.
+Put content into the outcome if you need it judged.
+
+### Named slice gates
+
+Aggregates hide hard cases. A `[[slices]]` entry names a set of rows and
+gives it its own rule. A row belongs to a slice when the slice's name is in
+`GoldenRow.slices`, or when it matches `where` (`{stratum = "lookalike"}`,
+`{"metadata.family" = ["battery", "voucher"]}`; a list means "any of"). The
+rules are:
+
+| `rule` | `threshold` | passes when |
+| --- | --- | --- |
+| `max_regression` | required | the paired excess regression on the slice rows (same formula and bound as the main gate) is `<= threshold`. Uses every slice row. |
+| `must_not_lose` | none | zero labelled slice rows **on test** are lost vs the reference at the matched operating point. Fails closed when no labelled slice row is on test. Needs `[operating_point]`. |
+| `min_precision` | in [0, 1] | among slice rows on test that the candidate's own outcome auto-handles, the share a **human** approved is `>= threshold`. Fails closed with no human-labelled slice rows. Passes when nothing is auto-handled. Needs `[operating_point]`. |
+
+`label_sources = [...]` narrows which label sources `must_not_lose` and
+`min_precision` read. On `min_precision` with non-human sources, the number is
+reported as agreement (for example "teacher agreement"), never as precision.
+Slices apply to every non-reference candidate. They are listed in the report
+with a PASS/FAIL per candidate, and each failing slice becomes a gate reason
+(`slice rare_code (must_not_lose): loses 1 of 7 labelled rows on test ...: lst-0053`).
 
 ### CI gate
 
 With `--ci`, the run exits 1 when any candidate fails. A candidate fails when:
 
-- its cost-weighted regression estimate is above the noise floor's upper CI bound
-  plus `[ci].max_regression`; or
+- **regression** (paired). For every row decided on the reference's replica 0
+  and on the candidate:
+
+  ```
+  d_i    = cost(ref replica 0 -> candidate) - n_i
+  n_i    = mean over reference replicas k >= 1 of (cost(r0 -> rk) + cost(rk -> r0)) / 2
+           (0 when the row has no complete replays, or there is no noise floor)
+  excess = mean(d_i), with a 95% paired percentile bootstrap CI
+           (rows resampled once per draw; both terms on the same rows)
+  ```
+
+  `[ci].require = "non_inferiority"` (the default) fails when
+  `excess.high > max_regression`: a pass means the candidate is no worse than
+  the reference beyond its own replay noise plus `max_regression`, at 95%.
+  `require = "no_evidence_of_regression"` fails only when
+  `excess.low > max_regression`. A pass then only means "no detectable
+  regression", which small golden sets give easily. The CI's width shrinks
+  with the number of rows, so size `max_regression` to your golden set (the
+  example uses 0.10 on 80 rows). This replaces the round-1 rule
+  `regression.estimate > noise.high + max_regression`, which compared one
+  candidate number with the upper end of a separate noise interval.
+- **slices**: any `[[slices]]` rule fails for it (one reason per slice);
+- **test re-touch**: its test split was already reported with the same
+  settings (see [the test ledger](#selection-hygiene-pick-on-val-report-on-test-touch-test-once)),
+  unless `--allow-test-retouch`;
 - any reply was served by a model other than the one requested; or
 - its error rate (results without a decision, over results) is above
   `[ci].max_error_rate` (default 0); or
@@ -266,7 +409,8 @@ uv run caliper sample --in logs.jsonl --out golden.jsonl \
 - `--cap-per-stratum N` bounds a kept stratum.
 - `--seed` makes the pick reproducible.
 
-Then add labels (`label`, `label_approved`) where you have them.
+Then add labels (`label`, `label_approved`, and `label_source` for who gave
+them), a `split`, and `slices` where you have them.
 
 ## Golden set format
 
@@ -278,6 +422,10 @@ One JSON object per line (`caliper_eval.types.GoldenRow`, extra keys rejected):
  "reference_outcome": "auto_publish",
  "label": "auto_publish",
  "label_approved": true,
+ "label_source": "internal_reviewer",
+ "label_stage": "final_review",
+ "split": "test",
+ "slices": ["rare_code"],
  "stratum": "rare_code",
  "metadata": {"anything": "you like"}}
 ```
@@ -285,6 +433,9 @@ One JSON object per line (`caliper_eval.types.GoldenRow`, extra keys rejected):
 Only `id` and `request` are required. `request` is provider-neutral, Anthropic
 Messages-shaped, and is sent exactly as stored, apart from the candidate overlay.
 `reference_outcome` records what production decided, for your own comparison.
+`label_source` is one of `human_end_user`, `internal_reviewer`, `llm_teacher`
+or `heuristic` (missing = `unknown`). `split` is `train`, `val` or `test`.
+`slices` names the [slices](#named-slice-gates) the row belongs to.
 The transitions use a fresh reference run.
 
 ## Config reference
@@ -324,12 +475,23 @@ output = 15.0
 "auto_publish->needs_review" = 1.0
 
 [ci]
-max_regression = 0.02             # allowed regression above the noise floor's upper bound
+max_regression = 0.10             # allowed paired excess (regression - replay noise)
+require = "non_inferiority"       # or "no_evidence_of_regression" (see CI gate)
 max_error_rate = 0.0
 
 [calibration]
 thresholds = [0.5, 0.6, 0.7, 0.8, 0.9]
-target_precision = 0.95           # optional: recommend a threshold
+target_precision = 0.95           # optional: recommend a threshold (picked on val)
+
+[operating_point]                 # optional: matched-operating-point comparison
+auto_outcomes = ["auto_publish"]  # outcomes that count as "handled automatically"
+
+[[slices]]                        # optional, repeatable: named slice gates
+name = "rare_code"                # rows with "rare_code" in GoldenRow.slices ...
+rule = "must_not_lose"            # max_regression | must_not_lose | min_precision
+# threshold = 0.5                 # max_regression: allowed paired excess; min_precision: minimum
+# where = { stratum = "rare_code" }          # ... or rows matching this ("metadata.key" too)
+# label_sources = ["internal_reviewer"]      # which label sources a label rule reads
 ```
 
 ### Fake provider
@@ -359,6 +521,7 @@ def respond(request: dict, *, model: str, row_id: str, replica: int, sample: int
 caliper eval --config PATH [--out DIR] [--budget-usd X] [--no-resume] [--retry-errors]
              [--skip-preflight] [--ci] [--summary-md PATH] [--candidates a,b]
              [--target-precision P] [--max-error-rate R] [--n-boot N]
+             [--test-ledger PATH] [--allow-test-retouch]
 ```
 
 | flag | default | |
@@ -374,6 +537,8 @@ caliper eval --config PATH [--out DIR] [--budget-usd X] [--no-resume] [--retry-e
 | `--target-precision` | `[calibration].target_precision` | threshold recommendation target |
 | `--max-error-rate` | `[ci].max_error_rate` or 0 | gate error allowance |
 | `--n-boot` | 1000 | bootstrap resamples |
+| `--test-ledger` | `OUT/test_ledger.jsonl` | where test-split touches are recorded |
+| `--allow-test-retouch` | off | do not fail `--ci` when a candidate's test split was already reported |
 
 ```
 caliper sample --in LOGS --out GOLDEN --stratum-field FIELD --keep A,B --negatives N
@@ -391,15 +556,16 @@ caliper sample --in LOGS --out GOLDEN --stratum-field FIELD --keep A,B --negativ
 | 3 | preflight failed |
 | 4 | budget exceeded (resume hint on stderr) |
 
-The report goes to stdout, deterministically. Progress, notices and preflight
-messages go to stderr.
+The report goes to stdout, deterministically. Progress, notices, preflight
+messages and test re-touch warnings go to stderr.
 
 ## Output files
 
 | file | content |
 | --- | --- |
 | `OUT/results.jsonl` | one `RowResult` per (candidate, row, replica): replies (text, parsed, served_by, usage, latency, cost, error), the decision, and the request hash. Append-only; last line per key wins. |
-| `OUT/report.json` | the full report: noise floor, per-candidate tokens, latency p50/p95, dollars, served models, transitions, regression, calibration, warnings |
+| `OUT/report.json` | the full report: noise floor, label provenance (`provenance`), per-candidate tokens, latency p50/p95, dollars, served models, transitions, regression, `paired_excess`, calibration (`metric`, `on_report` per source), `matched_operating_point`, `slices`, warnings |
+| `OUT/test_ledger.jsonl` | one line per candidate per completed run that reported test rows (timestamped; append-only; not cleared by `--no-resume`) |
 | `--summary-md` | the markdown summary |
 
 ## Not in this release
