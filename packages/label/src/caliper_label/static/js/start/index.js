@@ -1,6 +1,6 @@
 // Start screen (dev 2): #/start  ->  New project / Open project / Try the demo.
 
-import { h, clear, ensureCss, stateBox, errorBox, relTime, announce, kbd } from "../common/wizard-dom.js";
+import { h, clear, ensureCss, stateBox, errorBox, relTime, announce, kbd, hasAppBar, projectChanged } from "../common/wizard-dom.js";
 import { folderPicker } from "../common/wizard-source.js";
 
 export async function mount(el, { api, go }) {
@@ -18,6 +18,7 @@ export async function mount(el, { api, go }) {
     try {
       await api.post("/api/projects/open", { path });
       announce("Project opened");
+      projectChanged();
       go("label");
     } catch (err) {
       clear(status, errorBox(err));
@@ -29,6 +30,7 @@ export async function mount(el, { api, go }) {
     clear(status, stateBox("loading", "Preparing the demo…", "80 fictional catalog listings."));
     try {
       await api.post("/api/projects/demo", {});
+      projectChanged();
       go("label");
     } catch (err) {
       clear(status, errorBox(err));
@@ -55,7 +57,7 @@ export async function mount(el, { api, go }) {
 
   clear(el, h("div", { class: "wz-root st-root" },
     h("header", { class: "st-hero" },
-      h("div", { class: "wz-brand st-brand" }, h("span", { class: "wz-logo", "aria-hidden": "true" }, "◧"), " caliper label"),
+      hasAppBar() ? null : h("div", { class: "wz-brand st-brand" }, h("span", { class: "wz-logo", "aria-hidden": "true" }, "◧"), " caliper label"),
       h("h1", {}, "Label your data, from wherever it lives."),
       h("p", { class: "wz-lead" }, "Set up in the browser, keep it as a readable caliper.label.yaml, label from the keyboard. Your data stays on this machine.")),
     h("main", { class: "st-main" },

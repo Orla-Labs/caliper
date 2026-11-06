@@ -141,9 +141,13 @@ def forget(path: str) -> None:
 def _local_only(request: Request) -> None:
     """Filesystem browsing and creating projects are for the person at this machine.
 
-    Team mode (dev 3) sets `app.state.setup_local_only = True` when serving on 0.0.0.0.
+    On by default in team mode (an auth token is set); `app.state.setup_local_only` overrides.
     """
-    if not getattr(request.app.state, "setup_local_only", False):
+    state = request.app.state
+    local_only = getattr(state, "setup_local_only", None)
+    if local_only is None:
+        local_only = bool(getattr(state, "auth_token", None))
+    if not local_only:
         return
     host = request.client.host if request.client else ""
     if host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
@@ -154,8 +158,30 @@ def _local_only(request: Request) -> None:
         )
 
 
+def _default_opener(request: Request) -> Any:
+    """Dev 3's context: ProjectContext.open + set_ctx (closing the previous project's store)."""
+    try:
+        from .context import ProjectContext, set_ctx
+    except ImportError:  # pragma: no cover - context.py not merged
+        return None
+
+    def opener(project_dir: Path) -> Any:
+        old = getattr(request.app.state, "ctx", None)
+        ctx = ProjectContext.open(project_dir)
+        set_ctx(request.app, ctx)
+        if old is not None and getattr(old, "store", None) is not None:
+            with contextlib.suppress(Exception):
+                old.store.close()
+        return ctx
+
+    return opener
+
+
 def _open(request: Request, project_dir: Path) -> Any:
-    opener = getattr(request.app.state, "open_project", None)
+    if hasattr(request.app.state, "open_project"):
+        opener = request.app.state.open_project
+    else:
+        opener = _default_opener(request)
     if opener is None:
         raise SetupError(
             501,
@@ -166,6 +192,8 @@ def _open(request: Request, project_dir: Path) -> Any:
         ctx = opener(project_dir)
     except ProjectFileError as exc:
         raise SetupError(422, str(exc), exc.hint) from None
+    except HTTPException:
+        raise
     except Exception as exc:  # connector errors etc. carry a hint
         hint = getattr(exc, "hint", None)
         if hint is None and not hasattr(exc, "message"):

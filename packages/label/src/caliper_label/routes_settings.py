@@ -14,6 +14,7 @@ option that has labels needs `confirm: true`: it is kept with `retired: true` an
 
 from __future__ import annotations
 
+import json
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,18 @@ def _ctx(request: Request) -> Any:
     if ctx is None:
         raise SetupError(409, "no project open", "open or create a project from the start screen")
     return ctx
+
+
+def _decision_values(decision: str) -> list[str]:
+    """multi-choice decisions are stored as a sorted JSON array string (dev 3's state.py)."""
+    if decision.startswith("["):
+        try:
+            vals = json.loads(decision)
+        except ValueError:
+            return [decision]
+        if isinstance(vals, list):
+            return [str(v) for v in vals]
+    return [decision]
 
 
 def label_counts(store: Any) -> dict[str, int]:
@@ -55,7 +68,7 @@ def label_counts(store: Any) -> dict[str, int]:
     for r in latest.values():
         if r.skipped or r.decision is None:
             continue
-        for value in str(r.decision).split("|"):  # multi-choice: "a|b" (dev 3)
+        for value in _decision_values(str(r.decision)):
             counts[value] += 1
     return dict(counts)
 

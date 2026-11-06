@@ -2,7 +2,7 @@
 //   data -> card -> labels -> workflow -> review
 // The draft lives in sessionStorage, so a reload or Back keeps everything.
 
-import { h, clear, ensureCss, announce, stateBox, errorBox, plural, debounce, nextId, kbd } from "../common/wizard-dom.js";
+import { h, clear, ensureCss, announce, stateBox, errorBox, plural, debounce, nextId, kbd, confirmDialog, hasAppBar, appbarSlot, projectChanged } from "../common/wizard-dom.js";
 import { cardDesigner, labelsEditor, workflowEditor, columnsTable, hotkeyIssues } from "../common/wizard-editors.js";
 import { SOURCE_KINDS, sourceForm, credentialList, cleanConfig, uploadFile, folderPicker, suggestFields } from "../common/wizard-source.js";
 
@@ -91,17 +91,19 @@ export async function mount(el, ctx) {
   const body = h("div", { class: "wz-step-body" });
   const nav = h("div", { class: "wz-footer" });
   const stepper = h("ol", { class: "wz-stepper-bar" });
-  root.append(
-    h("header", { class: "wz-top" },
+  const startOver = h("button", { type: "button", class: "wz-btn wz-btn-ghost wz-btn-small", onclick: async () => {
+    if (await confirmDialog({ title: "Start over?", body: h("p", {}, "This clears everything you set up in this wizard."), ok: "Start over", danger: true })) {
+      resetWizard();
+      location.hash = "#/wizard/data?new=1";
+    }
+  } }, "Start over");
+  const shellBar = hasAppBar();
+  const clearSlot = shellBar ? appbarSlot(h("span", { class: "wz-slot-title" }, "New project"), startOver) : () => {};
+  clear(root,
+    shellBar ? null : h("header", { class: "wz-top" },
       h("a", { href: "#/start", class: "wz-brand" }, h("span", { class: "wz-logo", "aria-hidden": "true" }, "◧"), " caliper label"),
       h("span", { class: "wz-top-title" }, "New project"),
-      h("button", { type: "button", class: "wz-btn wz-btn-ghost wz-btn-small", onclick: async () => {
-        const { confirmDialog } = await import("../common/wizard-dom.js");
-        if (await confirmDialog({ title: "Start over?", body: h("p", {}, "This clears everything you set up in this wizard."), ok: "Start over", danger: true })) {
-          resetWizard();
-          location.hash = "#/wizard/data?new=1";
-        }
-      } }, "Start over")),
+      startOver),
     h("nav", { "aria-label": "Wizard steps" }, stepper),
     h("main", { class: "wz-main", id: "wz-main" }, body),
     nav,
@@ -411,6 +413,7 @@ export async function mount(el, ctx) {
         const n = res.snapshot && (res.snapshot.n_items ?? res.snapshot.items ?? res.snapshot.count);
         announce(`Project created${n ? ` with ${n} items` : ""}. Opening the labeller.`);
         resetWizard();
+        projectChanged();
         go("label");
       } catch (err) {
         clear(status, errorBox(err));
@@ -438,6 +441,7 @@ export async function mount(el, ctx) {
 
   return () => {
     document.removeEventListener("keydown", onKey);
+    clearSlot();
     save(state);
   };
 }

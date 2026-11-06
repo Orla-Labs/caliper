@@ -4,7 +4,7 @@
   display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 24px;
   max-width: 1240px; margin: 0 auto; padding: 18px clamp(16px, 3vw, 32px) 120px;
 }
-.se-nav { position: sticky; top: 70px; align-self: start; }
+.se-nav { position: sticky; top: calc(var(--wz-top) + 16px); align-self: start; }
 .se-tabs { display: flex; flex-direction: column; gap: 2px; }
 .se-tab {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;

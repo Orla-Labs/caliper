@@ -194,3 +194,17 @@ export function kbd(key) {
   const names = { " ": "Space", backspace: "Backspace", delete: "Delete", escape: "Esc", enter: "Enter", tab: "Tab" };
   return h("kbd", {}, names[String(key).toLowerCase()] || String(key).toUpperCase());
 }
+
+// Dev 3's shell: a global app bar (#appbar-slot is free for the current screen).
+export const hasAppBar = () => !!document.querySelector(".appbar");
+
+export function appbarSlot(...children) {
+  const slot = document.getElementById("appbar-slot");
+  if (!slot) return () => {};
+  slot.replaceChildren(...children.flat().filter(Boolean));
+  return () => slot.replaceChildren();
+}
+
+export function projectChanged() {
+  window.dispatchEvent(new Event("caliper:project-changed"));
+}

@@ -3,7 +3,7 @@
 // (rename keeps history; removing an option with labels retires it after confirmation),
 // bumps the config revision and reloads the project context.
 
-import { h, clear, ensureCss, stateBox, errorBox, announce, toast, confirmDialog, nextId, plural } from "../common/wizard-dom.js";
+import { h, clear, ensureCss, stateBox, errorBox, announce, toast, confirmDialog, nextId, plural, hasAppBar, projectChanged } from "../common/wizard-dom.js";
 import { cardDesigner, labelsEditor, workflowEditor, columnsTable } from "../common/wizard-editors.js";
 import { credentialList, cleanConfig } from "../common/wizard-source.js";
 
@@ -99,6 +99,7 @@ export async function mount(el, { api, go, args }) {
       data = res;
       cfg = structuredClone(res.config);
       const renamed = (res.changes || []).filter((c) => c.kind === "renamed").length;
+      projectChanged();
       toast(`Saved · revision ${res.revision}${renamed ? ` · ${renamed} renamed (history kept)` : ""}`);
       announce(`Saved. Revision ${res.revision}.`);
       render();
@@ -249,7 +250,7 @@ export async function mount(el, { api, go, args }) {
   }
 
   clear(root,
-    h("header", { class: "wz-top" },
+    hasAppBar() ? null : h("header", { class: "wz-top" },
       h("a", { href: "#/start", class: "wz-brand" }, h("span", { class: "wz-logo", "aria-hidden": "true" }, "◧"), " caliper label"),
       h("span", { class: "wz-top-title" }, "Settings · ", cfg.name),
       h("a", { href: "#/label", class: "wz-btn wz-btn-small" }, "Back to labelling")),

@@ -1,41 +1,44 @@
 /* Setup wizard + shared setup components (dev 2). Start and settings screens use these too.
    Colours/spacing come from dev 3's tokens.css; the fallbacks keep the screens usable alone. */
 
-.wz-root {
-  --wz-bg: var(--bg, #f6f5f2);
-  --wz-panel: var(--panel, #ffffff);
-  --wz-ink: var(--ink, #1d1f23);
-  --wz-muted: var(--muted, #5f646d);
-  --wz-line: var(--line, #dedcd5);
-  --wz-soft: var(--soft, #efede8);
-  --wz-accent: var(--accent, #2f5bd3);
-  --wz-accent-ink: var(--accent-ink, #ffffff);
-  --wz-good: var(--good, #1f7a46);
-  --wz-bad: var(--bad, #b3261e);
-  --wz-warn: var(--warn, #8a5a00);
-  --wz-radius: var(--radius, 12px);
-  --wz-shadow: var(--shadow, 0 1px 2px rgba(20, 20, 30, .06), 0 6px 24px rgba(20, 20, 30, .06));
-  --wz-mono: var(--mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
-  --wz-sans: var(--sans, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif);
+.wz-root, .wz-dialog {
+  --wz-bg: var(--c-bg, #f6f5f2);
+  --wz-panel: var(--c-surface, #ffffff);
+  --wz-ink: var(--c-ink, #1d1f23);
+  --wz-muted: var(--c-ink-2, #5f646d);
+  --wz-line: var(--c-line, #dedcd5);
+  --wz-soft: var(--c-surface-2, #efede8);
+  --wz-accent: var(--c-accent, #2f5bd3);
+  --wz-accent-soft: var(--c-accent-soft, #e5ebfb);
+  --wz-accent-ink: var(--c-on-accent, #ffffff);
+  --wz-good: var(--c-good, #1f7a46);
+  --wz-bad: var(--c-bad, #b3261e);
+  --wz-warn: var(--c-warn, #8a5a00);
+  --wz-radius: var(--radius-l, 12px);
+  --wz-shadow: var(--shadow-1, 0 1px 2px rgba(20, 20, 30, .06), 0 6px 24px rgba(20, 20, 30, .06));
+  --wz-mono: var(--font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  --wz-sans: var(--font-sans, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif);
   --wz-focus: var(--focus-ring, 0 0 0 3px color-mix(in srgb, var(--wz-accent) 45%, transparent));
+  --wz-top: var(--appbar-h, 0px);
   color: var(--wz-ink);
   font: 15px/1.5 var(--wz-sans);
-  min-height: 100vh;
-  background: var(--wz-bg);
 }
+.wz-root { background: var(--wz-bg); min-height: calc(100vh - var(--wz-top)); }
+/* Without dev 3's tokens.css (standalone harness), follow the OS theme. */
 @media (prefers-color-scheme: dark) {
-  .wz-root {
-    --wz-bg: var(--bg, #15171b);
-    --wz-panel: var(--panel, #1d2026);
-    --wz-ink: var(--ink, #e7e8ea);
-    --wz-muted: var(--muted, #a3a8b1);
-    --wz-line: var(--line, #343842);
-    --wz-soft: var(--soft, #252931);
-    --wz-accent: var(--accent, #8aa6ff);
-    --wz-accent-ink: var(--accent-ink, #0d1020);
-    --wz-good: var(--good, #5cc48a);
-    --wz-bad: var(--bad, #f28b7d);
-    --wz-warn: var(--warn, #e2b54c);
+  .wz-root, .wz-dialog {
+    --wz-bg: var(--c-bg, #15171b);
+    --wz-panel: var(--c-surface, #1d2026);
+    --wz-ink: var(--c-ink, #e7e8ea);
+    --wz-muted: var(--c-ink-2, #a3a8b1);
+    --wz-line: var(--c-line, #343842);
+    --wz-soft: var(--c-surface-2, #252931);
+    --wz-accent: var(--c-accent, #8aa6ff);
+    --wz-accent-soft: var(--c-accent-soft, #26314f);
+    --wz-accent-ink: var(--c-on-accent, #0d1020);
+    --wz-good: var(--c-good, #5cc48a);
+    --wz-bad: var(--c-bad, #f28b7d);
+    --wz-warn: var(--c-warn, #e2b54c);
   }
 }
 
@@ -103,7 +106,7 @@ code { font-family: var(--wz-mono); font-size: .92em; }
 .wz-why { flex: 1; text-align: right; color: var(--wz-muted); font-size: 14px; }
 
 /* ------------------------------------------------------------ buttons */
-.wz-btn {
+.wz-btn, .wz-dialog .wz-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   min-height: 38px; padding: 7px 16px; border-radius: 9px; cursor: pointer;
   border: 1px solid var(--wz-line); background: var(--wz-panel); color: var(--wz-ink); text-decoration: none;
@@ -175,6 +178,7 @@ fieldset.wz-panel legend + * { clear: both; }
 .wz-radio-card:hover, .wz-kind:hover { border-color: var(--wz-muted); }
 .wz-on { border-color: var(--wz-accent); background: color-mix(in srgb, var(--wz-accent) 7%, var(--wz-panel)); box-shadow: inset 0 0 0 1px var(--wz-accent); }
 .wz-radio-card:has(input:focus-visible), .wz-kind:has(input:focus-visible) { box-shadow: var(--wz-focus); }
+.wz-radio-card, .wz-kind, .wz-radio-line, .wz-check, .wz-radio-inline label { font-size: 15px; font-weight: 400; }
 .wz-radio-title, .wz-kind-title { font-weight: 600; }
 .wz-radio-desc, .wz-kind-sub { color: var(--wz-muted); font-size: 13px; }
 
@@ -238,7 +242,7 @@ fieldset.wz-panel legend + * { clear: both; }
 .wz-designer { display: grid; gap: 16px; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); grid-template-areas: "cols cols" "fields preview"; }
 .wz-designer-cols { grid-area: cols; margin: 0; }
 .wz-designer-fields { grid-area: fields; margin: 0; }
-.wz-designer-preview { grid-area: preview; margin: 0; align-self: start; position: sticky; top: 70px; }
+.wz-designer-preview { grid-area: preview; margin: 0; align-self: start; position: sticky; top: calc(var(--wz-top) + 16px); }
 .wz-count { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; background: var(--wz-soft); font-size: 12px; }
 .wz-fields { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .wz-field {
@@ -326,7 +330,7 @@ fieldset.wz-panel legend + * { clear: both; }
 
 /* ------------------------------------------------------------ review */
 .wz-review { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
-.wz-review-right { position: sticky; top: 70px; }
+.wz-review-right { position: sticky; top: calc(var(--wz-top) + 16px); }
 .wz-summary { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 0; }
 .wz-summary dt { color: var(--wz-muted); font-size: 14px; }
 .wz-summary dd { margin: 0; overflow-wrap: anywhere; }
@@ -345,31 +349,26 @@ fieldset.wz-panel legend + * { clear: both; }
 
 /* ------------------------------------------------------------ dialogs, picker, toast */
 .wz-dialog {
-  border: 1px solid var(--line, #dedcd5); border-radius: 14px; padding: 22px; width: min(520px, calc(100vw - 32px));
-  background: var(--panel, #fff); color: var(--ink, #1d1f23); box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
-  font: 15px/1.5 var(--sans, system-ui, sans-serif);
+  border: 1px solid var(--wz-line); border-radius: 14px; padding: 22px; width: min(520px, calc(100vw - 32px));
+  background: var(--wz-panel); box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
 }
 .wz-dialog-wide { width: min(720px, calc(100vw - 32px)); }
 .wz-dialog::backdrop { background: rgba(15, 17, 22, .45); }
 .wz-dialog h2 { margin: 0 0 10px; font-size: 1.2rem; }
 .wz-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
-.wz-dialog .wz-btn { min-height: 38px; padding: 7px 16px; border-radius: 9px; border: 1px solid var(--line, #dedcd5); background: var(--panel, #fff); cursor: pointer; font-weight: 550; }
-.wz-dialog .wz-btn-primary { background: var(--accent, #2f5bd3); border-color: var(--accent, #2f5bd3); color: var(--accent-ink, #fff); }
-.wz-dialog .wz-btn-danger { background: var(--bad, #b3261e); border-color: var(--bad, #b3261e); color: #fff; }
-.wz-dialog :focus-visible { outline: 2px solid var(--accent, #2f5bd3); outline-offset: 2px; }
 .wz-dialog .wz-path-row { display: flex; gap: 8px; }
-.wz-dialog .wz-path { flex: 1; font-family: var(--mono, ui-monospace, monospace); }
-.wz-browse-list { margin-top: 12px; max-height: 50vh; overflow: auto; border: 1px solid var(--line, #dedcd5); border-radius: 10px; }
+.wz-dialog .wz-path { flex: 1; font-family: var(--wz-mono); }
+.wz-browse-list { margin-top: 12px; max-height: 50vh; overflow: auto; border: 1px solid var(--wz-line); border-radius: 10px; }
 .wz-browse { list-style: none; margin: 0; padding: 4px; }
 .wz-browse-item { display: flex; gap: 6px; align-items: center; width: 100%; text-align: left; padding: 8px 10px; border: 0; border-radius: 8px; background: none; cursor: pointer; }
-.wz-browse-item:hover, .wz-browse-item:focus-visible { background: var(--soft, #efede8); }
-.wz-browse-up { color: var(--muted, #5f646d); }
+.wz-browse-item:hover, .wz-browse-item:focus-visible { background: var(--wz-soft); }
+.wz-browse-up { color: var(--wz-muted); }
 .wz-browse-empty { padding: 10px 14px; margin: 0; }
 .wz-dialog .wz-state { display: flex; gap: 12px; padding: 14px; }
 .wz-toast {
   position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 50;
   padding: 10px 18px; border-radius: 10px; background: #1d1f23; color: #fff; box-shadow: 0 8px 30px rgba(0, 0, 0, .25);
-  font: 14px/1.4 var(--sans, system-ui, sans-serif); transition: opacity .4s; max-width: calc(100vw - 32px);
+  font: 14px/1.4 var(--font-sans, system-ui, sans-serif); transition: opacity .4s; max-width: calc(100vw - 32px);
 }
 .wz-toast-error { background: #8c1d18; }
 .wz-toast-out { opacity: 0; }
@@ -395,3 +394,6 @@ fieldset.wz-panel legend + * { clear: both; }
   .wz-icon { width: 40px; height: 40px; }
   .wz-btn { min-height: 44px; }
 }
+
+/* inside dev 3's app bar slot */
+.wz-slot-title { color: var(--c-ink-2, #5f646d); font-size: 14px; margin-right: 4px; }
