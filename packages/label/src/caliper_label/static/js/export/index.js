@@ -40,7 +40,7 @@ export async function mount(root, { api }) {
     el("div", { class: "choices" }, ...FORMAT_ORDER.filter((f) => meta.formats.some((x) => x.name === f)).map((f) => {
       const m = fmtMeta(f);
       return radio("format", f, m.title || NICE[f], m.plain || m.help, f === S.format, () => { S.format = f; sync(); },
-        m.title ? m.help : null);
+        m.title && !TABULAR.includes(f) ? m.help : null);
     })));
 
   const policy = el("fieldset", { class: "panel exp-block" }, el("legend", { text: "2. Items labellers disagree on" }),
