@@ -222,7 +222,7 @@ const page = await ctx.newPage();
 
 // 1. Title
 await page.setContent(
-  card("Caliper", "Graders you can trust for RL fine-tuning:<br>catch reward hacks before your model does", "github.com/Orla-Labs/caliper"),
+  card("Caliper", "Graders you can trust for RL fine-tuning:<br>catch reward hacks before your model does", "orlalabs.com"),
 );
 await shot(page, 3.0);
 
