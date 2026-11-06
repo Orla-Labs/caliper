@@ -43,6 +43,7 @@ UNKNOWN_NEAR_P = 0.55  # P(guess the nearby common code) when unknown
 NO_MATCH_CONF = (0.55, 0.10)
 THINK_RECOVER_P = 0.95  # per row: thinking recovers the rare family
 THINK_CONF = (0.88, 0.08)
+THINK_TOKENS = (120, 240)  # extra output tokens per reply with thinking on: base + up to
 HEDGED_CONF = (0.82, 0.06)  # listing hedges ("-style", "not included"): model is less sure
 HEDGES = ("-style", "-shaped", "-print", "not included", "no electronics")
 MALFORMED_P = {("fake-large", False): 0.0, ("fake-small", False): 0.06, ("fake-small", True): 0.02}
@@ -103,10 +104,7 @@ def _thinking_on(request: dict[str, Any]) -> bool:
 
 
 def _wants_structured(request: dict[str, Any]) -> bool:
-    return any(
-        k in request
-        for k in ("output_schema", "output_config", "response_format", "output_format", "tools")
-    )
+    return str(request.get("output_mode", "text")) in ("json_schema", "tool")
 
 
 def _listing(request: dict[str, Any]) -> str:
@@ -228,7 +226,7 @@ def respond(
     in_tok = (len(str(system)) + len(listing)) // 4
     out_tok = max(1, len(text) // 4)
     if thinking:
-        out_tok += 350 + int(500 * _u(*key, "think_tokens"))
+        out_tok += THINK_TOKENS[0] + int(THINK_TOKENS[1] * _u(*key, "think_tokens"))
 
     reply: dict[str, Any] = {
         "text": text,

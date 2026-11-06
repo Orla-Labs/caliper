@@ -1,0 +1,119 @@
+Caliper eval demo: is it safe to switch the catalog-cleanup feature to a cheaper model?
+(synthetic data, fake provider; every number below is from this demo, not a real system)
+
+========================================================================
+ [1/4] Build a golden set from production logs (rare classes kept whole)
+========================================================================
+$ caliper sample --in examples/catalog_cleanup/logs.jsonl --stratum-field outcome --keep needs_review,fallback --negatives 40
+sampled 56 of 300 log lines (seed 0; kept whole: needs_review, fallback)
+  auto_publish         40 / 284
+  needs_review         16 / 16
+wrote build/catalog-eval/sampled.jsonl
+
+Then a person labels the sample. The labeled result ships as examples/catalog_cleanup/golden.jsonl:
+  80 rows: common 30, lookalike 8, mixed 20, rare_code 14, unlisted 8
+  human approved the production output on 67 of 80 rows
+
+========================================================================
+ [2/4] Preflight: a candidate shape the provider rejects fails fast
+========================================================================
+$ caliper eval --config examples/catalog_cleanup/caliper.preflight.toml
+preflight failed for small-thinking-schema: fake rejected the request shape (model=fake-small, thinking=on, output_mode=json_schema): fake-small rejects json_schema structured output with thinking on (400: output_mode=json_schema is not supported with thinking for this model)
+caliper eval: preflight failed; fix the candidate or pass --skip-preflight
+(exit 3: nothing was spent on the golden set)
+
+========================================================================
+ [3/4] Evaluate: noise floor, transitions, calibration, CI gate
+========================================================================
+decide.py replays the feature: 3 replies, majority tax code, auto_publish at score >= 0.75.
+$ caliper eval --config examples/catalog_cleanup/caliper.toml --out build/catalog-eval --no-resume --ci --summary-md build/catalog-eval/summary.md
+caliper eval: 3 candidates, 80 golden rows, reference=baseline, seed=0, bootstrap n=1000
+noise floor (baseline x2, 80 rows): flip 1.2%, cost-weighted 0.037 [0.000, 0.113]
+
+candidate       rows  errors  tokens in/out/cache  p50/p95 ms  cost $  who answered  flips  regression [95% CI]   excess  gate
+--------------  ----  ------  -------------------  ----------  ------  ------------  -----  --------------------  ------  ----
+baseline (ref)  80    0p/0d   118944/16663/0       501/944     0.6068  fake-large    -      -                     -       PASS
+small           80    0p/0d   59472/8070/0         485/940     0.0799  fake-small    20/80  0.300 [0.175, 0.463]  0.188   FAIL
+small-thinking  80    0p/0d   59472/66844/0        485/940     0.3150  fake-small    4/80   0.050 [0.013, 0.113]  -0.062  PASS
+
+transitions baseline -> small:
+  auto_publish -> auto_publish    45
+  auto_publish -> needs_review    19  (cost 1 each)
+  needs_review -> auto_publish     1  (cost 5 each)
+  needs_review -> needs_review    15
+  flipped: lst-0008 (auto_publish->needs_review), lst-0013 (auto_publish->needs_review), lst-0032 (auto_publish->needs_review), lst-0035 (auto_publish->needs_review), lst-0043 (auto_publish->needs_review), lst-0053 (auto_publish->needs_review), lst-0115 (auto_publish->needs_review), lst-0118 (needs_review->auto_publish) +12 more
+
+transitions baseline -> small-thinking:
+  auto_publish -> auto_publish    60
+  auto_publish -> needs_review     4  (cost 1 each)
+  needs_review -> needs_review    16
+  flipped: lst-0033 (auto_publish->needs_review), lst-0053 (auto_publish->needs_review), lst-0096 (auto_publish->needs_review), lst-0161 (auto_publish->needs_review)
+
+calibration baseline: 80 labeled rows, 67 approved, ECE 0.186, recommended threshold 0.85 (target precision 95.0%)
+  score >=  auto  coverage  precision  approved->review  kappa
+  --------  ----  --------  ---------  ----------------  ------
+  0.50      80    100.0%    83.8%      0.0%              0.000
+  0.60      72    90.0%     81.9%      11.9%             -0.141
+  0.70      65    81.2%     83.1%      19.4%             -0.038
+  0.75      64    80.0%     84.4%      19.4%             0.034
+  0.80      62    77.5%     85.5%      20.9%             0.085
+  0.85      51    63.7%     100.0%     23.9%             0.509
+  0.90      47    58.8%     100.0%     29.9%             0.433
+
+calibration small: 80 labeled rows, 67 approved, ECE 0.169, recommended threshold 0.85 (target precision 95.0%)
+  score >=  auto  coverage  precision  approved->review  kappa
+  --------  ----  --------  ---------  ----------------  ------
+  0.50      78    97.5%     83.3%      3.0%              -0.045
+  0.60      65    81.2%     81.5%      20.9%             -0.124
+  0.70      49    61.3%     85.7%      37.3%             0.057
+  0.75      46    57.5%     87.0%      40.3%             0.082
+  0.80      45    56.2%     86.7%      41.8%             0.072
+  0.85      36    45.0%     100.0%     46.3%             0.274
+  0.90      30    37.5%     100.0%     55.2%             0.209
+
+calibration small-thinking: 80 labeled rows, 67 approved, ECE 0.163, recommended threshold 0.85 (target precision 95.0%)
+  score >=  auto  coverage  precision  approved->review  kappa
+  --------  ----  --------  ---------  ----------------  ------
+  0.50      79    98.8%     83.5%      1.5%              -0.024
+  0.60      71    88.8%     81.7%      13.4%             -0.153
+  0.70      64    80.0%     82.8%      20.9%             -0.050
+  0.75      60    75.0%     85.0%      23.9%             0.057
+  0.80      60    75.0%     85.0%      23.9%             0.057
+  0.85      49    61.3%     100.0%     26.9%             0.469
+  0.90      29    36.2%     100.0%     56.7%             0.199
+
+CI gate: FAIL
+  small: cost-weighted regression 0.300 > noise upper 0.113 + allowed 0.020 (20 rows flipped)
+results: build/catalog-eval/results.jsonl
+summary: build/catalog-eval/summary.md
+
+>>> caliper eval --ci exited 1: the gate FAILED, so this change would be blocked in CI.
+>>> (Expected here: 'small' regresses on rare product families.)
+
+========================================================================
+ [4/4] The PR comment (build/catalog-eval/summary.md)
+========================================================================
+## Caliper eval: FAIL
+
+80 golden rows, reference `baseline`. noise floor (baseline x2, 80 rows): flip 1.2%, cost-weighted 0.037 [0.000, 0.113].
+
+| candidate | rows | errors | cost $ | p95 ms | who answered | flips | regression [95% CI] | excess | gate |
+|---|---:|---:|---:|---:|---|---:|---|---:|---|
+| `baseline` (ref) | 80 | 0p/0d | 0.6068 | 944 | fake-large | - | - | - | PASS |
+| `small` | 80 | 0p/0d | 0.0799 | 940 | fake-small | 20/80 | 0.300 [0.175, 0.463] | 0.188 | FAIL |
+| `small-thinking` | 80 | 0p/0d | 0.3150 | 940 | fake-small | 4/80 | 0.050 [0.013, 0.113] | -0.062 | PASS |
+
+**Changed outcomes vs reference**
+
+- `small`: auto_publish -> needs_review: 19, needs_review -> auto_publish: 1
+- `small-thinking`: auto_publish -> needs_review: 4
+
+**Calibration** (auto-accept when score >= threshold)
+
+- `baseline`: 80 labeled, ECE 0.186; score >= 0.85: coverage 63.7%, precision 100.0%, approved sent to review 23.9%, kappa 0.509
+- `small`: 80 labeled, ECE 0.169; score >= 0.85: coverage 45.0%, precision 100.0%, approved sent to review 46.3%, kappa 0.274
+- `small-thinking`: 80 labeled, ECE 0.163; score >= 0.85: coverage 61.3%, precision 100.0%, approved sent to review 26.9%, kappa 0.469
+
+**Gate failures**
+
+- `small`: cost-weighted regression 0.300 > noise upper 0.113 + allowed 0.020 (20 rows flipped)

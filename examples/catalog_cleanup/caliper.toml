@@ -63,3 +63,4 @@ max_regression = 0.02    # allowed regression rate above the noise floor
 
 [calibration]
 thresholds = [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9]
+target_precision = 0.95  # recommend the lowest threshold whose auto-published rows are >= 95% approved

@@ -68,5 +68,6 @@ testpaths = [
     "packages/store/tests",
     "packages/server/tests",
     "packages/eval/tests",
+    "examples/catalog_cleanup/tests",
 ]
 addopts = "-ra --strict-markers --import-mode=importlib"
