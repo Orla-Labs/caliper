@@ -163,10 +163,28 @@ try {
   check(/Code correct \(key 1\)/.test(aria), `decision buttons have screen-reader labels ("${aria}")`);
   await ana.screenshot({ path: join(OUT, "label-card.png") });
 
+  // usability fixes (lpf-b): config order, badges by meaning, decisions above the key bar
+  const apiItem = await getJSON(`/api/items/${encodeURIComponent(first)}`);
+  const want = apiItem.item.fields.map((f) => f.label);
+  const shown = await ana.evaluate(() => [...document.querySelectorAll("#card figcaption, #card .field-label")]
+    .sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)).map((e) => e.textContent));
+  check(JSON.stringify(shown) === JSON.stringify(want), `card fields follow the configured order (${shown.join(", ")})`);
+  const badgeTones = await ana.evaluate(() => [...document.querySelectorAll("#card span.f-badge")].map((b) => b.className));
+  check(badgeTones.length > 0 && badgeTones.every((c) => /tone-/.test(c)), `badges carry a tone class, not a hash colour (${badgeTones.join(" | ")})`);
+  for (const [w, h] of [[1366, 800], [1280, 720]]) {
+    await ana.setViewportSize({ width: w, height: h });
+    await ana.waitForTimeout(100);
+    const gap = await ana.evaluate(() => document.querySelector(".keybar").getBoundingClientRect().top - document.querySelector(".secondary").getBoundingClientRect().bottom);
+    check(gap >= 0, `Skip / Undo / Note sit above the key bar at ${w}x${h} (gap ${Math.round(gap)}px)`);
+  }
+  await ana.setViewportSize({ width: 1280, height: 860 });
+
   await press(ana, "1");
   check((await cardId(ana)) !== first, "key 1 labels and advances");
   await ana.waitForFunction(() => /Saved/.test(document.getElementById("announcer").textContent));
   check(true, "the live region announces the saved label");
+  await ana.waitForFunction(() => /Saved/.test(document.querySelector(".save-state").textContent));
+  check(true, "a visible 'Saved' tick follows the decision");
 
   // zoom: Z opens, a decision key still works while open, Esc closes
   await ana.keyboard.press("z");
@@ -280,6 +298,15 @@ try {
   await ana.goto(BASE + "/#/export");
   await ana.locator(".exp-counts").waitFor();
   check(await ana.locator("#field-file").isHidden(), "export: destination fields follow the choice");
+  check(!/\bnull\b/.test(await ana.locator(".exp-side").innerText()), "export summary has no stray 'null'");
+  check((await ana.locator('input[name="format"][value="table"]').count()) === 0, "'Database table' is not offered as a format");
+  await ana.locator("#format-jsonl").check();
+  const hint = await ana.locator(".cli-code").textContent();
+  check(hint.includes("--format jsonl") && hint.includes("labels.jsonl"), `the CLI hint follows the choices (${hint})`);
+  await ana.locator("#rows-labels").check();
+  check((await ana.locator(".cli-code").textContent()).includes("--rows labels"), "the CLI hint shows --rows labels");
+  await ana.locator("#format-csv").check();
+  await ana.locator("#rows-items").check();
   await ana.screenshot({ path: join(OUT, "export.png"), fullPage: true });
   const csv = await (await fetch(`${BASE}/api/export/download?format=csv`)).text();
   const header = csv.split("\n")[0].split(",");
