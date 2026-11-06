@@ -37,6 +37,23 @@ def test_eval_ci_fails_on_regression_and_is_deterministic(in_project, capsys):
     assert len(lines) == 6 * 2 + 6  # reference x2 + small x1
 
 
+def test_edited_golden_row_is_rerun_not_reused(in_project, capsys):
+    cfg = (in_project / "eval.toml").read_text().replace("max_regression = 0.02",
+                                                         "max_regression = 10.0")
+    (in_project / "eval.toml").write_text(cfg)
+    code, _, _ = run(capsys, "eval", "--config", "eval.toml", "--ci", "--n-boot", "50")
+    assert code == 0
+    results = in_project / "caliper-out" / "results.jsonl"
+    before = len(results.read_text().splitlines())
+    golden = (in_project / "golden.jsonl").read_text().replace("record 0 is", "record 0 now is")
+    (in_project / "golden.jsonl").write_text(golden)
+    code, out, _ = run(capsys, "eval", "--config", "eval.toml", "--ci", "--n-boot", "50")
+    # the runner re-executes the stale row (2 reference replicas + 1 candidate) ...
+    assert len(results.read_text().splitlines()) == before + 3
+    # ... so the report sees only current results and nothing is flagged stale
+    assert code == 0 and "different request" not in out
+
+
 def test_eval_without_ci_exits_zero(in_project, capsys):
     code, out, _ = run(capsys, "eval", "--config", "eval.toml", "--out", "o", "--n-boot", "50")
     assert code == 0

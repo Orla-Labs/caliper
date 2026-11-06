@@ -102,6 +102,7 @@ def assert_parity(
     *,
     length: int | Iterable[int],
     adapter: Callable[[list[Reply]], Any] | None = None,
+    outcome_of: Callable[[Any], Any] | None = None,
     max_sequences: int = DEFAULT_MAX_SEQUENCES,
 ) -> int:
     """Check ``mirror`` against ``real`` over every reply sequence.
@@ -111,7 +112,9 @@ def assert_parity(
     ``real`` is called with ``adapter(replies)`` when an adapter is given
     (e.g. ``lambda rs: [r.text for r in rs]`` for a rule that takes raw
     texts), else with the replies. Both sides may return anything
-    :func:`coerce_decision` accepts; outcomes are compared.
+    :func:`coerce_decision` accepts; outcomes are compared. When the real
+    rule returns something else (an Enum, a bool), pass ``outcome_of`` to map
+    its return value first (e.g. ``lambda v: v.value``).
 
     Raises :class:`ParityError` on the first counterexample (exceptions on
     either side count as a mismatch unless both raise the same type).
@@ -139,7 +142,7 @@ def assert_parity(
             replies = list(combo)
             m_out, m_exc = _safe_outcome(mirror, replies)
             real_arg = adapter(replies) if adapter is not None else replies
-            r_out, r_exc = _safe_outcome(real, real_arg)
+            r_out, r_exc = _safe_outcome(real, real_arg, outcome_of)
             checked += 1
             if m_exc is not None or r_exc is not None:
                 if m_exc is not None and r_exc is not None and type(m_exc) is type(r_exc):
@@ -155,9 +158,14 @@ def assert_parity(
     return checked
 
 
-def _safe_outcome(fn: Callable[..., Any], arg: Any) -> tuple[str | None, Exception | None]:
+def _safe_outcome(
+    fn: Callable[..., Any], arg: Any, mapper: Callable[[Any], Any] | None = None
+) -> tuple[str | None, Exception | None]:
     try:
-        return _outcome_of(fn(arg)), None
+        value = fn(arg)
+        if mapper is not None:
+            value = mapper(value)
+        return _outcome_of(value), None
     except Exception as exc:  # user code under test
         return None, exc
 

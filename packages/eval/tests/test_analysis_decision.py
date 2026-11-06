@@ -91,3 +91,24 @@ def test_parity_blowup_guard():
 def test_parity_rejects_empty_alphabet():
     with pytest.raises(ValueError):
         assert_parity(mirror_vote, real_vote, [], length=1)
+
+
+def test_parity_outcome_mapper_for_enum_rule():
+    import enum
+
+    class Route(enum.Enum):
+        POS = "positive"
+        NEG = "negative"
+        UNSURE = "unsure"
+
+    def enum_rule(texts):
+        return Route(real_vote(texts))
+
+    to_texts = lambda rs: [r.text for r in rs]  # noqa: E731
+    with pytest.raises(ParityError, match="TypeError"):
+        assert_parity(mirror_vote, enum_rule, ALPHABET, length=2, adapter=to_texts)
+    n = assert_parity(
+        mirror_vote, enum_rule, ALPHABET, length=2, adapter=to_texts,
+        outcome_of=lambda v: v.value,
+    )
+    assert n == 16

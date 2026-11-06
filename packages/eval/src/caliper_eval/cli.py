@@ -115,6 +115,9 @@ def cmd_eval(args: argparse.Namespace) -> int:
             "(optionally with a higher --budget-usd)."
         )
         return EXIT_BUDGET
+    except (ImportError, ValueError) as exc:  # e.g. provider SDK extra missing
+        _err(f"caliper eval: cannot run candidates: {exc}")
+        return EXIT_PREFLIGHT
 
     target = args.target_precision
     if target is None:
