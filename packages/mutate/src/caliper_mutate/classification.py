@@ -285,6 +285,7 @@ def classification_mutations(
       with only ``eval_set``, the majority of ``rollout.gold`` is used
       (:func:`majority_class`). One of the two is required.
     * ``constant_label`` - for :class:`ConstantAnswer`; defaults to ``labels[0]``.
+      Pick a label other than the majority class, or the two mutations coincide.
     """
     if len(labels) < 2:
         raise ValueError("a classification needs at least 2 labels")

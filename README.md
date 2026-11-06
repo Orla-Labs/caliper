@@ -107,7 +107,8 @@ steps:
 uv run caliper label serve examples/catalog_cleanup/golden.jsonl \
     --config examples/catalog_cleanup/label.yaml
 
-# Inter-rater agreement from the label log, overall and by category
+# Inter-rater agreement from the label log, overall and by category. This needs items
+# labelled by two or more people: set `double_label: 2` in label.yaml first.
 uv run caliper kappa --labels build/labels/golden.labels.jsonl --by category
 ```
 
