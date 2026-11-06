@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "pyyaml>=6.0",
+    "ruamel.yaml>=0.18",
     "caliper-eval",
     "caliper-kappa",
 ]
