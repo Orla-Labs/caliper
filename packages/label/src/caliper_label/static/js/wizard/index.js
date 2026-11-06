@@ -187,6 +187,10 @@ export async function mount(el, ctx) {
       changed();
       saveNow();
       showResult();
+      if (state.kind === "upload") renderForm(); // the drop zone repeats the row count
+      // the confirmation is below the source form: bring it into view (#17)
+      const sum = result.querySelector(".wz-preview-summary") || result.firstElementChild;
+      if (sum && sum.scrollIntoView) sum.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     }
 
     function defaultName() {
@@ -209,8 +213,9 @@ export async function mount(el, ctx) {
         return;
       }
       const parts = [];
-      if (p.credentials && p.credentials.length) parts.push(credentialList(p.credentials));
+      const creds = p.credentials && p.credentials.length ? credentialList(p.credentials) : null;
       if (!p.ok) {
+        parts.push(creds);
         parts.push(errorBox({ message: (p.error && p.error.detail) || "Could not read the data", hint: p.error && p.error.hint }, runPreview));
         return clear(result, parts);
       }
@@ -220,6 +225,7 @@ export async function mount(el, ctx) {
           h("span", { class: "wz-ok-dot", "aria-hidden": "true" }), h("strong", {}, "Connected. "),
           `${plural(p.count ?? p.rows.length, "row")} · ${plural(p.columns.length, "column")}`,
           p.count && p.count > p.rows.length ? h("span", { class: "wz-muted" }, ` · showing the first ${p.rows.length}`) : null),
+        creds,
         h("div", { class: "wz-inline-field" },
           h("label", { for: idSel }, "Item id column"),
           h("select", { id: idSel, onchange: (e) => {
@@ -254,6 +260,7 @@ export async function mount(el, ctx) {
         state.config.source = { kind: "file", path: up.path };
         state.config.name = "";
         state.touched.card = false;
+        state.preview = null;
         renderForm();
         state.touched.id = false;
         await runPreview();
@@ -319,11 +326,41 @@ export async function mount(el, ctx) {
       try {
         const res = await api.post("/api/setup/templates/correct_wrong_unsure", {});
         L.options = res.labels.options;
+        state.fromTemplate = null; // set by the editor below from the options as loaded
         state.touched.labels = true;
         changed();
       } catch { /* empty state explains */ }
     }
-    labelsEditor(box, { labels: L, api, onChange: () => { state.touched.labels = true; changed(); } });
+    const ed = { labels: L, api, fromTemplate: state.fromTemplate, onTemplate: (k) => { state.fromTemplate = k; changed(); },
+      suggestions: optionSuggestions(), card: state.config.card,
+      onChange: () => { state.touched.labels = true; changed(); } };
+    labelsEditor(box, ed);
+  }
+
+  // #14: columns with a handful of short values, as label option candidates.
+  function optionSuggestions() {
+    const p = state.preview;
+    if (!p || !p.ok) return [];
+    const idCol = state.config.source.id_column;
+    const hint = /(priority|severity|category|label|sentiment|class|type|status|intent|topic|verdict|rating)/i;
+    const out = [];
+    for (const c of p.columns) {
+      if (c.name === idCol || !["badge", "text"].includes(c.display || "text")) continue;
+      const freq = new Map();
+      let n = 0;
+      for (const r of p.rows) {
+        const v = r[c.name];
+        if (v === null || v === undefined || v === "" || typeof v === "object") continue;
+        const s = String(v).trim();
+        if (!s || s.length > 40) { n = -1; break; }
+        freq.set(s, (freq.get(s) || 0) + 1);
+        n++;
+      }
+      if (n < 4 || freq.size < 2 || freq.size > 12 || freq.size > n / 2) continue;
+      const values = [...freq.entries()].sort((a, b) => b[1] - a[1]).map(([v]) => v);
+      out.push({ column: c.name, values, score: hint.test(c.name) ? 0 : 1 });
+    }
+    return out.sort((a, b) => a.score - b.score);
   }
 
   function renderWorkflow() {
@@ -349,12 +386,26 @@ export async function mount(el, ctx) {
 
     let projects = null;
     try { projects = await api.get("/api/projects"); } catch { /* fall back to a relative folder */ }
-    const sep = projects && projects.cwd && projects.cwd.includes("\\") ? "\\" : "/";
-    const slugName = (cfg.name || "project").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
-    if (!state.dirEdited) state.dir = projects ? `${projects.cwd}${sep}${slugName}` : slugName;
+    const sep = (projects && projects.sep) || (projects && projects.cwd && projects.cwd.includes("\\") ? "\\" : "/");
+    const slugOf = (name) => (name || "project").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
+    // The folder is <parent>/<slug of the name>. The parent defaults to the last one used
+    // (else ~/caliper-projects), never to the server's working directory.
+    if (!state.dirEdited) {
+      const parent = state.parent || (projects && (projects.default_parent || projects.cwd)) || "";
+      state.dir = parent ? `${parent.replace(/[\\/]+$/, "")}${sep}${slugOf(cfg.name)}` : slugOf(cfg.name);
+    }
+
+    const dirWarn = h("div", { class: "wz-dir-warn", "aria-live": "polite" });
+    const checkDir = debounce(async () => {
+      try {
+        const res = await api.post("/api/setup/check-dir", { dir: state.dir });
+        clear(dirWarn, (res.warnings || []).map((w) => h("p", { class: "wz-warn", role: "note" }, w)));
+      } catch { clear(dirWarn); }
+    }, 250);
 
     const dirInput = h("input", { id: dirId, type: "text", value: state.dir, class: "wz-path", spellcheck: "false",
-      oninput: (e) => { state.dir = e.target.value; state.dirEdited = true; changed(); } });
+      "aria-describedby": `${dirId}-help`,
+      oninput: (e) => { state.dir = e.target.value; state.dirEdited = true; changed(); checkDir(); } });
 
     const refresh = debounce(async () => {
       try {
@@ -389,20 +440,29 @@ export async function mount(el, ctx) {
             h("div", { class: "wz-field-block" }, h("label", { for: nameId }, "Project name"),
               h("input", { id: nameId, type: "text", value: cfg.name, oninput: (e) => {
                 cfg.name = e.target.value;
-                if (!state.dirEdited && projects) {
-                  const s = (cfg.name || "project").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
-                  state.dir = `${projects.cwd}${sep}${s}`;
+                if (!state.dirEdited) {
+                  // keep the chosen parent, follow the name
+                  const cut = Math.max(state.dir.lastIndexOf("/"), state.dir.lastIndexOf("\\"));
+                  state.dir = cut >= 0 ? `${state.dir.slice(0, cut)}${sep}${slugOf(cfg.name)}` : slugOf(cfg.name);
                   dirInput.value = state.dir;
+                  checkDir();
                 }
                 changed(); refresh();
               } })),
             h("div", { class: "wz-field-block" }, h("label", { for: dirId }, "Save in folder"),
               h("div", { class: "wz-path-row" }, dirInput,
                 h("button", { type: "button", class: "wz-btn", onclick: async () => {
-                  const picked = await folderPicker(api, { start: state.dir, title: "Choose a parent folder", files: false });
-                  if (picked) { state.dir = `${picked}${sep}${slugName}`; state.dirEdited = true; dirInput.value = state.dir; changed(); }
+                  const cut = Math.max(state.dir.lastIndexOf("/"), state.dir.lastIndexOf("\\"));
+                  const picked = await folderPicker(api, { start: cut > 0 ? state.dir.slice(0, cut) : state.dir, title: "Choose where to put the project folder", files: false });
+                  if (picked) {
+                    state.parent = picked;
+                    state.dir = `${picked.replace(/[\\/]+$/, "")}${sep}${slugOf(cfg.name)}`;
+                    state.dirEdited = false; // still follows the name
+                    dirInput.value = state.dir; changed(); checkDir();
+                  }
                 } }, "Browse…")),
-              h("p", { class: "wz-help" }, "The folder gets caliper.label.yaml (commit it) and .caliper-label/ (labels; ignored by git)."))),
+              h("p", { class: "wz-help", id: `${dirId}-help` }, "A new folder named after the project. It gets caliper.label.yaml (commit it) and .caliper-label/ (labels; ignored by git)."),
+              dirWarn)),
           h("section", { class: "wz-panel" },
             h("h3", {}, "Summary"),
             h("dl", { class: "wz-summary" },
@@ -419,6 +479,7 @@ export async function mount(el, ctx) {
           status),
         h("div", { class: "wz-review-right" }, yamlBox)));
 
+    checkDir();
     createBtn.addEventListener("click", async () => {
       createBtn.disabled = true;
       clear(status, stateBox("loading", "Creating the project…", "Writing caliper.label.yaml and taking a snapshot of the items."));

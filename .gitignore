@@ -39,5 +39,8 @@ docs/*
 !docs/eval.md
 !docs/label.md
 !docs/label.png
+!docs/label-setup.md
+!docs/label-connectors.md
+!docs/label-product/
 building/
 CLAUDE.md

@@ -113,6 +113,61 @@ jobs:
         if: always()
         run: docker compose -f packages/label/docker/compose.yml -p caliper-label-test down -v
 
+  label-e2e:
+    name: label e2e (Playwright, Chromium)
+    runs-on: ubuntu-latest
+    needs: python
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync workspace
+        run: uv sync
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/label/e2e/package-lock.json
+
+      - name: Install e2e deps
+        working-directory: packages/label/e2e
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Chromium
+        working-directory: packages/label/e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Start Postgres for the gated wizard test
+        run: docker compose -f packages/label/docker/compose.yml -p caliper-label-e2e up -d --wait postgres
+
+      - name: e2e suite
+        env:
+          CALIPER_LABEL_E2E_DOCKER: "1"
+          E2E_SKIP_INSTALL: "1"
+        run: scripts/e2e_label.sh
+
+      - name: Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: label-e2e-report
+          path: |
+            packages/label/e2e/playwright-report
+            packages/label/e2e/test-results
+          retention-days: 7
+
+      - name: Stop test services
+        if: always()
+        run: docker compose -f packages/label/docker/compose.yml -p caliper-label-e2e down -v
+
   editor:
     name: editor typecheck + build
     runs-on: ubuntu-latest
