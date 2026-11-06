@@ -139,3 +139,43 @@ def test_serving_stays_fast_on_a_million_items(tmp_path: Path) -> None:
     t = time.perf_counter()
     s.queues("ana")
     assert time.perf_counter() - t < 0.1
+
+
+def test_cli_opens_and_exports_a_project_folder(monkeypatch, tmp_path: Path, capsys) -> None:
+    import uvicorn
+    from caliper_eval.cli import main
+    from caliper_label.project import save_project
+
+    ctx = project(tmp_path)  # writes the data + snapshot; now save the config file
+    data = ctx.config.model_dump(mode="json")
+    data["rollout"] = {"prompt": "subject", "response": "team"}
+    save_project(tmp_path, ProjectConfig.model_validate(data))
+    ctx.store.close()
+    started = {}
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: started.update(app=app, **kw))
+    assert main(["label", str(tmp_path), "--no-browser", "--port", "8789"]) == 0
+    opened = started["app"].state.ctx
+    assert opened is not None and opened.config.name == "Store project (fictional)"
+    assert "10 items, 2 queue(s)" in capsys.readouterr().out
+    s = opened.session
+    s.label("t0", "ana", "yes")
+    s.label("t0", "ben", "yes")
+    opened.store.close()
+    out = tmp_path / "out" / "labels.csv"
+    assert main(["label", "export", str(tmp_path), "--format", "csv", "--out", str(out)]) == 0
+    assert "wrote 1 csv row(s)" in capsys.readouterr().out
+    assert (
+        out.read_text().splitlines()[1].startswith("t0,low,billing,yes,Yes,True,1,agreed,2,ana;ben")
+    )
+    roll = tmp_path / "out" / "r.jsonl"
+    assert main(["label", "export", str(tmp_path), "--format", "rollouts", "--out", str(roll)]) == 0
+    import json
+
+    row = json.loads(roll.read_text())
+    assert row["rollout"]["prompt"] == "Fictional ticket 0"  # ProjectConfig.rollout paths
+    assert row["rollout"]["response"] == "billing"
+    capsys.readouterr()
+    assert (
+        main(["label", "export", str(tmp_path / "nope"), "--format", "csv", "--out", "x.csv"]) == 2
+    )
+    assert "fix: create one with the setup wizard" in capsys.readouterr().err

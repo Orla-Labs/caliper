@@ -484,15 +484,22 @@ def project_rollout_rows(session: Session, cons: Consensus) -> Iterator[dict[str
             row = copy.deepcopy(raw)
             meta = row["rollout"].setdefault("metadata", {})
         else:
-            req = raw.get("request")
-            if isinstance(req, dict):
-                prompt = _render_request(req)
-            else:
-                prompt = "\n".join(
-                    f"{f['label']}: {f['value']}"
-                    for f in session.items.card(it)
-                    if f.get("value") is not None and f["type"] != "image"
-                )
+            rs = getattr(session, "rollout_cfg", None)  # ProjectConfig.rollout (dotted paths)
+            prompt = _text(get_path(raw, rs.prompt)) if rs and rs.prompt else None
+            if prompt is None:
+                req = raw.get("request")
+                if isinstance(req, dict):
+                    prompt = _render_request(req)
+                else:
+                    prompt = "\n".join(
+                        f"{f['label']}: {f['value']}"
+                        for f in session.items.card(it)
+                        if f.get("value") is not None and f["type"] != "image"
+                    )
+            response = _text(get_path(raw, rs.response)) if rs and rs.response else None
+            if response is None:
+                response = _text(raw.get("reference_outcome") or raw.get("response")) or ""
+            gold = _text(get_path(raw, rs.gold)) if rs and rs.gold else None
             meta = (
                 copy.deepcopy(raw.get("metadata")) if isinstance(raw.get("metadata"), dict) else {}
             )
@@ -501,12 +508,7 @@ def project_rollout_rows(session: Session, cons: Consensus) -> Iterator[dict[str
                 meta.setdefault("category", it.category)
             row = {
                 "id": it.id,
-                "rollout": {
-                    "prompt": prompt,
-                    "response": _text(raw.get("reference_outcome") or raw.get("response")) or "",
-                    "gold": None,
-                    "metadata": meta,
-                },
+                "rollout": {"prompt": prompt, "response": response, "gold": gold, "metadata": meta},
             }
         meta["human_label"] = _human_label(hl)
         last = sorted(res.records, key=lambda r: r.labelled_at)[-1]

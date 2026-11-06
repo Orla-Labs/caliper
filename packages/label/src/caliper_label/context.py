@@ -334,6 +334,7 @@ class ProjectContext:
             self.config.workflow,
             project_version=self.version,
         )
+        self.session.rollout_cfg = getattr(self.config, "rollout", None)
 
     def reload(self, config: ProjectConfig | None = None) -> None:
         """Settings were saved: re-read the config, take its revision, keep the labels."""
@@ -354,6 +355,7 @@ class ProjectContext:
             if hasattr(self.store, "set_project_version"):
                 self.store.set_project_version(self.version)
             self.session.reconfigure(self.config.labels, self.config.workflow, self.version)
+            self.session.rollout_cfg = getattr(self.config, "rollout", None)
 
     @classmethod
     def open(cls, project_dir: str | Path) -> ProjectContext:

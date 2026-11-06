@@ -110,7 +110,9 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
         return response
 
 
-ADMIN_PREFIXES = ("/api/source/", "/api/setup/", "/api/projects")
+ADMIN_PREFIXES = ("/api/source/",)  # any SourceConfig, raw rows, credential status
+SETUP_PREFIXES = ("/api/setup/", "/api/projects")  # dev 2 also guards these itself
+SETUP_READS_LOCAL = {"/api/setup/browse", "/api/projects"}  # local folders and paths
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 ADMIN_HINT = (
     "in team mode, setup and server-side exports only work on the machine running "
@@ -121,6 +123,8 @@ ADMIN_HINT = (
 def is_admin_route(method: str, path: str) -> bool:
     if path.startswith(ADMIN_PREFIXES):
         return True
+    if path.startswith(SETUP_PREFIXES):  # templates / connector list stay readable
+        return method not in ("GET", "HEAD") or path in SETUP_READS_LOCAL
     if path.startswith("/api/settings") and method not in ("GET", "HEAD"):
         return True
     return path == "/api/export" and method == "POST"
