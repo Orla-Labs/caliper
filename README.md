@@ -91,7 +91,8 @@ steps:
 If you go further and fine-tune with reinforcement learning (RFT), the grader *is* the objective. The policy is optimized against whatever the grader actually rewards, not what you meant it to reward. A grader that checks "is the gold answer somewhere in the response?" also pays full reward for listing three candidate numbers, for a bare number with no working, or for `1161.69` when the answer is `161.69`. Caliper treats the grader as code under test:
 
 - **Mutation testing.** Eight built-in adversarial edits (hardcode the gold answer, truncate, corrupt the answer, add sycophancy, ...) each declare how a robust grader's score should move. Mutations that survive are reward hacks waiting to happen.
-- **Agreement with humans.** Cohen's kappa against a small labeled set, next to a surface-feature baseline, so you know whether the grader agrees with people for the right reasons.
+- **Classification-grader mutations (opt-in).** For graders of verdict + rationale outputs, five degenerate classifiers: a constant answer, the majority class, a keyword-match verdict, a rationale that argues the other label, and a hedge that names every label. A grader that only checks "is the gold label in the verdict?" lets all five through. `scripts/smoke_mutate_classification.py` shows a naive grader with 5 survivors next to a robust one with 0.
+- **Agreement with humans.** Cohen's kappa against a small labeled set, next to a surface-feature baseline, so you know whether the grader agrees with people for the right reasons. `caliper kappa --rollouts LABELED.jsonl --grader FILE.py:ATTR` prints it from the command line.
 - **One grader, several trainers.** The same `@grader` function compiles to a self-contained reward module for TRL or Amazon Bedrock RFT.
 
 ![Caliper RFT demo: write a grader, dry-run it, mutation-test it, measure kappa, compile to TRL](docs/demo.gif)
@@ -149,8 +150,9 @@ Caliper is built by [Orla Labs](https://orlalabs.com).
 │   ├── rft_compile/  caliper-compile: grader -> TRL / Bedrock / OpenAI (legacy) (Python)
 │   ├── differ/       v1 vs v2 grader diff on an eval set                       (Python)
 │   ├── monitor/      reward-hack auxiliary judges (4 built-in rubrics)         (Python)
-│   ├── mutate/       mutation testing for graders (8 built-ins)                (Python)
-│   ├── kappa/        Cohen's κ between a grader and a labeled reference set   (Python)
+│   ├── mutate/       mutation testing for graders (8 built-ins + 5 opt-in
+│   │                 classification mutations)                                 (Python)
+│   ├── kappa/        Cohen's κ grader vs labels; inter-rater κ by category     (Python)
 │   ├── server/       FastAPI dry-run backend + pluggable executor (in-proc/E2B)(Python)
 │   └── editor/       Monaco-based grader IDE                                   (Next.js)
 ├── examples/
@@ -172,6 +174,7 @@ Caliper is built by [Orla Labs](https://orlalabs.com).
     ├── smoke_eval.py               caliper eval end to end: report shape, resume, preflight, sampler
     ├── smoke_dry_run.py            POSTs sample grader → /dry-run, asserts shape
     ├── smoke_mutation_test.py      runs all 8 mutations against robust + naked-gold graders
+    ├── smoke_mutate_classification.py  5 classification mutations: naive vs robust classifier grader
     ├── smoke_kappa_tracking.py     legal grader vs hand-built labels; prints unweighted/linear/quadratic κ
     ├── smoke_compile_targets.py    caliper-compile for trl/bedrock/openai; runs each artifact in `python -I -S`
     ├── smoke_rft_passthrough.py    legacy OpenAI path: compile → submit → poll via FakeRFTClient
@@ -195,6 +198,7 @@ uv run python scripts/smoke_eval.py
 scripts/demo_eval.sh --check
 uv run python scripts/smoke_dry_run.py
 uv run python scripts/smoke_mutation_test.py
+uv run python scripts/smoke_mutate_classification.py
 uv run python scripts/smoke_kappa_tracking.py
 uv run python scripts/smoke_compile_targets.py
 uv run python scripts/smoke_rft_passthrough.py    # legacy OpenAI path
@@ -205,8 +209,8 @@ scripts/demo.sh --check
 ## What's interesting in here
 
 - **Feature-level eval** (`packages/eval/`): replays golden requests through candidates (fake, Anthropic direct, Bedrock, OpenAI-compatible). It grades the outcome of your own `decide()` and proves that mirror with `assert_parity`. It measures a bootstrap noise floor before calling anything a regression, weights transitions by cost, and records who answered each request. The CI gate and markdown summary are designed to be posted on PRs.
-- **Mutation testing for graders** (`packages/mutate/`): 8 built-in mutations (drop-format-gate, wrong-answer, truncate, whitespace-perturb, prepend-sycophancy, append-garbage, case-perturb, hardcode-gold) plus a rank-order CI gate. Surfaces graders that pass on the surface but accept reward-hacked outputs.
-- **Cohen's κ tracking** (`packages/kappa/`): unweighted / linear-weighted / quadratic-weighted κ between a grader and a labeled reference set, with an explicit `kappa_undefined` flag for the math-undefined cases. Pure stdlib + Pydantic. `caliper eval` reuses it for threshold calibration.
+- **Mutation testing for graders** (`packages/mutate/`): 8 built-in mutations (drop-format-gate, wrong-answer, truncate, whitespace-perturb, prepend-sycophancy, append-garbage, case-perturb, hardcode-gold) plus a rank-order CI gate. Surfaces graders that pass on the surface but accept reward-hacked outputs. An opt-in set of 5 classification mutations (`classification_mutations(labels, ...)`) targets verdict + rationale graders.
+- **κ tracking** (`packages/kappa/`): unweighted / linear-weighted / quadratic-weighted κ between a grader and a labeled reference set, with an explicit `kappa_undefined` flag for the math-undefined cases. `inter_rater_kappa` measures labeller-vs-labeller agreement overall and by category: Cohen's κ for two raters, Fleiss' κ for three or more (rotating pairs allowed), plus per-pair κ. Pure stdlib + Pydantic. `caliper eval` reuses it for threshold calibration, and `caliper kappa` exposes both from the CLI.
 - **Pluggable grader executor** (`packages/server/src/caliper_server/executor.py`): `InProcessExecutor` for offline tests; `E2BExecutor` runs grader source inside a Firecracker microVM with the workspace SDK shipped in as a wheel. Selected via `CALIPER_GRADER_EXECUTOR=in_process|e2b`.
 - **Versioned content-addressed eval-set storage** (`packages/store/`): `EvalSetStore` Protocol, two backends (`InMemoryStore` + `SqlStore` via SQLAlchemy 2.x over SQLite or Postgres), 12-char SHA-256 content hashes, idempotent `create()`. Selected via `CALIPER_STORE_URL`.
 - **Compile to trainers** (`packages/rft_compile/`): `caliper-compile` emits a self-contained reward module plus dataset for TRL `GRPOTrainer` or an AWS Lambda for Amazon Bedrock RFT, byte-identical across runs. The legacy OpenAI path (`method.type=reinforcement` JSON, `RFTRunner` + `OpenAIRFTClient` with mocked-SDK tests) is kept for existing users while OpenAI winds down fine-tuning.
