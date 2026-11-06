@@ -4,17 +4,18 @@
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 [![Python >=3.12](https://img.shields.io/badge/python-%3E%3D3.12-blue.svg)](./pyproject.toml)
-[![tests: 428 passing](https://img.shields.io/badge/tests-428%20passing-brightgreen.svg)](#run-the-tests)
+[![tests: 559 passing](https://img.shields.io/badge/tests-559%20passing-brightgreen.svg)](#run-the-tests)
 
 Caliper is for teams shipping an LLM feature on a frontier API: classification, extraction, judging, scoring. These teams change prompts and models often. Before each change, `caliper eval` replays a golden set of real requests through the candidates. It applies your feature's own decision logic and tells you what the feature would do differently, how much that costs, and whether the difference is larger than the noise you already live with. In CI it posts the verdict on the pull request and fails the build when a change regresses.
 
 ## Why it works this way
 
 - **Grade the system outcome, not single replies.** Features wrap the model in vote loops, thresholds and fallbacks. You give Caliper your feature's `decide(replies) -> outcome`, and `assert_parity` proves that mirror matches the production rule over every reply sequence from a representative alphabet.
-- **Noise floor first.** The reference model is replayed twice. A candidate's changed outcomes only count above the reference's own replay-flip rate, with a bootstrap confidence interval.
+- **Noise floor first.** The reference model is replayed twice. A candidate's changed outcomes only count above the reference's own replay-flip rate. "Matches the incumbent" is a paired bootstrap of the per-row difference, not two separate intervals.
 - **Cost-weighted transitions.** Every changed outcome is a transition (`auto_publish -> needs_review`). Each one carries the cost you assign, because a record that skips review is worse than one that gets an extra look.
 - **A candidate is model + thinking + output mode.** A preflight fails fast when a provider rejects a request shape. Every result records which model actually answered, so a silent fallback fails the gate instead of passing it.
-- **Calibration against human approvals.** If your feature emits a confidence score and people review some outputs, Caliper sweeps the auto-accept threshold. It recommends the lowest one that reaches your target precision.
+- **Calibration against human approvals.** If your feature emits a confidence score and people review some outputs, Caliper sweeps the auto-accept threshold on `val`. It recommends the lowest one that reaches your target precision and reports it on `test`.
+- **Know who labelled what.** Every label carries its source. Agreement with an LLM teacher is reported as teacher agreement, never as accuracy. Hard cases get named slice gates of their own.
 - **Practical plumbing.** It replays the request exactly as stored, enforces a budget guard, keeps results resumable, uses a cache-aware pricing table, and has a stratified sampler that builds golden sets from production logs without losing the rare cases.
 
 ## Quickstart
@@ -25,7 +26,7 @@ Needs [uv](https://docs.astral.sh/uv/) ≥ 0.11.
 uv sync
 
 # The whole story on a synthetic example, offline, no API keys, byte-for-byte deterministic:
-# golden set -> preflight -> noise floor -> transitions -> calibration -> CI verdict.
+# golden set -> preflight -> noise floor -> slices -> matched operating point -> calibration -> CI verdict.
 scripts/demo_eval.sh
 scripts/demo_eval.sh --check      # diff against examples/catalog_cleanup/expected_output.txt
 
@@ -41,9 +42,9 @@ uv run caliper sample --in examples/catalog_cleanup/logs.jsonl --out build/golde
 The example ([`examples/catalog_cleanup`](examples/catalog_cleanup/README.md)) is a fictional marketplace feature. An LLM fills product-catalog records (description, specs, a tax-category code) with a confidence score, and low scores go to a person. On the fake provider, the demo shows these synthetic results:
 
 - The baseline's noise floor is 1 flip in 80 rows.
-- A cheaper model sends 19 auto-published records to review, mostly rare product families. Its cost-weighted regression is 0.300, so the gate fails.
-- The same cheap model with thinking on stays inside the noise floor at about half the baseline's cost.
-- Calibration moves the auto-publish threshold from 0.75 to 0.85: 84.4% of auto-published records were approved at 0.75, and 100% at 0.85.
+- A cheaper model sends 19 auto-published records to review, mostly rare product families. Its cost-weighted regression is 0.300, which is 0.263 [0.163, 0.362] above the baseline's own noise (paired), so the gate fails.
+- The same cheap model with thinking on is non-inferior overall (paired excess 0.013 [-0.087, 0.087]) at about half the baseline's cost. CI still blocks it, because on test it loses one record in the `rare_code` must-not-lose slice that the current model handles.
+- Calibration picks the auto-publish threshold on the validation split: 0.70, at 95.2% precision on 28 reviewer-labelled rows. On test the same threshold gives 85.7% precision on reviewer labels, plus 75.0% *teacher agreement* on the LLM-labelled rows, reported separately.
 
 Every number comes from the simulation, not from a real system. [`caliper.real.toml`](examples/catalog_cleanup/caliper.real.toml) runs the same golden set on Claude models and an OpenAI-compatible endpoint when you have keys.
 
@@ -54,6 +55,15 @@ To use it on your own feature, write three files:
 3. `caliper.toml`, the candidates, costs and gate.
 
 [docs/eval.md](docs/eval.md) has the concepts, the config reference and the CLI reference.
+
+### Trust the labels you grade against
+
+Every label in a golden set can say who produced it (`label_source`: an end user, an internal reviewer, an LLM teacher, a heuristic). Caliper reports every label-based number per source. Agreement with human labels is precision. Agreement with an LLM teacher is reported as *teacher agreement*, never as accuracy, and a report with no human-labelled rows says so and asks for some ([label provenance](docs/eval.md#label-provenance-truth-vs-teacher-agreement)).
+
+- **Selection hygiene.** Thresholds are picked on `val` and reported on `test`. Every test touch is written to a ledger, so re-checking the same candidate on test fails CI unless you pass `--allow-test-retouch` ([details](docs/eval.md#selection-hygiene-pick-on-val-report-on-test-touch-test-once)).
+- **Matched operating point.** A candidate is compared with the incumbent at the same coverage (the same share auto-handled), counting the rows each side gets wrong ([details](docs/eval.md#matched-operating-point)).
+- **Paired bootstrap.** The "matches or beats the incumbent" verdict uses a paired bootstrap of the per-row difference, net of the incumbent's own replay noise ([CI gate](docs/eval.md#ci-gate)).
+- **Named slice gates.** `[[slices]]` give hard cases their own rule: `must_not_lose` (zero rows lost vs the incumbent), `max_regression` or `min_precision`. Each failing slice is its own CI failure reason ([details](docs/eval.md#named-slice-gates)).
 
 ## In CI
 
@@ -84,7 +94,7 @@ steps:
       GH_TOKEN: ${{ github.token }}
 ```
 
-`--ci` exits 1 when any candidate regresses above the noise floor plus `[ci].max_regression`, errors more than `[ci].max_error_rate`, or was answered by a different model than requested. `budget_usd` caps what one run can spend. A stopped run resumes from `results.jsonl`.
+`--ci` exits 1 when any candidate's paired excess over the noise floor can exceed `[ci].max_regression` (upper bound of its 95% CI, by default), fails a named slice, errors more than `[ci].max_error_rate`, was answered by a different model than requested, or touches the test split again without `--allow-test-retouch`. `budget_usd` caps what one run can spend. A stopped run resumes from `results.jsonl`.
 
 ## Label your data: `caliper label`
 
@@ -160,8 +170,10 @@ Caliper is built by [Orla Labs](https://orlalabs.com).
 ```
 .
 ├── packages/
-│   ├── eval/         caliper eval / caliper sample: candidates, providers, noise floor,
-│   │                 transitions, calibration, CI gate, sampler                (Python)
+│   ├── eval/         caliper eval / sample / kappa: candidates, providers, noise floor,
+│   │                 paired gate, transitions, calibration, label provenance,
+│   │                 val/test ledger, slice gates, matched operating point,
+│   │                 sampler                                                   (Python)
 │   ├── sdk/          @grader decorator, Runner, typed records, source loader   (Python)
 │   ├── store/        versioned content-addressed eval-set storage (SQLite/PG)  (Python)
 │   ├── rft_compile/  caliper-compile: grader -> TRL / Bedrock / OpenAI (legacy) (Python)
@@ -191,7 +203,8 @@ Caliper is built by [Orla Labs](https://orlalabs.com).
     ├── demo_eval.sh                runs the catalog_cleanup eval demo; --check diffs its transcript
     ├── demo.sh                     runs demo/run_demo.py; --check diffs against the transcript
     ├── dev.sh                      starts server (:8000) + editor (:3456) together
-    ├── smoke_eval.py               caliper eval end to end: report shape, resume, preflight, sampler
+    ├── smoke_eval.py               caliper eval end to end: report shape, resume, preflight, sampler,
+    │                               test ledger, provenance, slices
     ├── smoke_label.py              caliper label end to end
     ├── smoke_dry_run.py            POSTs sample grader → /dry-run, asserts shape
     ├── smoke_mutation_test.py      runs all 8 mutations against robust + naked-gold graders
@@ -206,7 +219,7 @@ Caliper is built by [Orla Labs](https://orlalabs.com).
 
 ```bash
 uv sync
-uv run pytest -q              # 428 tests
+uv run pytest -q              # 559 tests
 uv run ruff check packages examples
 ```
 
@@ -230,7 +243,7 @@ scripts/demo.sh --check
 
 ## What's interesting in here
 
-- **Feature-level eval** (`packages/eval/`): replays golden requests through candidates (fake, Anthropic direct, Bedrock, OpenAI-compatible). It grades the outcome of your own `decide()` and proves that mirror with `assert_parity`. It measures a bootstrap noise floor before calling anything a regression, weights transitions by cost, and records who answered each request. The CI gate and markdown summary are designed to be posted on PRs.
+- **Feature-level eval** (`packages/eval/`): replays golden requests through candidates (fake, Anthropic direct, Bedrock, OpenAI-compatible). It grades the outcome of your own `decide()` and proves that mirror with `assert_parity`. It measures a bootstrap noise floor before calling anything a regression, gates on a paired bootstrap, weights transitions by cost, and records who answered each request. Labels carry provenance (teacher agreement is never called accuracy), thresholds are picked on val with a test-touch ledger, and named slices and a matched-operating-point comparison catch losses an average hides. The CI gate and markdown summary are designed to be posted on PRs.
 - **Mutation testing for graders** (`packages/mutate/`): 8 built-in mutations (drop-format-gate, wrong-answer, truncate, whitespace-perturb, prepend-sycophancy, append-garbage, case-perturb, hardcode-gold) plus a rank-order CI gate. Surfaces graders that pass on the surface but accept reward-hacked outputs. An opt-in set of 5 classification mutations (`classification_mutations(labels, ...)`) targets verdict + rationale graders.
 - **κ tracking** (`packages/kappa/`): unweighted / linear-weighted / quadratic-weighted κ between a grader and a labeled reference set, with an explicit `kappa_undefined` flag for the math-undefined cases. `inter_rater_kappa` measures labeller-vs-labeller agreement overall and by category: Cohen's κ for two raters, Fleiss' κ for three or more (rotating pairs allowed), plus per-pair κ. Pure stdlib + Pydantic. `caliper eval` reuses it for threshold calibration, and `caliper kappa` exposes both from the CLI.
 - **Pluggable grader executor** (`packages/server/src/caliper_server/executor.py`): `InProcessExecutor` for offline tests; `E2BExecutor` runs grader source inside a Firecracker microVM with the workspace SDK shipped in as a wheel. Selected via `CALIPER_GRADER_EXECUTOR=in_process|e2b`.
