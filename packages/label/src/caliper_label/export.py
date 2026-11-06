@@ -127,7 +127,8 @@ def golden_rows(
             for k, v in _provenance(config, res).items()
             if k not in ("label_source", "label_stage")
         }
-        out.append(GoldenRow.model_validate(row).model_dump(mode="json", exclude_none=True))
+        GoldenRow.model_validate(row)  # still a valid golden row
+        out.append(row)  # written as-is: only the label fields above change
     return out
 
 

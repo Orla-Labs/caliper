@@ -1,11 +1,12 @@
 """Append-only storage for LabelRecords.
 
 * ``labels.jsonl`` (default): one record per line, flushed and fsynced per write,
-  so a crash loses at most the label being written. A torn last line is ignored
-  on load (and reported).
+  so a crash loses at most the label being written. A torn last line (no
+  newline: that write never completed) is ignored on load and trimmed when the
+  store is opened for writing, both with a notice.
 * ``labels.sqlite``: the same records in one SQLite table (stdlib ``sqlite3``).
 
-Nothing is ever rewritten or deleted. Undo appends a record whose ``undoes``
+Records are never rewritten or deleted. Undo appends a record whose ``undoes``
 names the retracted record.
 """
 
@@ -50,27 +51,31 @@ class JsonlStore:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        self._trim_torn_tail()
         self._fh = self.path.open("a", encoding="utf-8")
 
+    def _trim_torn_tail(self) -> None:
+        """Cut a final line without a newline: a write that crashed before its fsync.
+
+        Its label was never acknowledged (the API answers after the fsync), and
+        appending after it would turn it into a corrupt line mid-file.
+        """
+        if not self.path.exists() or self.path.stat().st_size == 0:
+            return
+        with self.path.open("rb+") as fh:
+            data = fh.read()
+            if data.endswith(b"\n"):
+                return
+            keep = data.rfind(b"\n") + 1
+            print(
+                f"caliper label: dropping an incomplete last line in {self.path} "
+                f"({len(data) - keep} bytes from an interrupted write)",
+                file=sys.stderr,
+            )
+            fh.truncate(keep)
+
     def load(self) -> list[LabelRecord]:
-        records: list[LabelRecord] = []
-        if not self.path.exists():
-            return records
-        lines = self.path.read_text(encoding="utf-8").splitlines()
-        for n, line in enumerate(lines, start=1):
-            if not line.strip():
-                continue
-            try:
-                records.append(LabelRecord.model_validate_json(line))
-            except ValueError:
-                if n == len(lines):  # torn final write: ignore, it never completed
-                    print(
-                        f"caliper label: ignoring incomplete last line in {self.path}",
-                        file=sys.stderr,
-                    )
-                    continue
-                raise ValueError(f"{self.path}:{n}: not a LabelRecord") from None
-        return records
+        return read_jsonl_records(self.path)
 
     def append(self, record: LabelRecord) -> None:
         line = json.dumps(record.model_dump(mode="json"), ensure_ascii=False)
@@ -82,6 +87,25 @@ class JsonlStore:
     def close(self) -> None:
         with self._lock:
             self._fh.close()
+
+
+def read_jsonl_records(path: Path) -> list[LabelRecord]:
+    """Read a JSONL log without modifying it. A torn last line is skipped with a notice."""
+    records: list[LabelRecord] = []
+    if not path.exists():
+        return records
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for n, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            records.append(LabelRecord.model_validate_json(line))
+        except ValueError:
+            if n == len(lines):  # torn final write: it never completed
+                print(f"caliper label: ignoring incomplete last line in {path}", file=sys.stderr)
+                continue
+            raise ValueError(f"{path}:{n}: not a LabelRecord") from None
+    return records
 
 
 class SqliteStore:
@@ -128,7 +152,9 @@ def open_store(path: str | Path) -> LabelStore:
 
 
 def load_records(path: str | Path) -> list[LabelRecord]:
-    """Read a store without keeping it open (export, smoke)."""
+    """Read a store without changing it (safe while `serve` is writing to it)."""
+    if Path(path).suffix.lower() == ".jsonl":
+        return read_jsonl_records(Path(path))
     store = open_store(path)
     try:
         return store.load()

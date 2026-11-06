@@ -69,7 +69,7 @@ where the decision buttons are large and sticky instead).
 
 | every row has | kind | item id | notes |
 | --- | --- | --- | --- |
-| `request` (object) | Caliper `GoldenRow` | `id` | validated as `GoldenRow`; `export --format golden` available |
+| `request` (object) and valid as `GoldenRow` | Caliper `GoldenRow` | `id` | `export --format golden` available. Rows with a `request` that are not GoldenRows (e.g. production logs) are labelled as plain rows, with a notice |
 | `rollout` (object) | `EvalRow` (`caliper_sdk`) | `id` | rollouts export keeps the rollout and adds `human_label` |
 | anything else | plain rows | `id_key` (default `id`), else `row-0000`, `row-0001`, ... | |
 
@@ -178,9 +178,11 @@ The default store is a JSONL file of `LabelRecord`s
  "record_id": "7f3c0d9e5b1a2c4d6e8f0a1b"}
 ```
 
-- **Append-only.** Nothing is rewritten. Each write is flushed and fsynced
+- **Append-only.** Records are never rewritten. Each write is flushed and fsynced
   before the next card appears, so a crash loses at most the label being
-  written. A torn last line is ignored on load, with a notice.
+  written. A torn last line (an interrupted write, never acknowledged) is
+  ignored when reading and trimmed when `serve` reopens the store, with a notice.
+  `export` only reads, so it is safe to run while `serve` is up.
 - **Undo** appends a record with `decision: null` and `undoes: <record_id>`.
 - **Skip** appends a record with `skipped: true` and `decision: null`.
 - **Effective labels:** a record is active unless a later record undoes it. Per
