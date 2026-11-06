@@ -2,7 +2,7 @@
 # Not run in CI; needs keys:
 #
 #   export ANTHROPIC_API_KEY=...        # Anthropic direct
-#   export OPENAI_COMPAT_API_KEY=...    # whatever your OpenAI-compatible endpoint expects
+#   export OPENAI_COMPAT_API_KEY=...    # read via params.api_key_env below
 #   uv run caliper eval --config examples/catalog_cleanup/caliper.real.toml \
 #       --out build/catalog-real --budget-usd 5
 #
@@ -22,14 +22,22 @@ noise_replays = 2
 budget_usd = 5.0
 seed = 0
 
+# Thinking: `thinking = "off"` sends {type: "disabled"}, which Claude Sonnet 5.5
+# and Claude Opus 5.5 reject (preflight reports the 400). For those models use
+# thinking = "on" (adaptive) and keep it cheap with params.effort. Thinking
+# tokens count against max_tokens, so thinking candidates raise the golden
+# request's max_tokens (400, as production sent it) through params.
+
 # What production runs today.
 [[candidates]]
 name = "baseline"
 provider = "anthropic"
 model = "claude-sonnet-5-5"
+thinking = "on"
+params = { effort = "low", max_tokens = 4000 }
 replies_per_row = 3
 
-# The cheaper model, thinking off.
+# The cheaper model, thinking off (Claude Haiku 5.5 accepts this at effort <= high).
 [[candidates]]
 name = "haiku"
 provider = "anthropic"
@@ -37,12 +45,13 @@ model = "claude-haiku-5-5"
 thinking = "off"
 replies_per_row = 3
 
-# The cheaper model with (adaptive) thinking on.
+# The cheaper model with adaptive thinking on.
 [[candidates]]
 name = "haiku-thinking"
 provider = "anthropic"
 model = "claude-haiku-5-5"
 thinking = "on"
+params = { max_tokens = 4000 }
 replies_per_row = 3
 
 # Any OpenAI-compatible chat-completions endpoint (a self-hosted open-weight
@@ -52,6 +61,7 @@ name = "open-weights"
 provider = "openai_compat"
 base_url = "http://localhost:8000/v1"
 model = "your-open-weight-model"
+params = { api_key_env = "OPENAI_COMPAT_API_KEY" }
 replies_per_row = 3
 
 # Anthropic models on Amazon Bedrock (uncomment; uses your AWS credentials).
@@ -60,6 +70,8 @@ replies_per_row = 3
 # provider = "bedrock"
 # region = "us-east-1"
 # model = "anthropic.claude-sonnet-5-5"
+# thinking = "on"
+# params = { effort = "low", max_tokens = 4000 }
 # replies_per_row = 3
 
 [pricing."claude-sonnet-5-5"]   # USD per million tokens

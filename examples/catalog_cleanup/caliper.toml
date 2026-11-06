@@ -35,7 +35,6 @@ name = "small-thinking"
 provider = "fake"
 model = "fake-small"
 thinking = "on"
-thinking_budget_tokens = 1024
 fake_script = "fake_models.py:respond"
 replies_per_row = 3
 
