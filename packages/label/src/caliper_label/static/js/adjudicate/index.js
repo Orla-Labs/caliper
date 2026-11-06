@@ -89,9 +89,9 @@ export async function mount(root, { api, query }) {
       ? el("div", { class: "decisions", role: "group", "aria-label": "Set the final label" },
         ...options.map((o) => el("button", {
           type: "button", class: "opt" + (o.approved ? " opt-approved" : ""), style: o.color ? `--opt:${o.color}` : null,
-          "aria-label": `Final label: ${o.label}${o.hotkey ? ` (key ${keyLabel(o.hotkey)})` : ""}`,
+          "aria-label": `${o.hotkey ? `${keyLabel(o.hotkey)} ` : ""}${o.label}, set as the final label`,
           onclick: () => settle(o.value),
-        }, o.hotkey ? el("kbd", { "aria-hidden": "true", text: keyLabel(o.hotkey) }) : null, el("span", { text: o.label }))))
+        }, o.hotkey ? el("kbd", { "aria-hidden": "true", text: keyLabel(o.hotkey) }) : null, o.hotkey ? " " : null, el("span", { text: o.label }))))
       : el("div", { class: "decisions", role: "group", "aria-label": "Pick one of the labels as final" },
         ...[...new Map(row.labels.map((l) => [l.decision, l])).values()].map((l, i) => el("button", {
           type: "button", class: "opt", onclick: () => settle(cfg.type === "multi" ? JSON.parse(l.decision) : l.decision),

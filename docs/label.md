@@ -238,6 +238,10 @@ screen count each group and list every item left out, with who said what.
   and one nested `"item": {...}` object in JSON lines, where the card's JSON columns are
   real objects (CSV/Parquet/tables keep them as JSON text).
 
+`retired_option` is `true` when the label's option was retired in Settings after the label
+was made. Such labels are kept (and still exported), and this column flags them. `GET /api/labels` records
+carry the same `retired_option` field. Golden and rollouts exports are unchanged.
+
 `approved` and `human_label` are only in the table when they mean something: the project
 has an option with `approved: true`, an option with a `score`, or the `score` label type.
 In the table, an option that abstains (value or label `unsure`, `uncertain`, `unknown`,

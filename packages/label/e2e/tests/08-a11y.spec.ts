@@ -14,9 +14,6 @@ import { writeCsv, writeProject } from "../fixtures/data.ts";
 import { tempDir } from "../fixtures/server.ts";
 
 const KNOWN: { bug: string; rule: string; target: RegExp }[] = [
-  { bug: "LPF-C-6", rule: "label-content-name-mismatch", target: /\.opt|button\[data-value=|button\[aria-current=|Final label:/ },
-  { bug: "LPF-C-7", rule: "scrollable-region-focusable", target: /\.instr-body/ },
-  { bug: "LPF-C-8", rule: "color-contrast", target: /\.choice-text > \.tech/ },
 ];
 
 type Found = { screen: string; id: string; impact: string; help: string; nodes: number; targets: string[]; detail: string };

@@ -21,7 +21,7 @@ test("legacy serve data.jsonl --config label.yaml still labels, undoes and expor
   await enterName(page, "Lea");
   await expect(card(page)).toContainText(ID);
   await expect(card(page).getByRole("img").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: /code correct.*key 1/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^1 code correct/i })).toBeVisible();
   // Settings is a project-only screen
   await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Settings" })).toBeHidden();
 

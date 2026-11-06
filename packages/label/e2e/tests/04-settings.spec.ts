@@ -84,7 +84,6 @@ test("settings: rename keeps history; removing an option needs confirmation, kee
 // Spec §1 / CONTRACT: "remove → confirm, labels kept but flagged `retired`". The labels are kept
 // and the option is marked retired, but neither the label records nor the export rows say so.
 test("LPF-C-9: labels on a retired option are flagged in the export", async ({ launch, request }) => {
-  test.fail(true, "LPF-C-9 open: export rows and /api/labels carry no retired flag (handoff/lpf-c-bugs.md)");
   const dir = writeProject(join(tempDir("caliper-e2e-proj"), "triage"));
   const srv = await launch({ args: [dir] });
   for (const id of ["T-1000", "T-1001"]) {
