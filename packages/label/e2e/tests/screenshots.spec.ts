@@ -69,7 +69,9 @@ test("founder screenshots", async ({ page, browser, launch, request }) => {
   await page.getByRole("button", { name: /choose a file/i }).click();
   await (await chooser).setFiles(csv);
   await expect(page.getByText(/60 rows/).first()).toBeVisible();
-  await page.evaluate(() => window.scrollTo(0, 0));
+  // show the result (connected summary + preview), with the source picker just above
+  await page.getByText(/where is your data/i).evaluate((e) => e.scrollIntoView({ block: "start" }));
+  await page.evaluate(() => window.scrollBy(0, 230));
   await shot(page, "02-wizard-connect.png");
 
   await page.getByRole("button", { name: /^next$/i }).click();
@@ -92,7 +94,9 @@ test("founder screenshots", async ({ page, browser, launch, request }) => {
   await page.getByRole("button", { name: /^review$/i }).click();
   await expect(page.getByLabel(/project file that will be written/i)).toContainText("priority");
   await page.getByRole("textbox", { name: /project name/i }).fill("Support tickets · subject check");
-  await expect(page.getByLabel(/project file that will be written/i)).toContainText("Support tickets");
+  // a tidy, fictional folder for the picture (nothing is created: Create is never pressed)
+  await page.getByRole("textbox", { name: /save in folder/i }).fill("/Users/ana/caliper-projects/support-tickets-subject-check");
+  await expect(page.getByLabel(/project file that will be written/i)).toContainText("subject check");
   await shot(page, "06-wizard-review.png");
 
   // ------------------------------------------------------------ 07 labeller (demo catalog, with images)
@@ -101,6 +105,9 @@ test("founder screenshots", async ({ page, browser, launch, request }) => {
   await enterName(page, "Ana");
   await expect(card(page)).toContainText(ID);
   for (const k of ["1", "1", "2"]) await pressAndAdvance(page, k, ID);
+  await waitForDecisions(request, team.base, "labeller=Ana", 3);
+  await page.reload(); // a calm screen: no pressed / saving states left over
+  await expect(card(page)).toContainText(ID);
   await expect(card(page).getByRole("img").first()).toBeVisible();
   await shot(page, "07-labeller.png");
 
@@ -130,6 +137,7 @@ test("founder screenshots", async ({ page, browser, launch, request }) => {
   await shot(page, "09-adjudicate.png");
   await page.getByRole("button", { name: /final label: code correct/i }).click();
   await expect(page.getByRole("status").filter({ hasText: /final label/i }).first()).toBeAttached();
+  await expect(page.getByText(/: final label /)).toBeHidden({ timeout: 15_000 }); // let the toast go
 
   await page.goto(`${team.base}/#/export`);
   await expect(page.getByRole("button", { name: /download.*csv/i })).toBeVisible();
