@@ -1,0 +1,92 @@
+# The same golden set and decide() on real providers. This costs real money.
+# Not run in CI; needs keys:
+#
+#   export ANTHROPIC_API_KEY=...        # Anthropic direct
+#   export OPENAI_COMPAT_API_KEY=...    # whatever your OpenAI-compatible endpoint expects
+#   uv run caliper eval --config examples/catalog_cleanup/caliper.real.toml \
+#       --out build/catalog-real --budget-usd 5
+#
+# Run with `--candidates baseline,haiku` to try a subset. Preflight sends one
+# small request per candidate first, so a request shape a provider rejects
+# (for example a thinking setting a model does not accept) fails in seconds,
+# before the golden set is spent.
+#
+# Model IDs and prices checked 2026-11-06 against Anthropic's model/pricing
+# table. Prices change: re-check before trusting the dollar column, and note
+# that Bedrock and other resellers price separately.
+
+golden = "golden.jsonl"
+decide = "decide.py:decide"
+reference = "baseline"
+noise_replays = 2
+budget_usd = 5.0
+seed = 0
+
+# What production runs today.
+[[candidates]]
+name = "baseline"
+provider = "anthropic"
+model = "claude-sonnet-5-5"
+replies_per_row = 3
+
+# The cheaper model, thinking off.
+[[candidates]]
+name = "haiku"
+provider = "anthropic"
+model = "claude-haiku-5-5"
+thinking = "off"
+replies_per_row = 3
+
+# The cheaper model with (adaptive) thinking on.
+[[candidates]]
+name = "haiku-thinking"
+provider = "anthropic"
+model = "claude-haiku-5-5"
+thinking = "on"
+replies_per_row = 3
+
+# Any OpenAI-compatible chat-completions endpoint (a self-hosted open-weight
+# model here; the URL and model name are placeholders).
+[[candidates]]
+name = "open-weights"
+provider = "openai_compat"
+base_url = "http://localhost:8000/v1"
+model = "your-open-weight-model"
+replies_per_row = 3
+
+# Anthropic models on Amazon Bedrock (uncomment; uses your AWS credentials).
+# [[candidates]]
+# name = "baseline-bedrock"
+# provider = "bedrock"
+# region = "us-east-1"
+# model = "anthropic.claude-sonnet-5-5"
+# replies_per_row = 3
+
+[pricing."claude-sonnet-5-5"]   # USD per million tokens
+input = 2.0
+output = 10.0
+cache_read = 0.20
+source = "https://platform.claude.com/docs/en/about-claude/pricing (checked 2026-11-06)"
+
+[pricing."claude-haiku-5-5"]    # prompts up to 100K tokens
+input = 0.10
+output = 0.50
+source = "https://platform.claude.com/docs/en/about-claude/pricing (checked 2026-11-06)"
+
+[pricing."your-open-weight-model"]   # your own hosting cost, if you want a dollar column
+input = 0.0
+output = 0.0
+source = "self-hosted placeholder"
+
+[costs]
+"auto_publish->needs_review" = 1.0
+"auto_publish->fallback" = 3.0
+"needs_review->fallback" = 2.0
+"needs_review->auto_publish" = 5.0
+"fallback->auto_publish" = 5.0
+
+[ci]
+max_regression = 0.02
+
+[calibration]
+thresholds = [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9]

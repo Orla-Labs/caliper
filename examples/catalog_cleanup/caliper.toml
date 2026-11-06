@@ -1,0 +1,65 @@
+# Offline eval of the catalog-cleanup feature on the deterministic fake provider.
+# No network, no API keys. Paths are relative to this file.
+#
+#   uv run caliper eval --config examples/catalog_cleanup/caliper.toml --out build/catalog-eval
+#
+# Prices below are invented for the fake models; they only make the cost
+# column meaningful. Real prices live in caliper.real.toml.
+
+golden = "golden.jsonl"
+decide = "decide.py:decide"
+reference = "baseline"
+noise_replays = 2        # the reference is replayed twice; its own flip rate is the noise floor
+budget_usd = 2.0         # hard stop before spending more than this
+seed = 0
+
+# The model production runs today: three replies per listing for the vote loop.
+[[candidates]]
+name = "baseline"
+provider = "fake"
+model = "fake-large"
+fake_script = "fake_models.py:respond"
+replies_per_row = 3
+
+# The cheaper model someone wants to switch to.
+[[candidates]]
+name = "small"
+provider = "fake"
+model = "fake-small"
+fake_script = "fake_models.py:respond"
+replies_per_row = 3
+
+# Same cheaper model with thinking on: more output tokens, fewer regressions.
+[[candidates]]
+name = "small-thinking"
+provider = "fake"
+model = "fake-small"
+thinking = "on"
+thinking_budget_tokens = 1024
+fake_script = "fake_models.py:respond"
+replies_per_row = 3
+
+[pricing."fake-large"]   # USD per million tokens (fictional)
+input = 3.0
+output = 15.0
+source = "fictional price for the fake provider"
+
+[pricing."fake-small"]
+input = 0.8
+output = 4.0
+source = "fictional price for the fake provider"
+
+# What a changed outcome costs, relative to the reference run (arbitrary units:
+# think "minutes of someone's time"). Unlisted transitions cost 0.
+[costs]
+"auto_publish->needs_review" = 1.0   # a record a person now has to check
+"auto_publish->fallback" = 3.0       # a record typed in by hand
+"needs_review->fallback" = 2.0
+"needs_review->auto_publish" = 5.0   # a record goes live that a person would have checked
+"fallback->auto_publish" = 5.0
+
+[ci]
+max_regression = 0.02    # allowed regression rate above the noise floor
+
+[calibration]
+thresholds = [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9]
