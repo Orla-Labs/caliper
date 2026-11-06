@@ -4,10 +4,11 @@
 
 import { join } from "node:path";
 import { test, expect, enterName, card, labels, decided } from "../fixtures/app.ts";
+import { parseCsv } from "../fixtures/data.ts";
 import { writeProject } from "../fixtures/data.ts";
 import { tempDir } from "../fixtures/server.ts";
 
-test("settings: rename keeps history; removing an option needs confirmation and flags its labels", async ({ page, launch, request }) => {
+test("settings: rename keeps history; removing an option needs confirmation, keeps its labels and marks the option retired", async ({ page, launch, request }) => {
   const dir = writeProject(join(tempDir("caliper-e2e-proj"), "triage"));
   const srv = await launch({ args: [dir] });
 
@@ -78,4 +79,25 @@ test("settings: rename keeps history; removing an option needs confirmation and 
   const decisions = page.getByRole("group", { name: "Decision" });
   await expect(decisions.getByRole("button", { name: /right subject/i })).toBeVisible();
   await expect(decisions.getByRole("button", { name: /wrong/i })).toHaveCount(0);
+});
+
+// Spec §1 / CONTRACT: "remove → confirm, labels kept but flagged `retired`". The labels are kept
+// and the option is marked retired, but neither the label records nor the export rows say so.
+test("LPF-C-9: labels on a retired option are flagged in the export", async ({ launch, request }) => {
+  test.fail(true, "LPF-C-9 open: export rows and /api/labels carry no retired flag (handoff/lpf-c-bugs.md)");
+  const dir = writeProject(join(tempDir("caliper-e2e-proj"), "triage"));
+  const srv = await launch({ args: [dir] });
+  for (const id of ["T-1000", "T-1001"]) {
+    expect((await request.post(`${srv.base}/api/labels`, { data: { item_id: id, labeller: "Rui", decision: id === "T-1000" ? "correct" : "wrong" } })).ok()).toBeTruthy();
+  }
+  const cur = await (await request.get(`${srv.base}/api/settings`)).json();
+  const cfg = structuredClone(cur.config);
+  cfg.labels.options.find((o: { value: string }) => o.value === "wrong").retired = true;
+  const put = await request.put(`${srv.base}/api/settings`, { data: { config: cfg, revision: cur.revision, confirm: true } });
+  expect(put.ok(), await put.text()).toBeTruthy();
+
+  const rows = parseCsv(await (await request.get(`${srv.base}/api/export/download?format=csv`)).text());
+  const row = rows.find((r) => r.item_id === "T-1001");
+  expect(row, "the label on the retired option is kept").toBeTruthy();
+  expect(Object.entries(row!).some(([k, v]) => /retired/i.test(k) ? /true|1|yes/i.test(v) : /retired/i.test(v)), "the export row says the option is retired").toBeTruthy();
 });
