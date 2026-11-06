@@ -69,7 +69,7 @@ PORT="$(free_port)"
   cd "$TMP/work"
   for v in $(env | sed -n 's/^\(PG[A-Z_]*\)=.*/\1/p'); do unset "$v"; done
   unset DATABASE_URL CALIPER_LABEL_TOKEN
-  HOME="$TMP/home" CALIPER_LABEL_HOME="$TMP/home/caliper-label" PYTHONUNBUFFERED=1 \
+  HOME="$TMP/home" CALIPER_LABEL_HOME="$TMP/home/caliper-label" CALIPER_LABEL_PROJECTS="$TMP/work" PYTHONUNBUFFERED=1 \
     exec "$CALIPER" label --port "$PORT" --no-browser
 ) >"$TMP/servers/start-screen.log" 2>&1 &
 SERVER_PID=$!

@@ -91,7 +91,8 @@ export async function startServer(opts: StartOptions = {}): Promise<Server> {
     if (v === undefined || k.startsWith("PG") || k === "DATABASE_URL" || k === "CALIPER_LABEL_TOKEN") continue;
     env[k] = v;
   }
-  Object.assign(env, { HOME: root, CALIPER_LABEL_HOME: home, PYTHONUNBUFFERED: "1" }, opts.env || {});
+  // CALIPER_LABEL_PROJECTS: where the wizard suggests new projects (never ~/caliper-projects)
+  Object.assign(env, { HOME: root, CALIPER_LABEL_HOME: home, CALIPER_LABEL_PROJECTS: work, PYTHONUNBUFFERED: "1" }, opts.env || {});
   const [bin, pre] = command();
   const args = [...pre, "label", ...(opts.args || []), "--port", String(port), "--no-browser"];
   const child: ChildProcess = spawn(bin, args, { cwd: work, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
