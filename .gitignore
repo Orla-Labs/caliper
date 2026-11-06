@@ -34,5 +34,7 @@ Thumbs.db
 docs/*
 !docs/demo.gif
 !docs/targets.md
+!docs/02-technical-state.md
+!docs/03-graders-and-rewards.md
 building/
 CLAUDE.md

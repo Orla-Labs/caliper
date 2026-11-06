@@ -31,7 +31,7 @@ grader: naive_grader v1.0.0   rows: 20
   wrong_answer         score drops     20/20     killed
   truncate_response    score drops     12/20     SURVIVED (8 rows)
   hardcode_gold        score drops      0/20     SURVIVED (20 rows)
-  whitespace_perturb   score same      12/12     killed
+  whitespace_perturb   score same      13/13     killed
   prepend_sycophancy   score same      20/20     killed
   append_garbage       score same      20/20     killed
   case_perturb         score same      20/20     killed
@@ -57,7 +57,7 @@ grader: fixed_grader v1.0.0   rows: 20
   wrong_answer         score drops     20/20     killed
   truncate_response    score drops     20/20     killed
   hardcode_gold        score drops     20/20     killed
-  whitespace_perturb   score same      12/12     killed
+  whitespace_perturb   score same      13/13     killed
   prepend_sycophancy   score same      20/20     killed
   append_garbage       score same      20/20     killed
   case_perturb         score same      20/20     killed

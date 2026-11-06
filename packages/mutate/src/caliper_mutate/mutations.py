@@ -19,6 +19,7 @@ graders that don't are reward-hackable. See docs/03-graders-and-rewards.md.
 
 from __future__ import annotations
 
+import hashlib
 import random
 import re
 
@@ -37,7 +38,10 @@ def _seeded_rng(payload: str) -> random.Random:
 
     Non-cryptographic by design: mutation reproducibility, not secrecy.
     """
-    return random.Random(hash(("caliper-mutate", payload)) & 0xFFFFFFFF)  # noqa: S311
+    # Stable across processes: str hash() is salted per process (PYTHONHASHSEED),
+    # which made mutation choices, and one test, vary from run to run.
+    digest = hashlib.sha256(b"caliper-mutate\x00" + payload.encode("utf-8")).digest()
+    return random.Random(int.from_bytes(digest[:8], "big"))  # noqa: S311
 
 
 class DropFormatGate:
