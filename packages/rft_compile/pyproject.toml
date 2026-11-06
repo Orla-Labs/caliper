@@ -1,12 +1,15 @@
 [project]
 name = "caliper-rft"
 version = "0.0.1"
-description = "Compile Caliper grader specs to OpenAI RFT JSON."
+description = "Compile Caliper graders to training targets (TRL, Bedrock RFT, legacy OpenAI RFT)."
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.7",
     "caliper-sdk",
 ]
+
+[project.scripts]
+caliper-compile = "caliper_rft.cli:main"
 
 [build-system]
 requires = ["hatchling"]
