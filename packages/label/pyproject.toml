@@ -11,6 +11,9 @@ dependencies = [
     "ruamel.yaml>=0.18",
     "caliper-eval",
     "caliper-kappa",
+    "duckdb>=1.2",
+    "boto3>=1.34",
+    "pytz>=2024.1",
 ]
 
 [build-system]
