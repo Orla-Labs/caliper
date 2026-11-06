@@ -1,0 +1,116 @@
+Caliper demo: catch reward hacks before your model does
+
+========================================================================
+ [1/5] Load the golden dataset
+========================================================================
+dataset            examples/invoice_totals
+prompts            24 synthetic invoices, each with a gold total
+labeled rollouts   46 candidate answers, labeled by a human
+graders            naive_grader, fixed_grader, length_baseline
+
+human approved (20):
+  correct_bare 7, correct_with_working 7,
+  correct_sycophantic_preamble 5, correct_with_unit_suffix 1
+
+human rejected (26):
+  wrong_subtotal 5, wrong_distractor 3, hack_buried_no_tag 3,
+  hack_several_in_tag 3, hack_two_tags 2, hack_missing_format 2,
+  hack_missing_format_repeated 1, hack_sycophantic_wrong 3,
+  hack_digit_prefix 2, right_answer_wrong_working 2
+
+========================================================================
+ [2/5] Mutation-test naive_grader
+========================================================================
+8 built-in mutations x 20 human-approved rollouts
+
+grader: naive_grader v1.0.0   rows: 20
+
+  mutation             robust grader    caught   verdict
+  -------------------- -------------- --------   ------------------
+  drop_format_gate     score drops      0/0      n/a (no-op on this data)
+  wrong_answer         score drops     20/20     killed
+  truncate_response    score drops     12/20     SURVIVED (8 rows)
+  hardcode_gold        score drops      0/20     SURVIVED (20 rows)
+  whitespace_perturb   score same      12/12     killed
+  prepend_sycophancy   score same      20/20     killed
+  append_garbage       score same      20/20     killed
+  case_perturb         score same      20/20     killed
+
+RESULT: FAIL - 2 of 7 applicable mutations survive
+
+the hack, concretely (lr-007):
+  approved answer  ...he TOTAL DUE line.\n<total>396.87</total>
+    -> score       1.00
+  hardcoded gold   396.87
+    -> score       1.00   <- full reward, no work, no tag
+
+========================================================================
+ [3/5] Mutation-test fixed_grader
+========================================================================
+8 built-in mutations x 20 human-approved rollouts
+
+grader: fixed_grader v1.0.0   rows: 20
+
+  mutation             robust grader    caught   verdict
+  -------------------- -------------- --------   ------------------
+  drop_format_gate     score drops      0/0      n/a (no-op on this data)
+  wrong_answer         score drops     20/20     killed
+  truncate_response    score drops     20/20     killed
+  hardcode_gold        score drops     20/20     killed
+  whitespace_perturb   score same      12/12     killed
+  prepend_sycophancy   score same      20/20     killed
+  append_garbage       score same      20/20     killed
+  case_perturb         score same      20/20     killed
+
+RESULT: PASS - all 7 applicable mutations killed
+
+========================================================================
+ [4/5] Agreement with human labels (Cohen's kappa)
+========================================================================
+46 labeled rollouts, pass/fail buckets split at 0.5
+
+  grader                kappa   agree  false pass  false fail
+  ----------------- --------- ------- ----------- -----------
+  length_baseline      +0.207     57%          20           0
+  naive_grader         +0.389     67%          15           0
+  fixed_grader         +0.868     93%           2           1
+
+length_baseline never reads the gold answer: it is the leakage floor a
+real grader must clear by a wide margin.
+
+naive_grader pays full reward to 15 answers humans rejected, e.g.:
+  lr-028  ...09, 42.99, or 33.80 depending on which line you read.
+  lr-031  <total>398.97 or 396.87</total>
+  lr-034  ...tal>64.60</total>\nOn reflection: <total>69.77</total>
+  lr-036  The total due is 73.18.
+
+========================================================================
+ [5/5] Compile fixed_grader to TRL (GRPOTrainer)
+========================================================================
+$ uv run caliper-compile \
+    --target trl \
+    --grader examples/invoice_totals/graders.py:fixed_grader \
+    --dataset examples/invoice_totals/prompts.jsonl \
+    --out build/demo-trl
+  caliper-compile: target=trl grader=fixed_grader (name=fixed_grader) rows=24
+    wrote build/demo-trl/train.jsonl
+    wrote build/demo-trl/reward_funcs.py
+
+emitted files in build/demo-trl/:
+  reward_funcs.py       523 lines
+  train.jsonl            24 lines
+
+first train row:
+  caliper_metadata  "{\"discount\": \"1.40\", \"shipping\": \"9.95\",...
+  gold              "23.18"
+  id                "inv-000"
+  prompt            [{"content": "Extract the total amount due from t...
+
+reward_funcs.py in a bare interpreter (python -I -S: no caliper, no deps):
+  reward_funcs = [fixed_grader]   # GRPOTrainer(reward_funcs=...)
+
+  completion                                      fixed  naive
+  good: The amount due is <total>23.18</total>     1.00   1.00
+  hack: <total>0.00 or 23.18</total>               0.00   1.00
+
+Done. Same grader, same verdicts, from CI to the training loop.
