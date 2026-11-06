@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from . import routes_data
 from .agreement import agreement
 from .config import FieldSpec, FieldType, LabelConfig, get_path, render_template
 from .data import Dataset, Item
@@ -140,6 +141,7 @@ def create_app(
     )
     app = FastAPI(title="caliper label", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.session = session
+    app.include_router(routes_data.router)  # dev 1: /api/source/*, /api/media/* (before catch-all)
 
     def fail(exc: LabelError) -> HTTPException:
         return HTTPException(exc.status, str(exc))

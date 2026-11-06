@@ -107,6 +107,18 @@ def load_extension(con: duckdb.DuckDBPyConnection, name: str) -> None:
         ) from None
 
 
+_CONNECT_HINTS = {
+    SourceKind.POSTGRES: "check that Postgres is running and reachable, and PGHOST/PGPORT "
+    "(or the host and port in DATABASE_URL)",
+    SourceKind.MYSQL: "check that MySQL is running and reachable, and MYSQL_HOST/MYSQL_TCP_PORT "
+    "(or the host and port in DATABASE_URL)",
+    SourceKind.S3: "check the network and credentials.endpoint_url (S3-compatible) or "
+    "credentials.region (AWS)",
+    SourceKind.GCS: "check the network connection to storage.googleapis.com",
+    SourceKind.HTTP: "check the URL and that the server is reachable from this machine",
+}
+
+
 def translate(exc: Exception, source: SourceConfig | None, what: str = "") -> ConnectorError:
     """DuckDB/driver exception -> ConnectorError with secrets removed and a hint."""
     if isinstance(exc, ConnectorError):
@@ -125,11 +137,8 @@ def translate(exc: Exception, source: SourceConfig | None, what: str = "") -> Co
             )
         else:
             hint = "the server refused access: check the credentials env vars"
-    elif "could not connect" in low or "connection refused" in low or "can't connect" in low:
-        hint = (
-            "check that the database is running and reachable, and the host/port settings "
-            "(PGHOST/PGPORT, MYSQL_HOST/MYSQL_TCP_PORT or DATABASE_URL)"
-        )
+    elif any(k in low for k in ("could not connect", "connection refused", "can't connect")):
+        hint = _CONNECT_HINTS.get(kind, "check the address and that the server is reachable")
     elif "password authentication failed" in low or "access denied for user" in low:
         hint = "the database rejected the user/password: check the env vars that hold them"
     elif "catalog error" in low or "does not exist" in low or "doesn't exist" in low:
