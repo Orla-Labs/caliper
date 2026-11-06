@@ -1,8 +1,8 @@
 """Prepare the dry-run server's store for the GIF recording.
 
-Writes an `invoice_totals` eval set (the labeled rollouts from
-examples/invoice_totals) into a SQLite store, so the editor can dry-run
-against it via `?evalSet=invoice_totals`. Also checks that the one-grader
+Writes the labeled rollouts from examples/invoice_totals into a SQLite
+store as `invoice_totals` (all rows) and `invoice_spot_check` (9 rows), so
+the editor can dry-run against them via `?evalSet=...`. Also checks that the one-grader
 editor snippets in this directory score every row exactly like the
 graders in examples/invoice_totals/graders.py, so the GIF can't drift
 from the example.
@@ -23,6 +23,11 @@ from caliper_store import SqlStore
 ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE = Path(os.environ.get("CALIPER_DEMO_EXAMPLE_DIR", ROOT / "examples" / "invoice_totals"))
 HERE = Path(__file__).resolve().parent
+# Small, ordered subset for the editor: approved answers first, reward hacks
+# last, so the results panel's "highest scoring rows" surfaces the hacks.
+SPOT_CHECK = [
+    "lr-000", "lr-007", "lr-014", "lr-020", "lr-028", "lr-036", "lr-031", "lr-034", "lr-043",
+]
 SNIPPETS = {"naive_grader": HERE / "editor_naive.py", "fixed_grader": HERE / "editor_fixed.py"}
 
 
@@ -46,13 +51,14 @@ def main(url: str) -> int:
                 print(f"{path.name} disagrees with graders.{name} on {row.id}: {a} != {b}")
                 return 1
 
+    by_id = {r.id: r for r in rows}
     store = SqlStore(url)
-    version = store.create(
-        "invoice_totals",
-        rows,
-        description="examples/invoice_totals labeled rollouts (GIF recording)",
-    )
-    print(f"seeded invoice_totals@{version.version} ({version.n_rows} rows)")
+    for name, subset in (
+        ("invoice_totals", rows),
+        ("invoice_spot_check", [by_id[i] for i in SPOT_CHECK]),
+    ):
+        v = store.create(name, subset, description="examples/invoice_totals labeled rollouts")
+        print(f"seeded {name}@{v.version} ({v.n_rows} rows)")
     return 0
 
 

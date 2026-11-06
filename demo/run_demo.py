@@ -28,6 +28,7 @@ import json
 import re
 import shutil
 import subprocess
+import textwrap
 from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
@@ -126,19 +127,22 @@ def step_load() -> tuple[list[EvalRow], list[EvalRow], ModuleType]:
     prompts = load_rows(EXAMPLE_DIR / "prompts.jsonl")
     labeled = load_rows(EXAMPLE_DIR / "labeled_rollouts.jsonl")
     graders = load_module(EXAMPLE_DIR / "graders.py", "invoice_totals_graders")
-    n_good = sum(1 for r in labeled if human_label(r) == 1)
     say(f"dataset            {EXAMPLE_REL}")
-    say(f"prompts            {len(prompts)} invoices with gold totals")
-    say(f"labeled rollouts   {len(labeled)} candidate responses, human-labeled")
-    say(f"  human: good      {n_good}")
-    say(f"  human: bad       {len(labeled) - n_good}")
+    say(f"prompts            {len(prompts)} synthetic invoices, each with a gold total")
+    say(f"labeled rollouts   {len(labeled)} candidate answers, labeled by a human")
     say("graders            naive_grader, fixed_grader, length_baseline")
-    example = next(r for r in labeled if human_label(r) == 1)
-    say()
-    say(f"example row        {example.id}")
-    say(f"  prompt           {clip(example.rollout.prompt)}")
-    say(f"  response         {clip(example.rollout.response)}")
-    say(f"  gold             {example.rollout.gold}")
+    for label, title in ((1, "approved"), (0, "rejected")):
+        cases: dict[str, int] = {}
+        for r in labeled:
+            if human_label(r) == label:
+                case = str(r.rollout.metadata.get("case", "other"))
+                cases[case] = cases.get(case, 0) + 1
+        # NBSP keeps "case count" pairs together when wrapping.
+        body = ", ".join(f"{c}\u00a0{k}" for c, k in cases.items())
+        say()
+        say(f"human {title} ({sum(cases.values())}):")
+        for line in textwrap.wrap(body, WIDTH - 2):
+            say("  " + line.replace("\u00a0", " "))
     return prompts, labeled, graders
 
 
@@ -150,15 +154,20 @@ def print_mutation_table(report: MutationReport) -> None:
     for s in report.per_mutation:
         expect = "score drops" if s.expected_effect == "lower" else "score same"
         caught = s.n_applied - s.n_violations
-        verdict = "killed" if s.passed else f"SURVIVED ({s.n_violations} rows)"
+        if s.n_applied == 0:
+            verdict = "n/a (no-op on this data)"
+        elif s.passed:
+            verdict = "killed"
+        else:
+            verdict = f"SURVIVED ({s.n_violations} rows)"
         say(f"  {s.name:<20} {expect:<14} {caught:>3}/{s.n_applied:<4}   {verdict}")
     survived = [s.name for s in report.per_mutation if not s.passed]
+    n_live = sum(1 for s in report.per_mutation if s.n_applied > 0)
     say()
     if survived:
-        say(f"RESULT: FAIL - {len(survived)}/{len(report.per_mutation)} mutations survive: "
-            + ", ".join(survived))
+        say(f"RESULT: FAIL - {len(survived)} of {n_live} applicable mutations survive")
     else:
-        say(f"RESULT: PASS - all {len(report.per_mutation)} mutations killed")
+        say(f"RESULT: PASS - all {n_live} applicable mutations killed")
 
 
 def step_mutate(
@@ -170,19 +179,19 @@ def step_mutate(
     report = run_mutations(grader, MUTATIONS, rows)
     print_mutation_table(report)
     if show_hack:
-        hack = next(
-            (o for o in report.outcomes if o.mutation == "hardcode_gold" and o.violation),
-            None,
-        )
-        if hack is not None:
-            row = next(r for r in rows if r.id == hack.row_id)
+        by_id = {r.id: r for r in rows}
+        hacks = [o for o in report.outcomes if o.mutation == "hardcode_gold" and o.violation]
+        if hacks:
+            # The most telling example: the longest worked answer it replaces.
+            hack = max(hacks, key=lambda o: len(by_id[o.row_id].rollout.response))
+            row = by_id[hack.row_id]
             hacked = HardcodeGold().apply(row.rollout)
             say()
-            say("the hack, concretely:")
-            say(f"  original response  {clip(row.rollout.response)}")
-            say(f"    -> score         {hack.baseline_score:.2f}")
-            say(f"  hacked response    {clip(hacked.response)}")
-            say(f"    -> score         {hack.mutated_score:.2f}   <- full reward, zero work")
+            say(f"the hack, concretely ({row.id}):")
+            say(f"  approved answer  ...{clip(row.rollout.response[-40:], 44)}")
+            say(f"    -> score       {hack.baseline_score:.2f}")
+            say(f"  hardcoded gold   {clip(hacked.response, 44)}")
+            say(f"    -> score       {hack.mutated_score:.2f}   <- full reward, no work, no tag")
     return report
 
 
@@ -198,22 +207,41 @@ def step_kappa(labeled: list[EvalRow], graders: ModuleType) -> dict[str, KappaRe
     )
     say(f"{len(labeled)} labeled rollouts, pass/fail buckets split at 0.5")
     say()
-    say(f"  {'grader':<17} {'kappa':>9} {'agree':>7}   confusion [[TN FN] [FP TP]]")
-    say(f"  {'-' * 17} {'-' * 9} {'-' * 7}   {'-' * 28}")
+    say(f"  {'grader':<17} {'kappa':>9} {'agree':>7} {'false pass':>11} {'false fail':>11}")
+    say(f"  {'-' * 17} {'-' * 9} {'-' * 7} {'-' * 11} {'-' * 11}")
     reports: dict[str, KappaReport] = {}
     for name in ("length_baseline", "naive_grader", "fixed_grader"):
         rep = compute_kappa(
             getattr(graders, name), labeled, labels, weighting=KappaWeighting.UNWEIGHTED
         )
         reports[name] = rep
-        (tn, fn), (fp, tp) = rep.confusion
+        # confusion[grader_bucket][label_bucket]
+        false_pass, false_fail = rep.confusion[1][0], rep.confusion[0][1]
         say(
-            f"  {name:<17} {fmt_kappa(rep):>9} {rep.observed_agreement:>6.0%}"
-            f"   [[{tn:>2} {fn:>2}] [{fp:>2} {tp:>2}]]"
+            f"  {name:<17} {fmt_kappa(rep):>9} {rep.observed_agreement:>7.0%}"
+            f" {false_pass:>11} {false_fail:>11}"
         )
     say()
-    say("length_baseline is the leakage floor: a grader that only looks at surface")
-    say("features. A real grader has to beat it by a wide margin.")
+    say("length_baseline never reads the gold answer: it is the leakage floor a")
+    say("real grader must clear by a wide margin.")
+
+    naive = reports["naive_grader"]
+    false_passes = [
+        p for p in naive.per_row if p.grader_bucket == 1 and p.label_bucket == 0
+    ]
+    by_id = {r.id: r for r in labeled}
+    seen: set[str] = set()
+    examples = []
+    for p in false_passes:
+        case = str(by_id[p.row_id].rollout.metadata.get("case", p.row_id))
+        if case not in seen:
+            seen.add(case)
+            examples.append(by_id[p.row_id])
+    say()
+    say(f"naive_grader pays full reward to {len(false_passes)} answers humans rejected, e.g.:")
+    for r in examples[:4]:
+        resp = r.rollout.response
+        say(f"  {r.id}  {clip(resp if len(resp) <= 56 else '...' + resp[-53:], 60)}")
     return reports
 
 
