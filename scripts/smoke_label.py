@@ -187,11 +187,11 @@ def project() -> int:
     con = open_connector(cfg.source, work)
     snapshot.take(_SnapshotArgs(work, cfg, store, con))
     ctx = ProjectContext(work, cfg, store, con, version=1)
-    token = "smoke-fictional-token"
+    token = "smoke-fictional-token"  # noqa: S105 - fictional, in-process only
     c = TestClient(create_app(ctx=ctx, auth_token=token))
     assert c.get("/api/items").status_code == 401
     h = {"Authorization": f"Bearer {token}"}
-    rnd = random.Random(7)
+    rnd = random.Random(7)  # noqa: S311 - seeded simulation
 
     def judge(who: str, item: dict) -> str:
         f = {x["label"]: x["value"] for x in item["fields"]}
