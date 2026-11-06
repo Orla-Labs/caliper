@@ -137,17 +137,18 @@ async function playTerminal(page, prefix, lines, caption, holds) {
     await page.setContent(terminal(shown.slice(-VISIBLE), cap));
     await shot(page, secs);
   };
+  // A section starts with "" + "====" + " [k/5]"; pause before each one.
+  const starts = lines
+    .map((l, i) => (l === "" && /^=+$/.test(lines[i + 1] ?? "") ? i : -1))
+    .filter((i) => i > 0);
   let i = 0;
+  let k = 0;
   while (i < lines.length) {
-    // A section starts with "" + "====" + " [k/5]"; pause before it starts.
-    const startsSection = lines[i] === "" && /^=+$/.test(lines[i + 1] ?? "");
-    if (startsSection && shown.length > prefix.length + 3) {
-      const k = (shown.join("\n").match(/\[(\d)\/5\]/g) ?? []).length;
-      await render(holds[k] ?? 3.5);
-    }
-    const chunk = startsSection ? 4 : 3;
-    shown.push(...lines.slice(i, i + chunk));
-    i += chunk;
+    if (starts.includes(i)) await render(holds[k] ?? 3.5);
+    if (starts.includes(i)) k++;
+    const next = Math.min(i + 3, ...starts.filter((s) => s > i), lines.length);
+    shown.push(...lines.slice(i, next));
+    i = next;
     await render(0.12);
   }
   await render(holds.final ?? 5);
@@ -162,10 +163,10 @@ async function caption(page, text) {
       el = document.createElement("div");
       el.id = "__cap";
       Object.assign(el.style, {
-        position: "fixed", left: "50%", bottom: "18px", transform: "translateX(-50%)",
+        position: "fixed", right: "130px", top: "10px",
         background: "rgba(13,17,23,0.92)", color: "#e6edf3", border: "1px solid #3578c4",
-        borderRadius: "8px", padding: "10px 18px", font: "600 17px -apple-system, Arial, sans-serif",
-        zIndex: 9999, maxWidth: "1000px", textAlign: "center", boxShadow: "0 6px 24px #000a",
+        borderRadius: "8px", padding: "9px 16px", font: "600 16px -apple-system, Arial, sans-serif",
+        zIndex: 9999, maxWidth: "640px", textAlign: "center", boxShadow: "0 6px 24px #000a",
       });
       document.body.appendChild(el);
     }
@@ -189,10 +190,19 @@ async function typeSource(page, src, perLine) {
 }
 
 async function dryRun(page) {
+  const done = page.waitForResponse((r) => r.url().endsWith("/api/dry-run") && r.ok());
   await page.getByRole("button", { name: "Dry run" }).click();
-  await page.getByText("Score distribution").waitFor();
-  await page.waitForTimeout(300);
+  await done;
+  await page.getByRole("button", { name: "Dry run" }).waitFor();
+  await page.waitForTimeout(400);
 }
+
+// Recording-only CSS: hide the (long) invoice prompt on each result card so
+// the response + grader explanation fit, and the Next.js dev badge.
+const RECORDING_CSS = `
+  div[style*="margin-top: 4px"][style*="color: rgb(207, 207, 207)"][style*="font-size: 12px"] { display: none !important; }
+  nextjs-portal { display: none !important; }
+`;
 
 async function scrollResults(page, y) {
   await page.evaluate((top) => {
@@ -234,27 +244,28 @@ await playTerminal(
 await page.goto(EDITOR_URL, { waitUntil: "networkidle" });
 await page.waitForFunction(() => window.monaco?.editor?.getEditors?.().length > 0, null, { timeout: 120_000 });
 await page.getByRole("button", { name: "Dry run" }).waitFor();
+await page.addStyleTag({ content: RECORDING_CSS });
 await page.waitForTimeout(500);
-await caption(page, "A first grader: reward 1.0 if the gold total appears in the response");
+await caption(page, "A first grader: reward 1.0 if the gold total appears anywhere in the answer");
 await typeSource(page, NAIVE_SRC, 0.25);
 await shot(page, 1.5);
-await caption(page, "Dry run against 18 human-labeled invoice rollouts");
+await caption(page, "Dry run on 9 human-labeled answers (3 approved, 6 rejected)");
 await dryRun(page);
 await shot(page, 2.5);
 await scrollResults(page, 10_000);
-await caption(page, "Looks great: the top rows all score 1.0 … including bare answers with no work");
+await caption(page, "8 of 9 score 1.0, including answers humans rejected");
 await shot(page, 5.0);
 
 // 4. Editor: fixed grader
 await scrollResults(page, 0);
-await caption(page, "The fixed grader: require reasoning and one well-formed final total");
+await caption(page, "The fix: exactly one <total> tag, holding one number equal to gold");
 await typeSource(page, FIXED_SRC, 0.18);
 await shot(page, 2.0);
 await caption(page, "Dry run again");
 await dryRun(page);
 await shot(page, 2.5);
 await scrollResults(page, 10_000);
-await caption(page, "Bare answers now score 0; only worked, correct totals earn reward");
+await caption(page, "3 of 9 pass: exactly the human-approved answers");
 await shot(page, 5.0);
 await caption(page, "");
 
