@@ -61,7 +61,9 @@ assert_parity(
 )
 ```
 
-It raises `ParityError` on the first counterexample, with the sequence and both
+If the real rule returns something other than an outcome string (an Enum, a
+bool, a dict), pass `outcome_of=` to map it before the comparison. It raises
+`ParityError` on the first counterexample, with the sequence and both
 outcomes, and returns the number of sequences checked. Exceptions count as a
 mismatch unless both sides raise the same type. Put the edges in the alphabet:
 a score exactly at the threshold, `true` or `NaN` confidences, truncated JSON,
@@ -166,6 +168,10 @@ the CI gate.
   interrupted or budget-stopped run picks up where it stopped. The report is
   byte-identical to an uninterrupted run. Use `--no-resume` to start fresh and
   `--retry-errors` to re-run rows whose provider call failed.
+- Resume is stale-aware. Each result stores the hash of its golden request and
+  of its candidate settings, and a row whose golden request or candidate changed
+  is re-run. An edited `decide` is **not** detected, so pass `--no-resume` after
+  changing it. Results that still look stale are reported as a warning and fail the gate.
 - Run IDs are derived from the config and golden content. There are no timestamps
   anywhere, so fake-provider output is byte-identical across runs and machines.
 
@@ -214,7 +220,8 @@ With `--ci`, the run exits 1 when any candidate fails. A candidate fails when:
 - any reply was served by a model other than the one requested; or
 - its error rate (results without a decision, over results) is above
   `[ci].max_error_rate` (default 0); or
-- rows are missing on its side or the reference's.
+- rows are missing on its side or the reference's; or
+- its results are stale (recorded against a different golden request or candidate).
 
 `--summary-md PATH` writes a short markdown summary (verdict, candidate table,
 changed outcomes, calibration, gate failures) to post on the pull request:
