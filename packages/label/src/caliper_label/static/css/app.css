@@ -76,12 +76,23 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 
 .token-gate input { max-width: 340px; margin: 0 auto; display: block; }
 
+@media (max-width: 1024px) {
+  .appbar { gap: var(--sp-3); padding: 0 var(--sp-4); }
+  .project-name { display: none; }
+  .appnav { margin-left: 0; min-width: 0; overflow-x: auto; }
+  .appbar-slot { min-width: 0; flex-shrink: 1; }
+  .appbar-slot .who { max-width: 130px; }
+}
+
 @media (max-width: 760px) {
   .appbar { padding: 0 var(--sp-3); gap: var(--sp-2); }
   .brand span:not(.logo) { display: none; }
   .project-name { display: none; }
   .appnav { margin-left: 0; overflow-x: auto; }
-  .appnav a { padding: 0 var(--sp-2); }
+  .appnav a { padding: 0 6px; font-size: var(--fs-xs); }
+  .brand { display: none; }
   .page { padding: var(--sp-3); }
   .toast { bottom: auto; top: calc(var(--appbar-h) + 8px); }
+  .appbar-slot .who { max-width: 92px; padding: 0 var(--sp-2); }
+  .appbar-slot [aria-label^="Keyboard shortcuts"] { display: none; }
 }

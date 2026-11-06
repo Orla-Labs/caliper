@@ -107,6 +107,23 @@ def _rows(session: Session, body: ExportIn) -> tuple[Any, Any]:
         raise ApiError(400, str(exc), exc.hint) from None
 
 
+DB_KINDS = ("postgres", "mysql", "sqlite")
+
+
+def _db_source(ctx: Any) -> dict[str, Any] | None:
+    """The project's source database (references only, never secrets) for table write-back."""
+    if ctx is None or ctx.config.source.kind.value not in DB_KINDS:
+        return None
+    src = ctx.config.source
+    out: dict[str, Any] = {
+        "kind": src.kind.value,
+        "credentials": src.credentials.model_dump(mode="json"),
+    }
+    if src.kind.value == "sqlite":
+        out["path"] = src.path
+    return out
+
+
 @router.get("/api/export/formats", summary="Export formats and the project's saved targets")
 def formats(request: Request, session: S) -> dict[str, Any]:
     ctx = getattr(request.app.state, "ctx", None)
@@ -116,6 +133,7 @@ def formats(request: Request, session: S) -> dict[str, Any]:
         "targets": [t.model_dump(mode="json") for t in ctx.config.exports] if ctx else [],
         "data_kind": legacy_kind,
         "label_type": session.rules.type.value,
+        "source": _db_source(ctx),
         "double_label": session.needed,
     }
 
@@ -233,10 +251,8 @@ def post_export(session: S, request: Request, body: ExportIn) -> dict[str, Any]:
             n = write_local(data, body.format, path)
             where = str(path)
         else:
-            fmt = "parquet" if body.format is ExportFormat.PARQUET else body.format.value
-            if kind in ("postgres", "mysql", "sqlite"):
-                fmt = "table"
-            n = write_via_sinks(data, dest, fmt)
+            fmt = "table" if kind in DB_KINDS else body.format.value
+            n = write_via_sinks(data, dest, fmt, project_dir=_root(request))
             where = dest.get("table") or dest.get("path") or kind
     except ExportError as exc:
         raise ApiError(400, str(exc), exc.hint) from None

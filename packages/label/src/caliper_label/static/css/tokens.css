@@ -183,7 +183,10 @@ kbd {
   text-decoration: none;
   transition: background var(--dur-fast), border-color var(--dur-fast), transform var(--dur-fast);
 }
-.btn:hover, button:hover { border-color: var(--c-ink-2); }
+.btn, button, a { -webkit-tap-highlight-color: transparent; }
+@media (hover: hover) {
+  .btn:hover, button:hover { border-color: var(--c-ink-2); }
+}
 .btn:active, button:active { transform: translateY(1px); }
 .btn[disabled], button[disabled] { opacity: .55; cursor: not-allowed; transform: none; }
 .btn-primary { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-on-accent); }

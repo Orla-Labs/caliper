@@ -42,7 +42,7 @@ def test_dashboard(tmp_path: Path) -> None:
     assert t["disagreements"] == 2 and t["open_disagreements"] == 2
     people = {x["name"]: x for x in d["labellers"]}
     assert people["ana"]["labels"] == 5 and people["ana"]["last_hour"] == 5
-    assert people["ana"]["per_hour"] is not None and people["cy"]["per_hour"] is None
+    assert people["ana"]["per_hour"] is None  # seconds of work: too little for a rate
     queues = {q["name"]: q for q in d["queues"]}
     assert queues["high"]["total"] == 4 and queues["high"]["last_hour"] >= 1
     agr = d["agreement"]
@@ -229,3 +229,33 @@ def test_parquet_export_via_sinks(tmp_path: Path) -> None:
     assert got == [("t0", "correct", "ana;ben"), ("t2", "wrong", "ana;ben")]
     d = c.get("/api/export/download?format=parquet")
     assert d.status_code == 200 and d.content[:4] == b"PAR1"
+
+
+def test_throughput_counts_active_time_only() -> None:
+    from datetime import datetime, timedelta
+
+    from caliper_label.agreement import _rate
+
+    t0 = datetime(2026, 11, 6, 9, 0)
+    steady = [t0 + timedelta(seconds=30 * i) for i in range(21)]  # one label / 30 s
+    assert _rate(steady) == 120.0
+    with_break = steady + [
+        steady[-1] + timedelta(hours=2) + timedelta(seconds=30 * i) for i in range(1, 3)
+    ]
+    assert 80 < _rate(with_break) < 90  # the 2-hour lunch counts as 5 minutes, not 2 hours
+    assert _rate(steady[:2]) is None
+
+
+def test_export_writes_back_to_a_sqlite_table(tmp_path: Path) -> None:
+    import sqlite3
+
+    _, c = double(tmp_path)
+    dest = {"kind": "sqlite", "path": "out.db", "table": "triage_labels"}
+    r = c.post("/api/export", json={"format": "table", "destination": dest})
+    assert r.status_code == 200, r.text
+    assert r.json()["written"] == 2 and r.json()["destination"] == "triage_labels"
+    con = sqlite3.connect(tmp_path / "out.db")
+    rows = con.execute(
+        "SELECT item_id, label, labeller, project_version FROM triage_labels"
+    ).fetchall()
+    assert sorted(rows) == [("t0", "correct", "ana;ben", 3), ("t2", "wrong", "ana;ben", 3)]

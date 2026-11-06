@@ -411,6 +411,7 @@ class Session:
     ) -> None:
         self.items = items
         self.log = log
+        self.rollout_cfg: Any = None  # ProjectConfig.rollout, set by ProjectContext
         self.labels_cfg = labels
         self.workflow = workflow
         self.rules = LabelRules(labels)

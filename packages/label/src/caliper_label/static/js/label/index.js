@@ -12,6 +12,7 @@ import {
 } from "../common/dom.js";
 import { cardImages, preloadImages, renderCard } from "./card.js";
 import { decisionText, makePanel } from "./decide.js";
+import { renderMarkdown } from "../common/markdown.js";
 
 const PREFETCH = 5;
 const QUEUE_KEY = "caliper-label-queue";
@@ -41,6 +42,9 @@ export async function mount(root, ctx) {
     done: null,        // {reason} when nothing is left
     zoom: -1,
     refilling: null,
+    refillAgain: false,
+    inflight: 0,       // POSTs not yet answered
+    waitingSince: undefined,
     lastQueues: null,
   };
   const qParam = query.get("queue") || store(QUEUE_KEY);
@@ -54,7 +58,7 @@ export async function mount(root, ctx) {
   const progress = el("div", { class: "lbl-progress", "aria-live": "off" });
   const instructions = cfg.instructions
     ? el("details", { class: "lbl-instructions", open: store("caliper-label-instr") !== "closed" },
-      el("summary", { text: "Instructions" }), el("div", { class: "instr-body", text: cfg.instructions }))
+      el("summary", { text: "Instructions" }), el("div", { class: "instr-body" }, renderMarkdown(cfg.instructions)))
     : null;
   if (instructions) instructions.addEventListener("toggle", () => store("caliper-label-instr", instructions.open ? null : "closed"));
   const card = el("article", { class: "card", id: "card", "aria-label": "Item to label", tabindex: "-1" });
@@ -204,11 +208,14 @@ export async function mount(root, ctx) {
   }
 
   // ------------------------------------------------------------ prefetch
+  // One refill in flight at a time; a request made meanwhile runs right after it,
+  // so the queue reflects every label already sent.
   function refill() {
-    if (S.refilling) return S.refilling;
+    if (S.refilling) { S.refillAgain = true; return S.refilling; }
     const q = S.queue ? `&queue=${encodeURIComponent(S.queue)}` : "";
     const want = S.queue;
-    S.refilling = api.get(`/api/next?labeller=${encodeURIComponent(S.labeller)}&n=${PREFETCH + 1}${q}`)
+    const n = Math.min(20, PREFETCH + 1 + S.inflight);
+    S.refilling = api.get(`/api/next?labeller=${encodeURIComponent(S.labeller)}&n=${n}${q}`)
       .then((data) => {
         if (want !== S.queue) return;
         const cur = S.item && S.item.id;
@@ -218,11 +225,14 @@ export async function mount(root, ctx) {
         if (!S.item) {
           S.item = S.upcoming.shift() || null;
           if (S.item) { S.done = null; announceCard(); }
-          else if (!S.done) S.done = { reason: "all_done" };
-          paint();
+          else if (!S.done && !S.inflight) S.done = { reason: "all_done" };
+          if (S.item) { paint(S.waitingSince); S.waitingSince = undefined; } else paint();
         }
       })
-      .finally(() => { S.refilling = null; });
+      .finally(() => {
+        S.refilling = null;
+        if (S.refillAgain) { S.refillAgain = false; refill().catch(showError); }
+      });
     return S.refilling;
   }
 
@@ -233,15 +243,24 @@ export async function mount(root, ctx) {
 
   function advance(t0) {
     S.item = S.upcoming.shift() || null;
-    if (!S.item) S.done = null; // unknown until the refill answers
+    if (!S.item) {
+      S.done = null; // unknown until the refill answers
+      S.waitingSince = t0; // the latency metric covers the wait too
+      metrics.waits = (metrics.waits || 0) + 1;
+      paint();
+      refill().catch(showError);
+      return;
+    }
     paint(t0);
   }
 
   // ------------------------------------------------------------ actions
   function send(item, body, labelText) {
     S.sent.add(item.id);
+    S.inflight += 1;
     S.chain = S.chain
       .then(() => api.post("/api/labels", { item_id: item.id, labeller: S.labeller, ...body }))
+      .finally(() => { S.inflight -= 1; })
       .then(() => {
         refreshQueuesSoon();
       }, (err) => {

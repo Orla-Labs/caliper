@@ -254,11 +254,13 @@ def _export_project(args: argparse.Namespace) -> int:
             }
             if src.get("path") and src["kind"] == "sqlite":
                 dest["path"] = src["path"]
-            n = write_via_sinks(rows, dest, "table")
+            n = write_via_sinks(rows, dest, "table", project_dir=ctx.project_dir)
             where = f"table {args.table}"
         elif is_remote(args.out):
             kind = args.out.split("://", 1)[0]
-            n = write_via_sinks(rows, {"kind": kind, "path": args.out}, fmt.value)
+            n = write_via_sinks(
+                rows, {"kind": kind, "path": args.out}, fmt.value, overwrite=args.overwrite
+            )
             where = args.out
         else:
             n = write_local(rows, fmt, args.out)
@@ -328,6 +330,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, Any]:
     )
     e.add_argument("--out", default=None, help="file path or s3://bucket/key")
     e.add_argument("--table", default=None, help="write back to this table in the source database")
+    e.add_argument("--overwrite", action="store_true", help="s3: replace an existing object")
     e.add_argument(
         "--rows",
         choices=["items", "labels"],

@@ -1,1 +1,32 @@
 /* #/export */
+.exp-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--sp-5); align-items: start; }
+.exp-form { display: flex; flex-direction: column; gap: var(--sp-3); }
+.exp-block { margin: 0; padding: var(--sp-4) var(--sp-5); border: 1px solid var(--c-line); }
+.exp-block legend { font-weight: var(--fw-bold); padding: 0 var(--sp-1); font-size: var(--fs-md); }
+.choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--sp-2); }
+.choice { display: flex; gap: var(--sp-2); align-items: flex-start; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--c-line); border-radius: var(--radius); cursor: pointer; font-weight: normal; }
+.choice:has(input:checked) { border-color: var(--c-accent); background: var(--c-accent-soft); }
+.choice input { margin-top: 4px; accent-color: var(--c-accent); }
+.choice-text { display: flex; flex-direction: column; }
+.choice-text small { font-size: var(--fs-xs); }
+.check { display: flex; gap: var(--sp-2); align-items: center; margin-top: var(--sp-3); font-weight: normal; }
+.dest-field { margin-top: var(--sp-3); max-width: 480px; display: flex; flex-direction: column; gap: var(--sp-1); }
+.exp-go { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+.btn-lg { min-height: 44px; padding: 0 var(--sp-5); font-size: var(--fs-md); }
+.exp-result .ok { color: var(--c-good); margin: 0; }
+.exp-result .err { color: var(--c-bad); }
+.exp-result .err p { margin: 2px 0 0; color: var(--c-ink); }
+.exp-side { padding: var(--sp-4) var(--sp-5); position: sticky; top: calc(var(--appbar-h) + 16px); }
+.exp-side h2 { font-size: var(--fs-md); }
+.exp-counts { display: flex; flex-direction: column; gap: var(--sp-2); }
+.exp-counts div { display: flex; gap: var(--sp-3); align-items: baseline; }
+.exp-counts b { font-size: var(--fs-xl); min-width: 2.5ch; text-align: right; }
+.exp-counts span { color: var(--c-ink-2); font-size: var(--fs-sm); }
+.exp-counts .warn b { color: var(--c-warn); }
+.left-out { margin-top: var(--sp-4); font-size: var(--fs-sm); }
+.left-out summary { cursor: pointer; font-weight: var(--fw-medium); }
+.left-out ul { max-height: 240px; overflow: auto; padding-left: var(--sp-4); }
+@media (max-width: 1024px) {
+  .exp-grid { grid-template-columns: minmax(0, 1fr); }
+  .exp-side { position: static; order: -1; }
+}
