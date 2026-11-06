@@ -10,9 +10,11 @@ the row matches the slice's ``where`` predicate. Rules (``[[slices]] rule``):
   the upper bound by default). Uses every slice row: nothing is selected.
 * ``must_not_lose``: zero slice rows lost vs the reference at the matched
   operating point (the reference right, the candidate wrong), on the report
-  rows (``split == "test"`` when split). Every label source counts unless
-  ``label_sources`` narrows it. No labelled slice row on the report split
-  fails the rule: there is nothing to show that nothing is lost.
+  rows (``split == "test"`` when split). Reads human-labelled rows by default
+  (a "loss" is judged against truth); ``label_sources`` can widen it, and
+  then non-human verdicts are reported as disagreements, never losses. Both
+  sides' counts are reported. No such slice row on the report split fails the
+  rule: there is nothing to show that nothing is lost.
 * ``min_precision``: among slice report rows the candidate auto-handles (its
   own outcome is in ``[operating_point].auto_outcomes``), the share a
   **human** approved must be >= ``threshold``. Reads human sources only by
@@ -36,7 +38,7 @@ from ._stats import DEFAULT_N_BOOT
 from .config import GateRequirement, SliceConfig, SliceRule
 from .noise import index_results
 from .operating_point import MatchedOperatingPoint
-from .provenance import is_human, metric_name, report_rows, source_key
+from .provenance import HUMAN_KEYS, is_human, metric_name, report_rows, source_key
 from .transitions import PairedExcess, compute_paired_excess
 from .types import GoldenRow, RowResult
 
@@ -65,6 +67,8 @@ class SliceResult(BaseModel):
     detail: str  # one line, for the report and the gate
     rows: list[str] = Field(default_factory=list)  # offending rows (lost, flipped, ...)
     paired: PairedExcess | None = None
+    reference_lost: int | None = None  # must_not_lose: slice rows each side gets wrong
+    candidate_lost: int | None = None
 
 
 def _lookup(row: GoldenRow, key: str) -> Any:
@@ -178,43 +182,49 @@ def _must_not_lose(
     cfg: SliceConfig,
     members: list[GoldenRow],
     candidate: str,
+    reference: str,
     mop: MatchedOperatingPoint | None,
     report_ids: set[str],
 ) -> SliceResult:
-    sources = {s.value for s in cfg.label_sources} if cfg.label_sources else None
+    if cfg.label_sources:
+        sources = {s.value for s in cfg.label_sources}
+    else:
+        sources = set(HUMAN_KEYS)  # a loss is judged against human truth by default
+    metric = metric_name(sources)
+    truth = metric == "precision"
     scope = [
         g
         for g in members
-        if g.id in report_ids
-        and g.label_approved is not None
-        and (sources is None or source_key(g) in sources)
+        if g.id in report_ids and g.label_approved is not None and source_key(g) in sources
     ]
     split = mop.report_split if mop is not None else "test"
+    what = "rows lost vs reference" if truth else f"disagreements vs reference ({metric})"
     base = dict(slice=cfg.name, rule=cfg.rule.value, candidate=candidate, threshold=0.0)
     if mop is None or not scope:
+        labelled = "human-labelled" if truth else "labelled"
         why = (
             "no matched operating point (no labelled report rows decided on both sides)"
             if mop is None
-            else f"no labelled slice rows on {split}: cannot show nothing is lost"
+            else f"no {labelled} slice rows on {split}: cannot show nothing is lost"
         )
         return SliceResult(
-            **base, n_rows=len(scope), metric="rows lost vs reference", value=None,
-            passed=False, detail=why,
+            **base, n_rows=len(scope), metric=what, value=None, passed=False, detail=why,
         )  # fmt: skip
     scope_ids = {g.id for g in scope}
     lost = sorted(set(mop.candidate_only) & scope_ids)
-    by_src: dict[str, int] = {}
-    for g in scope:
-        if g.id in lost:
-            by_src[source_key(g)] = by_src.get(source_key(g), 0) + 1
-    src_note = ", ".join(f"{k} {v}" for k, v in sorted(by_src.items()))
+    ref_n = len(set(mop.reference_lost) & scope_ids)
+    cand_n = len(set(mop.candidate_lost) & scope_ids)
+    verb = "loses" if truth else f"disagrees with the labels ({metric}) on"
     detail = (
-        f"loses {len(lost)} of {len(scope)} labelled rows on {split} the reference handles right"
-        + (f" ({src_note}): {_ids(lost)}" if lost else "")
+        f"{len(scope)} {'human-labelled' if truth else 'labelled'} rows on {split}: "
+        f"{reference} {verb} {ref_n}, {candidate} {verb} {cand_n}; "
+        f"{len(lost)} {'lost' if truth else 'disagreements'} vs {reference}"
+        + (f": {_ids(lost)}" if lost else "")
     )
     return SliceResult(
-        **base, n_rows=len(scope), metric="rows lost vs reference", value=float(len(lost)),
+        **base, n_rows=len(scope), metric=what, value=float(len(lost)),
         passed=not lost, detail=detail, rows=lost,
+        reference_lost=ref_n, candidate_lost=cand_n,
     )  # fmt: skip
 
 
@@ -304,7 +314,7 @@ def evaluate_slices(
                 )
             )
         elif cfg.rule == SliceRule.MUST_NOT_LOSE:
-            out.append(_must_not_lose(cfg, members, candidate, mop, report_ids))
+            out.append(_must_not_lose(cfg, members, candidate, reference, mop, report_ids))
         else:
             out.append(
                 _min_precision(cfg, members, results, candidate, auto_outcomes, report_ids, split)

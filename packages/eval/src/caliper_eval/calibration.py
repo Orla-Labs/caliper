@@ -104,6 +104,8 @@ class Calibration(BaseModel):
     target_precision: float | None = None
     recommended_threshold: float | None = None
     on_report: list[SourceMetrics] = Field(default_factory=list)  # per source, at recommended
+    # The sweep on the selection rows of each label source separately (JSON only).
+    sweep_by_source: dict[str, list[ThresholdPoint]] = Field(default_factory=dict)
 
 
 def _ece(
@@ -221,6 +223,11 @@ def compute_calibration(
     sweep = [_point(rows, t) for t in grid] if rows else []
     reliability, ece = _ece(rows, n_bins) if rows else ([], None)
 
+    sweep_by_source: dict[str, list[ThresholdPoint]] = {}
+    for key in sorted({source_key(g) for g in sel}, key=lambda k: (not is_human(k), k)):
+        src_rows = [usable[g.id] for g in sorted(sel, key=lambda g: g.id) if source_key(g) == key]
+        sweep_by_source[key] = [_point(src_rows, t) for t in grid]
+
     recommended = None
     if target_precision is not None:
         for p in sweep:
@@ -271,6 +278,7 @@ def compute_calibration(
         target_precision=target_precision,
         recommended_threshold=recommended,
         on_report=on_report,
+        sweep_by_source=sweep_by_source,
     )
 
 

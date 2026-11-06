@@ -326,15 +326,17 @@ rules are:
 | `rule` | `threshold` | passes when |
 | --- | --- | --- |
 | `max_regression` | required | the paired excess regression on the slice rows (same formula and bound as the main gate) is `<= threshold`. Uses every slice row. |
-| `must_not_lose` | none | zero labelled slice rows **on test** are lost vs the reference at the matched operating point. Fails closed when no labelled slice row is on test. Needs `[operating_point]`. |
+| `must_not_lose` | none | zero human-labelled slice rows **on test** are lost vs the reference at the matched operating point. Reports how many each side loses. Fails closed when no such row is on test. Needs `[operating_point]`. |
 | `min_precision` | in [0, 1] | among slice rows on test that the candidate's own outcome auto-handles, the share a **human** approved is `>= threshold`. Fails closed with no human-labelled slice rows. Passes when nothing is auto-handled. Needs `[operating_point]`. |
 
-`label_sources = [...]` narrows which label sources `must_not_lose` and
-`min_precision` read. On `min_precision` with non-human sources, the number is
-reported as agreement (for example "teacher agreement"), never as precision.
+`must_not_lose` and `min_precision` read human-labelled rows by default: a
+loss, or a precision, is judged against truth. `label_sources = [...]`
+chooses other sources. Their verdicts are then reported as disagreements or
+agreement (for example "teacher agreement"), never as losses or precision.
 Slices apply to every non-reference candidate. They are listed in the report
 with a PASS/FAIL per candidate, and each failing slice becomes a gate reason
-(`slice rare_code (must_not_lose): loses 1 of 7 labelled rows on test ...: lst-0053`).
+(`slice rare_code (must_not_lose): 7 human-labelled rows on test: baseline loses 0,
+small-thinking loses 1; 1 lost vs baseline: lst-0053`).
 
 ### CI gate
 

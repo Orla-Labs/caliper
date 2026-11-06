@@ -127,8 +127,10 @@ allowance is 0.10 rather than 0.02 because on 80 rows the paired interval is
 about ±0.09 wide. A tighter allowance needs a bigger golden set.
 
 **Named slices.** `rare_code` is *must not lose*. On test, at the matched
-operating point, `small` loses 4 of the 7 rare-code rows the baseline handles
-right. `small-thinking` loses 1 (`lst-0053`, a blood-pressure cuff it scores 0.61). That
+operating point, the baseline loses none of the 7 reviewer-labelled rare-code
+rows, and `small` loses 4. That is a floor: some of the other 3 clear the
+matched threshold with a tax code `small` guessed wrong, which the routing
+labels cannot see (see [below](#what-this-example-does-not-show)). `small-thinking` loses 1 (`lst-0053`, a blood-pressure cuff it scores 0.61). That
 single record blocks it, even though the aggregate gate passes. `lookalike`
 allows a paired excess of up to 0.5. `small` exceeds it (upper bound 0.875);
 `small-thinking` does not move a single lookalike.
