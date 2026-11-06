@@ -748,3 +748,13 @@ def _merge_list(
     seq.ca.items.clear()
     seq.ca.items.update(comments)
     return "" if _attach_trailing(seq, trailing) else trailing
+
+
+def from_legacy(legacy: Any, data_path: str | Path, **kw: Any) -> ProjectConfig:
+    """Legacy `label.yaml` (`config.LabelConfig`) + data path -> ProjectConfig.
+
+    Implemented in `project_setup.from_legacy` (see there); re-exported here per CONTRACT.
+    """
+    from .project_setup import from_legacy as _impl
+
+    return _impl(legacy, data_path, **kw)

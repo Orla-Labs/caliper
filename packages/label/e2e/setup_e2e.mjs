@@ -105,6 +105,9 @@ try {
   check((await page.textContent(".wz-preview-summary")).includes("40 rows"), "preview shows the row count");
   check(await page.$eval("select", (s) => s.value) === "ticket_id", "id column guessed");
   await shot("setup-02-data");
+  await page.reload();
+  await page.waitForSelector(".wz-preview-summary");
+  check(!page.url().includes("new=1"), "a reload keeps the draft (upload and preview)");
 
   await page.click("#wz-next");
   await page.waitForSelector(".wz-designer");
@@ -127,6 +130,8 @@ try {
   check(await page.isVisible(".wz-field-error"), "hotkey clash is shown");
   check((await page.getAttribute("#wz-next", "aria-disabled")) === "true", "Next is blocked while keys clash");
   await page.click('[data-fid="ohot-1"]');
+  await page.keyboard.press("Shift");
+  check((await page.inputValue('[data-fid="ohot-1"]')) === "1", "a modifier key alone is not bound");
   await page.keyboard.press("2");
   await shot("setup-04-labels");
 
@@ -181,8 +186,10 @@ try {
   await shot("setup-08-settings-file");
 
   console.log("demo");
-  await page.goto(`${BASE}/#/start`);
+  await page.goto(`${BASE}/#/settings/general`);
+  await page.click("#se-switch");
   await page.waitForSelector("#st-demo");
+  check(true, "Settings -> Switch project reaches the start screen with a project open");
   check((await page.textContent(".st-list")).includes("Tickets"), "recent list shows the new project");
   await page.click("#st-demo");
   await page.waitForFunction(() => location.hash.startsWith("#/label"));

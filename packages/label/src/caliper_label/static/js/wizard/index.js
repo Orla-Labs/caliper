@@ -57,9 +57,15 @@ export async function mount(el, ctx) {
   const { api, go } = ctx;
   const state = load();
   let step = STEPS.some(([s]) => s === ctx.args[0]) ? ctx.args[0] : "data";
-  if (ctx.query.get("new") === "1") Object.assign(state, fresh());
+  if (ctx.query.get("new") === "1") {
+    Object.assign(state, fresh());
+    save(state);
+    history.replaceState(null, "", `#/wizard/${ctx.args[0] || "data"}`); // a reload keeps the draft
+  }
   const persist = debounce(() => save(state), 150);
   const changed = () => { persist(); updateNav(); };
+  const saveNow = () => save(state);
+  window.addEventListener("pagehide", saveNow); // a reload right after a change keeps it
 
   // can the user go past each step?
   function blocker(s) {
@@ -179,12 +185,20 @@ export async function mount(el, ctx) {
         state.preview = { ok: false, credentials: [], error: { detail: err.message, hint: err.hint } };
       }
       changed();
+      saveNow();
       showResult();
     }
 
     function defaultName() {
-      const p = state.upload?.name || state.config.source.path || state.config.source.table || "";
-      const base = String(p).split(/[\\/]/).pop().replace(/\.[a-z0-9]+$/i, "").replace(/[*?]/g, "").replace(/[_-]+/g, " ").trim();
+      const src = state.config.source;
+      if (src.table) return humanize(src.table.split(".").pop());
+      if (src.query) return "Query results";
+      const p = state.upload?.name || src.path || "";
+      return humanize(String(p).split(/[\\/]/).pop().replace(/\.[a-z0-9]+$/i, ""));
+    }
+
+    function humanize(s) {
+      const base = String(s || "").replace(/[*?]/g, "").replace(/[_-]+/g, " ").trim();
       return base ? base.charAt(0).toUpperCase() + base.slice(1) : "Untitled project";
     }
 
@@ -441,6 +455,7 @@ export async function mount(el, ctx) {
 
   return () => {
     document.removeEventListener("keydown", onKey);
+    window.removeEventListener("pagehide", saveNow);
     clearSlot();
     save(state);
   };

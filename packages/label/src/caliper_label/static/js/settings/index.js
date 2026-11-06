@@ -152,6 +152,9 @@ export async function mount(el, { api, go, args }) {
           h("dt", {}, "Config file"), h("dd", {}, h("code", {}, data.path)),
           h("dt", {}, "Revision"), h("dd", {}, String(data.revision), h("span", { class: "wz-muted" }, " · every save adds one; labels record the revision they were made under")),
           h("dt", {}, "Labels so far"), h("dd", {}, plural(Object.values(data.label_counts || {}).reduce((a, b) => a + b, 0), "label")))),
+      h("div", { class: "wz-panel wz-row-between" },
+        h("div", {}, h("h3", {}, "Other projects"), h("p", { class: "wz-help" }, "Open another project, start a new one or try the demo. This project stays as it is.")),
+        h("a", { href: "#/start", class: "wz-btn", id: "se-switch" }, "Switch project…")),
     ];
   }
 

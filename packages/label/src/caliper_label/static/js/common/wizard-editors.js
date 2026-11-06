@@ -10,6 +10,16 @@ import { DISPLAY_TYPES, renderCard } from "./wizard-card.js";
 export const PALETTE = ["#2e7d32", "#c62828", "#a15c00", "#1565c0", "#6a1b9a", "#00695c", "#ad1457", "#5d4037", "#455a64"];
 const RESERVED = { z: "zoom", "?": "help", escape: "Esc", enter: "Enter", tab: "Tab", " ": "Space" };
 const SPECIAL = new Set(["backspace", "delete", "escape", "enter", "tab", "space"]);
+const MODIFIERS = new Set(["Shift", "Control", "Alt", "Meta", "CapsLock", "Fn", "AltGraph", "Dead", "Unidentified"]);
+
+// Keydown on a hotkey cell: returns the key to bind, null to clear, or undefined to ignore.
+function capturedKey(e) {
+  if (e.key === "Tab" || e.metaKey || e.ctrlKey || e.altKey || MODIFIERS.has(e.key)) return undefined;
+  e.preventDefault();
+  if (e.key === "Escape") { e.target.blur(); return undefined; }
+  if (e.key === "Backspace" || e.key === "Delete") return null;
+  return e.key.toLowerCase();
+}
 
 export function normKey(k) {
   if (k === null || k === undefined) return "";
@@ -376,10 +386,10 @@ export function labelsEditor(el, ctx) {
         type: "text", class: `wz-hotkey${issue ? " wz-invalid" : ""}`, value: o.hotkey || "", maxlength: "9", disabled: o.retired,
         "aria-label": `Hotkey for ${name}`, "aria-invalid": issue ? "true" : null, "aria-describedby": errId, "data-fid": `ohot-${i}`,
         onkeydown: (e) => {
-          // press a key to bind it (Backspace/Delete clear, Tab moves on)
-          if (e.key === "Tab" || e.metaKey || e.ctrlKey || e.altKey) return;
-          e.preventDefault();
-          o.hotkey = e.key === "Backspace" || e.key === "Delete" ? null : e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase();
+          // press a key to bind it (Backspace/Delete clear, Esc leaves, Tab moves on)
+          const k = capturedKey(e);
+          if (k === undefined) return;
+          o.hotkey = k;
           changed();
         },
       }), issue ? h("div", { id: errId, class: "wz-field-error", role: "alert" }, issue) : null),
@@ -459,7 +469,7 @@ export function labelsEditor(el, ctx) {
             : h("div", { class: "wz-empty-inline" }, "No options yet. Pick a template above or add your own."),
           h("div", { class: "wz-row-between" },
             h("button", { type: "button", class: "wz-btn", "data-fid": "add-opt", onclick: addOption }, "+ Add option"),
-            h("p", { class: "wz-help" }, "Hotkey cells: press the key to bind it. Reserved: ", kbd("Z"), " zoom, ", kbd("?"), " help, ", kbd("Esc"), ", ", kbd("Enter"), ", ", kbd("Tab"), ", ", kbd("Space"), "."))) : null,
+            h("p", { class: "wz-help" }, "Hotkey cells: press the key to bind it (Backspace clears, Esc leaves). Reserved: ", kbd("Z"), " zoom, ", kbd("?"), " help, ", kbd("Esc"), ", ", kbd("Enter"), ", ", kbd("Tab"), ", ", kbd("Space"), "."))) : null,
         L.type === "score" ? scoreRange() : null,
         L.type !== "free_text" ? keysBox(issues) : null,
         h("section", { class: "wz-panel" }, h("h3", {}, "On the labelling screen"), buttonsBox),
@@ -490,9 +500,9 @@ export function labelsEditor(el, ctx) {
         h("input", {
           id, type: "text", class: `wz-hotkey${issue ? " wz-invalid" : ""}`, value: L.keys[name], "data-fid": `key-${name}`, "aria-invalid": issue ? "true" : null,
           onkeydown: (e) => {
-            if (e.key === "Tab" || e.metaKey || e.ctrlKey || e.altKey) return;
-            e.preventDefault();
-            L.keys[name] = e.key.toLowerCase();
+            const k = capturedKey(e);
+            if (!k) return; // skip/undo/note always need a key
+            L.keys[name] = k;
             changed();
           },
         }), issue ? h("div", { class: "wz-field-error", role: "alert" }, issue) : null);
