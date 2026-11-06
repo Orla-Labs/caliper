@@ -30,7 +30,13 @@ Thumbs.db
 .idea/
 *.swp
 
-# Private — stays on disk, never uploaded
-docs/
+# Private — stays on disk, never uploaded (public docs whitelisted below)
+docs/*
+!docs/demo.gif
+!docs/targets.md
 building/
 CLAUDE.md
+
+# Demo / GIF recording artefacts
+demo/record/frames/
+demo/record/.out/
