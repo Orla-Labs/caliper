@@ -8,6 +8,7 @@ export const DISPLAY_TYPES = [
   ["long_text", "Long text"],
   ["number", "Number"],
   ["badge", "Badge"],
+  ["datetime", "Date / time"],
   ["link", "Link"],
   ["image", "Image"],
   ["json", "JSON"],
@@ -53,6 +54,17 @@ function hue(s) {
   return x % 360;
 }
 
+// ISO-8601 text -> the viewer's local date/time (date-only values stay dates, no timezone shift).
+export function formatDateTime(raw) {
+  const s = String(raw).trim();
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(s);
+  const d = dateOnly ? new Date(`${s}T00:00:00`) : new Date(s.replace(" ", "T"));
+  if (Number.isNaN(d.getTime())) return null;
+  return dateOnly
+    ? d.toLocaleDateString(undefined, { dateStyle: "medium" })
+    : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
 const isUrl = (s) => /^https?:\/\//i.test(s);
 
 export function renderValue(field, raw) {
@@ -81,6 +93,12 @@ export function renderValue(field, raw) {
         : /^gs:\/\//i.test(asText) ? "GCS image: shown while labelling"
           : "Local image: served from the project folder while labelling";
       return h("span", { class: "wz-v-imgph" }, h("span", { "aria-hidden": "true" }, "🖼 "), where, h("br"), h("code", {}, asText));
+    }
+    case "datetime": {
+      const local = formatDateTime(asText);
+      return local
+        ? h("time", { class: "wz-v-datetime", datetime: asText, title: asText }, local)
+        : h("span", {}, asText);
     }
     case "json":
       return h("pre", { class: "wz-v-json" }, typeof raw === "string" ? raw : JSON.stringify(raw, null, 2));

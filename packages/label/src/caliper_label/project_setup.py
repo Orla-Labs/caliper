@@ -7,6 +7,7 @@ settings, `caliper label init` and the legacy `serve` path share one implementat
 from __future__ import annotations
 
 import re
+from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
@@ -29,6 +30,7 @@ from .project import (
     SourceKind,
     WorkflowConfig,
 )
+from .typedetect import ISO_DATETIME
 
 # Keys the labelling screen binds itself (same set as the legacy config) plus Backspace etc.
 RESERVED_KEYS = {"z", "?", "escape", "enter", "tab", " "}
@@ -72,12 +74,12 @@ TEMPLATES = [
     Template(
         id="correct_wrong_unsure",
         name="Correct / Wrong / Unsure",
-        description="Check one output: correct counts as approved; unsure asks for a note.",
+        description="Check one output. Correct is a positive answer; Unsure asks for a note.",
     ),
     Template(
         id="true_uncertain_false",
         name="True / Uncertain / False",
-        description="Fact or claim checking; true counts as positive.",
+        description="Fact or claim checking. True counts as a positive answer.",
     ),
     Template(
         id="categories",
@@ -88,12 +90,12 @@ TEMPLATES = [
     Template(
         id="rating_1_5",
         name="1-5 rating",
-        description="A five-point quality scale; 4 and 5 count as approved.",
+        description="A five-point quality scale. 4 and 5 count as positive answers.",
     ),
     Template(
         id="yes_no_unsure",
         name="Yes / No / Unsure",
-        description="The yes/no/unsure preset; yes counts as approved.",
+        description="The yes/no/unsure preset. Yes counts as a positive answer.",
     ),
 ]
 
@@ -115,15 +117,109 @@ def auto_hotkeys(options: list[LabelOption], taken: set[str] | None = None) -> l
     return out
 
 
+# Colours that carry meaning. Plain categories get CATEGORY_PALETTE, which avoids green/red/
+# amber so two unrelated categories never read as "good" and "bad". All are AA on white text.
+GOOD, BAD, UNSURE, NEUTRAL = "#2e7d32", "#c62828", "#a15c00", "#455a64"
+CATEGORY_PALETTE = ["#1565c0", "#6a1b9a", "#00695c", "#ad1457", "#5d4037", "#283593", "#4e342e"]
+# Ordered scale, least to most severe: slate, amber, deep orange, red, dark red.
+SEVERITY_RAMP = ["#455a64", "#a15c00", "#bf360c", "#c62828", "#8e0000"]
+_RAMP_PICK = {1: [0], 2: [0, 3], 3: [0, 1, 3], 4: [0, 1, 2, 3], 5: [0, 1, 2, 3, 4]}
+
+_SEMANTIC = {
+    GOOD: "correct right yes true positive pass passed good valid accept accepted approve "
+    "approved ok safe relevant helpful",
+    BAD: "wrong incorrect no false negative fail failed bad invalid reject rejected spam toxic "
+    "unsafe irrelevant harmful abusive",
+    UNSURE: "unsure uncertain maybe mixed unknown unclear partial partially",
+    NEUTRAL: "neutral other none n_a na",
+}
+_SEMANTIC_OF = {w: c for c, words in _SEMANTIC.items() for w in words.split()}
+_SEVERITY_RANK = {
+    "lowest": 0, "trivial": 0, "none": 0,
+    "low": 1, "minor": 1,
+    "medium": 2, "med": 2, "normal": 2, "moderate": 2,
+    "high": 3, "major": 3, "severe": 3,
+    "urgent": 4, "critical": 4, "highest": 4,
+    "blocker": 5, "emergency": 5,
+}  # fmt: skip
+_P_LEVEL = re.compile(r"^(p|sev|s)(\d)$")
+
+
+def category_colors(names: list[str]) -> list[str]:
+    """Colours for a list of option names, so colour carries meaning.
+
+    - An ordered scale (low/medium/high/urgent, minor/major/critical, P0-P4) gets a ramp from
+      slate to red, in severity order (P0 is the most severe).
+    - Sentiment / verdict words get semantic colours (correct/positive green, wrong/negative red,
+      unsure amber, neutral/other slate); the rest share CATEGORY_PALETTE.
+    - Plain categories cycle CATEGORY_PALETTE.
+    """
+    keys = [slug(n) for n in names]
+    if len(keys) >= 2:
+        ranks: list[float] | None = None
+        if all(k in _SEVERITY_RANK for k in keys):
+            ranks = [_SEVERITY_RANK[k] for k in keys]
+        elif all(_P_LEVEL.match(k) for k in keys):
+            ranks = [-int(_P_LEVEL.match(k).group(2)) for k in keys]  # type: ignore[union-attr]
+        if ranks is not None and len(set(ranks)) == len(ranks) and len(ranks) <= 5:
+            order = sorted(range(len(ranks)), key=lambda i: ranks[i])
+            pick = _RAMP_PICK[len(ranks)]
+            out = [""] * len(ranks)
+            for pos, i in enumerate(order):
+                out[i] = SEVERITY_RAMP[pick[pos]]
+            return out
+    out, n = [], 0
+    for k in keys:
+        c = _SEMANTIC_OF.get(k)
+        if c is None:
+            c = CATEGORY_PALETTE[n % len(CATEGORY_PALETTE)]
+            n += 1
+        out.append(c)
+    return out
+
+
 def auto_colors(options: list[LabelOption]) -> list[LabelOption]:
+    """Fill in missing option colours with `category_colors` (meaningful, never random)."""
+    colors = category_colors([o.label or o.value for o in options])
     return [
-        o if o.color else o.model_copy(update={"color": PALETTE[n % len(PALETTE)]})
-        for n, o in enumerate(options)
+        o if o.color else o.model_copy(update={"color": c})
+        for o, c in zip(options, colors, strict=True)
     ]
 
 
-def template_labels(template: str, categories: str | list[str] | None = None) -> LabelsConfig:
-    """LabelsConfig for a template id (see TEMPLATES)."""
+def severity_order(names: list[str]) -> list[str] | None:
+    """`names` in their natural order if they form a known scale, else None.
+
+    Severity words and P-levels go least to most severe; verdict / sentiment words go
+    positive, unsure, neutral, negative.
+    """
+    keys = [slug(n) for n in names]
+    if all(k in _SEVERITY_RANK for k in keys):
+        return [
+            n for _, n in sorted(zip(keys, names, strict=True), key=lambda t: _SEVERITY_RANK[t[0]])
+        ]
+    if all(k in _SEMANTIC_OF for k in keys):
+        rank = {GOOD: 0, UNSURE: 1, NEUTRAL: 2, BAD: 3}
+        return [
+            n
+            for _, n in sorted(
+                zip(keys, names, strict=True), key=lambda t: rank[_SEMANTIC_OF[t[0]]]
+            )
+        ]
+    if all(_P_LEVEL.match(k) for k in keys):  # P3 (least) .. P0 (most)
+        return sorted(names, key=lambda n: -int(_P_LEVEL.match(slug(n)).group(2)))  # type: ignore[union-attr]
+    return None
+
+
+def template_labels(
+    template: str, categories: str | list[str] | None = None, *, natural_order: bool = False
+) -> LabelsConfig:
+    """LabelsConfig for a template id (see TEMPLATES).
+
+    ``natural_order``: categories that form a known scale (low/medium/high, P0-P3) are put in
+    severity order, so hotkeys 1..n go from least to most severe. Used for values suggested
+    from the data, which arrive in frequency order.
+    """
     green, red, amber = PALETTE[0], PALETTE[1], PALETTE[2]
     if template == "correct_wrong_unsure":
         opts = [
@@ -163,6 +259,8 @@ def template_labels(template: str, categories: str | list[str] | None = None) ->
     elif template == "categories":
         lines = categories.splitlines() if isinstance(categories, str) else list(categories or [])
         names = [ln.strip() for ln in lines if ln.strip()]
+        if natural_order:
+            names = severity_order(names) or names
         seen: set[str] = set()
         opts = []
         for name in names:
@@ -324,13 +422,18 @@ def validate_project(cfg: ProjectConfig) -> list[Issue]:
             out.append(Issue(path="labels.score.step", message="step must be above 0"))
     if lab.type is not LabelType.FREE_TEXT:
         out.extend(hotkey_issues(lab))
-    if active and lab.type in (LabelType.SINGLE, LabelType.YES_NO_UNSURE):
+    # "Positive" (approved) only matters to eval exports: warn only when the project uses them.
+    eval_exports = cfg.rollout is not None or any(
+        e.format in ("golden", "rollouts") for e in cfg.exports
+    )
+    if eval_exports and active and lab.type in (LabelType.SINGLE, LabelType.YES_NO_UNSURE):
         if not any(o.approved for o in active):
             out.append(
                 Issue(
                     path="labels.options",
-                    message="no option counts as approved",
-                    hint="golden exports mark nothing as approved; tick 'approved' on one",
+                    message="no option counts as a positive answer",
+                    hint="golden and rollouts exports score positive answers as 1; "
+                    "tick 'Positive' on the accepted answer(s)",
                     severity="warning",
                 )
             )
@@ -532,9 +635,13 @@ def default_display(dtype: str, sample: list[Any]) -> DisplayType:
         isinstance(v, dict | list) for v in vals
     ):
         return DisplayType.JSON
+    if d.startswith(("timestamp", "datetime", "date")):
+        return DisplayType.DATETIME
     if any(t in d for t in ("int", "float", "double", "decimal", "numeric", "real")):
         return DisplayType.NUMBER
     strs = [str(v) for v in vals]
+    if strs and all(isinstance(v, date) or ISO_DATETIME.match(str(v).strip()) for v in vals):
+        return DisplayType.DATETIME
     img = re.compile(r"\.(png|jpe?g|gif|webp|svg|avif)(\?.*)?$", re.I)
     if strs and all(img.search(s) for s in strs):
         return DisplayType.IMAGE

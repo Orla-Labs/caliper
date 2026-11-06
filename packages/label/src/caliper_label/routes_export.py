@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 import tempfile
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -23,6 +23,7 @@ from starlette.background import BackgroundTask
 from .errors import ApiError
 from .export import (
     FORMAT_HELP,
+    FORMAT_TITLE,
     ConflictPolicy,
     ExportError,
     ExportFormat,
@@ -78,6 +79,13 @@ class ExportIn(BaseModel):
     )
 
 
+def _stamp() -> str:
+    """Local time for file names, with the UTC offset so nobody has to guess (#20)."""
+    now = datetime.now().astimezone()
+    off = now.strftime("%z")  # +hhmm / -hhmm
+    return now.strftime("%Y%m%d-%H%M%S") + (off if off and off != "+0000" else "Z")
+
+
 def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40] or "labels"
 
@@ -129,7 +137,10 @@ def formats(request: Request, session: S) -> dict[str, Any]:
     ctx = getattr(request.app.state, "ctx", None)
     legacy_kind = session.dataset.kind.value if session.dataset is not None else None
     return {
-        "formats": [{"name": k, "help": v} for k, v in FORMAT_HELP.items()],
+        "formats": [
+            {"name": k, "help": v, "title": FORMAT_TITLE[k][0], "plain": FORMAT_TITLE[k][1]}
+            for k, v in FORMAT_HELP.items()
+        ],
         "targets": [t.model_dump(mode="json") for t in ctx.config.exports] if ctx else [],
         "data_kind": legacy_kind,
         "label_type": session.rules.type.value,
@@ -173,7 +184,7 @@ def download(
     )
     data, _ = _rows(session, body)
     ext = EXT[format.value]
-    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    stamp = _stamp()
     fname = f"{_slug(_name(session, request))}-{format.value}-{stamp}.{ext}"
     headers = {
         "Content-Disposition": f'attachment; filename="{fname}"',
@@ -243,7 +254,7 @@ def post_export(session: S, request: Request, body: ExportIn) -> dict[str, Any]:
                 raise ApiError(
                     400, "a table export needs a database destination", "set destination.kind"
                 )
-            stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+            stamp = _stamp()
             rel = (dest or {}).get(
                 "path"
             ) or f"exports/{_slug(_name(session, request))}-{body.format.value}-{stamp}.{ext}"

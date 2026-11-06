@@ -65,7 +65,7 @@ export async function mount(root, { api, query }) {
   function render() {
     const head = el("div", { class: "page-head" },
       el("div", {}, el("h1", { text: "Adjudicate" }),
-        el("p", { text: "Items where labellers disagree. The final label you set is exported as source: adjudicated." })),
+        el("p", { text: "Items where labellers disagree. The final label you pick here is the one exports use (marked as adjudicated)." })),
       tabs());
     if (!rows.length) {
       page.replaceChildren(head, status === "open"
@@ -97,7 +97,7 @@ export async function mount(root, { api, query }) {
           type: "button", class: "opt", onclick: () => settle(cfg.type === "multi" ? JSON.parse(l.decision) : l.decision),
         }, el("kbd", { "aria-hidden": "true", text: String(i + 1) }), el("span", { text: l.display }))));
     const item = row.item;
-    const card = el("article", { class: "card", "aria-label": `Item ${row.item_id}` }, ...(item ? renderCard(item, { optionLabel: (d) => decisionText(cfg, d) }) : [el("p", { text: row.item_id })]));
+    const card = el("article", { class: "card", "aria-label": `Item ${row.item_id}` }, ...(item ? renderCard(item, { optionLabel: (d) => decisionText(cfg, d), options: cfg.options, explain: (f) => api.get(`${f.src}/check`) }) : [el("p", { text: row.item_id })]));
     const nav = el("div", { class: "adj-nav" },
       button("← Previous", () => { index = Math.max(0, index - 1); render(); }, "btn btn-ghost"),
       el("span", { class: "muted num", text: `${index + 1} of ${rows.length}` }),

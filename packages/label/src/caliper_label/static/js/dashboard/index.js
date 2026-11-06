@@ -36,19 +36,27 @@ function section(title, ...body) {
     el("h2", { id: `h-${title.replace(/\W+/g, "-")}`, text: title }), ...body);
 }
 
+// Plain words first, the statistic's name second (usability #11).
+const METHOD = { fleiss: "Fleiss' κ", cohen: "Cohen's κ" };
+const TYPE_WORDS = {
+  single: "one option per item", multi: "one or more options per item", yes_no_unsure: "yes / no / unsure",
+  score: "a score per item", free_text: "a written answer per item",
+};
+
 function render(d) {
   const t = d.totals;
   const o = d.agreement.overall;
+  const method = METHOD[d.agreement.method] || "Cohen's κ";
   const tiles = el("div", { class: "tiles" },
     tile(`${t.complete} / ${t.items}`, "items complete", fmtPct(t.items ? t.complete / t.items : null)),
     tile(String(t.labels), "labels", `${t.labellers} labeller${t.labellers === 1 ? "" : "s"}`),
-    tile(fmtKappa(o), !o.n_items ? "κ (agreement)" : d.agreement.method === "fleiss" ? "Fleiss' κ" : "Cohen's κ",
-      o.n_items ? `${o.n_items} items with 2+ labels` : (d.double_label > 1 ? "no overlap yet" : "single labelling")),
+    tile(fmtKappa(o), "agreement between labellers",
+      o.n_items ? `${method}, on ${o.n_items} items labelled twice or more` : (d.double_label > 1 ? "no item has two labels yet" : "each item is labelled once")),
     tile(String(t.open_disagreements), "to adjudicate", `${t.adjudicated} adjudicated`, t.open_disagreements ? "tile-warn" : ""));
 
   const people = d.labellers.length
     ? el("table", { class: "data" },
-      el("thead", {}, el("tr", {}, ...["Labeller", "Labels", "Last hour", "Per hour", "Skips", "Golden", "Last label"].map((h, i) => el("th", { class: i && i < 5 ? "num" : "", scope: "col", text: h })))),
+      el("thead", {}, el("tr", {}, ...["Labeller", "Labels", "Last hour", "Per hour", "Skips", "Known answers", "Last label"].map((h, i) => el("th", { class: i && i < 5 ? "num" : "", scope: "col", text: h, title: h === "Known answers" ? "accuracy on hidden check items whose answer is known (golden items)" : null })))),
       el("tbody", {}, ...d.labellers.map((p) => el("tr", {},
         el("th", { scope: "row", text: p.name }),
         el("td", { class: "num", text: String(p.labels) }),
@@ -76,8 +84,9 @@ function render(d) {
   const agreement = o.n_items
     ? el("div", {},
       el("p", { class: "lead" }, "Overall ", kappaCell(o), el("span", { class: "muted", text: ` · all agree on ${fmtPct(o.percent_all_agree)} of ${o.n_items} items · ${o.n_raters} labellers` })),
+      el("p", { class: "muted small", text: `The score is ${method}: 1 is perfect agreement, 0 is what chance alone would give.` }),
       cats.length ? el("table", { class: "data" },
-        el("thead", {}, el("tr", {}, ...["Category", "Items", "κ", "All agree"].map((h, i) => el("th", { class: i === 1 ? "num" : "", scope: "col", text: h })))),
+        el("thead", {}, el("tr", {}, ...["Category", "Items", "Agreement", "All agree"].map((h, i) => el("th", { class: i === 1 ? "num" : "", scope: "col", text: h, title: h === "Agreement" ? method : null })))),
         el("tbody", {}, ...cats.map((c) => el("tr", {},
           el("th", { scope: "row", text: c.category }),
           el("td", { class: "num", text: String(c.n_items) }),
@@ -85,7 +94,7 @@ function render(d) {
           el("td", { class: "bar-cell" }, el("div", { class: "bar-with-num" }, bar(c.percent_all_agree, `all agree ${fmtPct(c.percent_all_agree)}`), el("span", { class: "num", text: fmtPct(c.percent_all_agree) }))))))) : null)
     : el("p", { class: "muted", text: d.double_label > 1
       ? "Agreement appears once two people have labelled the same item."
-      : "Each item is labelled once (double_label: 1). Set double labelling in Settings to measure agreement." });
+      : "Each item is labelled by one person. To measure agreement, have two people label each item (Settings → Workflow)." });
 
   const dis = d.disagreements.length
     ? el("ul", { class: "dis-list" }, ...d.disagreements.slice(0, 12).map((x) => el("li", {},
@@ -96,7 +105,7 @@ function render(d) {
 
   return [
     el("div", { class: "page-head" },
-      el("div", {}, el("h1", { text: "Progress" }), el("p", { text: `${d.label_type.replace("_", " ")} labels · ${d.double_label} per item` })),
+      el("div", {}, el("h1", { text: "Progress" }), el("p", { text: `${TYPE_WORDS[d.label_type] || d.label_type} · ${d.double_label === 1 ? "one label" : `${d.double_label} labels`} per item` })),
       el("div", { class: "state-actions" }, link("#/label", "Label"), link("#/adjudicate", `Adjudicate (${t.open_disagreements})`, t.open_disagreements > 0), link("#/export", "Export"))),
     tiles,
     el("div", { class: "dash-grid" },

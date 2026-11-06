@@ -1,7 +1,8 @@
 """Guess a card display type for each column from its engine type and a sample of values.
 
 Order of checks for string-ish columns: image (URL, s3/gs key or local path with an
-image extension) > link (http URL) > json (object/array text) > badge (few distinct
+image extension) > link (http URL) > json (object/array text) > datetime
+(ISO-8601 date or timestamp text) > badge (few distinct
 short values) > long_text (long or multi-line) > text.
 """
 
@@ -10,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterable, Sequence
+from datetime import date, datetime
 from typing import Any
 
 from .project import DisplayType
@@ -19,6 +21,12 @@ _NUMERIC = re.compile(
     r"^(TINYINT|SMALLINT|INTEGER|BIGINT|HUGEINT|UTINYINT|USMALLINT|UINTEGER|UBIGINT|UHUGEINT|"
     r"FLOAT|DOUBLE|REAL|DECIMAL|NUMERIC|INT\d*)\b",
     re.IGNORECASE,
+)
+_TEMPORAL = re.compile(r"^(TIMESTAMP\w*|DATETIME|DATE)\b", re.IGNORECASE)
+# ISO-8601 date or date-time: 2026-11-06, 2026-11-06T09:30, 2026-11-06 09:30:00.123+00:00, ...Z
+ISO_DATETIME = re.compile(
+    r"^\d{4}-\d{2}-\d{2}"
+    r"([T ]\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}(:?\d{2})?)?)?$"
 )
 _NESTED = re.compile(r"^(STRUCT|MAP|JSON|UNION)\b|\[\]$|^LIST\b", re.IGNORECASE)
 _URL = re.compile(r"^https?://\S+$", re.IGNORECASE)
@@ -59,6 +67,8 @@ def detect_display(dtype: str, values: Iterable[Any]) -> DisplayType:
         return DisplayType.NUMBER
     if _NESTED.search(dt):
         return DisplayType.JSON
+    if _TEMPORAL.match(dt):
+        return DisplayType.DATETIME
     if not vals:
         return DisplayType.TEXT
     # Untyped sources (plugins): infer from Python values.
@@ -68,6 +78,8 @@ def detect_display(dtype: str, values: Iterable[Any]) -> DisplayType:
         return DisplayType.NUMBER
     if any(isinstance(v, dict | list) for v in vals):
         return DisplayType.JSON
+    if all(isinstance(v, datetime | date) for v in vals):
+        return DisplayType.DATETIME
     strs = [str(v) for v in vals]
     if all(is_image_ref(s) for s in strs):
         return DisplayType.IMAGE
@@ -77,6 +89,8 @@ def detect_display(dtype: str, values: Iterable[Any]) -> DisplayType:
         return DisplayType.LINK
     if all(_looks_json(s) for s in strs):
         return DisplayType.JSON
+    if all(ISO_DATETIME.match(s.strip()) for s in strs):
+        return DisplayType.DATETIME
     distinct = set(strs)
     max_len = max(len(s) for s in strs)
     if max_len > LONG_TEXT_LEN or any("\n" in s for s in strs):

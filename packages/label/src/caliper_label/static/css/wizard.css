@@ -296,7 +296,7 @@ fieldset.wz-panel legend + * { clear: both; }
 .wz-opt-name { min-width: 200px; }
 .wz-opt-name input[type=text] { min-height: 34px; }
 .wz-opt-value { margin-top: 4px; font-family: var(--wz-mono); font-size: 12px !important; min-height: 28px !important; padding: 3px 8px !important; color: var(--wz-muted) !important; }
-.wz-hotkey { width: 76px !important; text-align: center; font-family: var(--wz-mono); text-transform: uppercase; caret-color: transparent; cursor: pointer; }
+.wz-hotkey { width: auto !important; min-width: 76px; text-align: center; font-family: var(--wz-mono); text-transform: uppercase; caret-color: transparent; cursor: pointer; }
 .wz-center { text-align: center !important; }
 .wz-opt-btns { white-space: nowrap; }
 .wz-opt-btns .wz-icon { width: 30px; height: 30px; }
@@ -397,3 +397,15 @@ fieldset.wz-panel legend + * { clear: both; }
 
 /* inside dev 3's app bar slot */
 .wz-slot-title { color: var(--c-ink-2, #5f646d); font-size: 14px; margin-right: 4px; }
+
+/* lpf-a: key cells show friendly names ("⌫ Backspace") and size to them */
+.wz-hotkey-wide { text-transform: none; }
+.wz-dir-warn .wz-warn { margin: 8px 0 0; }
+.wz-drop-ok { color: var(--wz-good); font-weight: 600; }
+.wz-suggest-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.wz-suggest-list { gap: 6px; }
+.wz-suggest-list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+.wz-suggest-vals { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wz-suggest h3 { display: inline; margin-right: 8px; }
+.wz-suggest > p.wz-help { display: inline; }
+.wz-suggest .wz-warn { margin-top: 10px; }

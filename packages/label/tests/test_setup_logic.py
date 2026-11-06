@@ -180,7 +180,8 @@ def test_validate_labels_and_card() -> None:
     cfg = _cfg(options=[LabelOption(value="a", hotkey="1"), LabelOption(value="a", hotkey="2")])
     by = {i.path: i for i in validate_project(cfg)}
     assert "used twice" in by["labels.options.1.value"].message
-    assert by["labels.options"].severity == "warning"  # nothing approved
+    # nothing is positive, but the project uses no eval export: no warning (usability #8)
+    assert "labels.options" not in by
     free = _cfg(type=LabelType.FREE_TEXT)
     assert errors(validate_project(free)) == []
 

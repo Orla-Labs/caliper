@@ -46,6 +46,8 @@ export async function mount(root, ctx) {
     inflight: 0,       // POSTs not yet answered
     waitingSince: undefined,
     lastQueues: null,
+    counts: null,      // the server's {complete, total, left} for this labeller
+    pend: [],          // decisions not yet in `counts`: {id, left, complete, acked}
   };
   const qParam = query.get("queue") || store(QUEUE_KEY);
   S.queue = qParam && cfg.queues.includes(qParam) ? qParam : null;
@@ -56,6 +58,9 @@ export async function mount(root, ctx) {
   const aside = el("nav", { class: "lbl-queues", "aria-label": "Queues" },
     el("h2", { class: "lbl-h", text: "Queues" }), queueList, labellersBox);
   const progress = el("div", { class: "lbl-progress", "aria-live": "off" });
+  // "Saved" tick: each decision is POSTed in the background; this says it landed.
+  const saveState = el("span", { class: "save-state", "aria-hidden": "true" });
+  const topRow = el("div", { class: "lbl-top" }, progress, saveState);
   const instructions = cfg.instructions
     ? el("details", { class: "lbl-instructions", open: store("caliper-label-instr") !== "closed" },
       el("summary", { text: "Instructions" }), el("div", { class: "instr-body" }, renderMarkdown(cfg.instructions)))
@@ -78,10 +83,16 @@ export async function mount(root, ctx) {
     panel.el,
     el("div", { class: "secondary" }, skipBtn, undoBtn, noteBtn),
     noteWrap);
-  const stage = el("section", { class: "lbl-stage" }, progress, instructions, card, decideBox);
+  const stage = el("section", { class: "lbl-stage" }, topRow, instructions, card, decideBox);
   const keybar = el("footer", { class: "keybar", "aria-label": "Keyboard shortcuts" });
   const layout = el("div", { class: "lbl" + (cfg.queues.length > 1 ? "" : " single-queue") }, aside, stage);
   root.replaceChildren(layout, keybar);
+  // The decision row is sticky above the fixed key bar, whose height changes as it wraps
+  // (usability #7: Skip / Undo / Note were hidden under it at 1366x800).
+  const keybarSize = new ResizeObserver(() => {
+    document.documentElement.style.setProperty("--keybar-h", `${keybar.offsetHeight}px`);
+  });
+  keybarSize.observe(keybar);
 
   // app bar: who + help
   const slot = document.getElementById("appbar-slot");
@@ -131,7 +142,7 @@ export async function mount(root, ctx) {
     }
     card.classList.remove("is-done");
     decideBox.hidden = false;
-    card.replaceChildren(...renderCard(S.item, { onZoom: openZoom, optionLabel: optionText }));
+    card.replaceChildren(...renderCard(S.item, { onZoom: openZoom, optionLabel: optionText, options: cfg.options, explain: explainImage }));
     void card.offsetWidth;
     card.classList.add("flash");
     panel.reset(S.item);
@@ -168,8 +179,49 @@ export async function mount(root, ctx) {
         button("Undo last", () => undo(), "btn btn-ghost")]);
   }
 
+  // Why an image did not load: the server's {detail, hint} for that media field (#3).
+  function explainImage(f) {
+    return api.get(`${f.src}/check`);
+  }
+
+  function renderProgress() {
+    if (!S.counts) return;
+    const extra = S.pend.reduce((a, p) => ({ left: a.left + p.left, complete: a.complete + p.complete }), { left: 0, complete: 0 });
+    const total = S.counts.total;
+    const complete = Math.min(total, S.counts.complete + extra.complete);
+    const left = Math.max(0, S.counts.left - extra.left);
+    const pctAll = total ? Math.round((100 * complete) / total) : 0;
+    progress.replaceChildren(...[
+      el("div", { class: "lbl-progress-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pctAll), "aria-label": "Items complete" },
+        el("span", { style: `width:${pctAll}%` })),
+      el("span", { class: "num", text: `${complete} / ${total} complete` }),
+      el("span", { class: "muted num", text: ` · ${left} left for you` }),
+      cfg.double_label > 1 ? el("span", { class: "muted", text: ` · ${cfg.double_label} labels per item` }) : null].filter(Boolean));
+  }
+
+  let saveTimer = null;
+  function showSaving() {
+    clearTimeout(saveTimer);
+    // only say "Saving…" if the server is slow; a fast save goes straight to the tick
+    saveTimer = setTimeout(() => { saveState.className = "save-state saving"; saveState.textContent = "Saving…"; }, 400);
+  }
+  function showSaved() {
+    clearTimeout(saveTimer);
+    if (S.inflight > 0) { showSaving(); return; }
+    saveState.className = "save-state saved";
+    saveState.textContent = "✓ Saved";
+    saveTimer = setTimeout(() => { saveState.className = "save-state saved fade"; }, 1600);
+  }
+  function hideSaveState() {
+    clearTimeout(saveTimer);
+    saveState.className = "save-state";
+    saveState.textContent = "";
+  }
+
   async function refreshQueues() {
+    const included = S.pend.filter((p) => p.acked); // saved before this request: in its counts
     const data = await api.get(`/api/queues?labeller=${encodeURIComponent(S.labeller)}`);
+    S.pend = S.pend.filter((p) => !included.includes(p));
     S.lastQueues = data.queues;
     const all = data.queues.reduce((a, q) => ({
       name: null, total: a.total + q.total, complete: a.complete + q.complete, left: a.left + q.left,
@@ -188,13 +240,8 @@ export async function mount(root, ctx) {
       el("span", { class: "q-left", text: done ? "done" : `${q.left} left` }),
       el("span", { class: "q-bar", "aria-hidden": "true" }, el("span", { style: `width:${pct}%` }))));
     }));
-    const pctAll = all.total ? Math.round((100 * all.complete) / all.total) : 0;
-    progress.replaceChildren(...[
-      el("div", { class: "lbl-progress-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pctAll), "aria-label": "Items complete" },
-        el("span", { style: `width:${pctAll}%` })),
-      el("span", { class: "num", text: `${all.complete} / ${all.total} complete` }),
-      el("span", { class: "muted num", text: ` · ${all.left} left for you` }),
-      cfg.double_label > 1 ? el("span", { class: "muted", text: ` · ${cfg.double_label} labels per item` }) : null].filter(Boolean));
+    S.counts = { complete: all.complete, total: all.total, left: all.left };
+    renderProgress();
     const entries = Object.entries(data.labellers);
     labellersBox.replaceChildren(...(entries.length
       ? [el("h2", { class: "lbl-h", text: "Labels so far" }), el("ul", {}, ...entries.map(([n, c]) => el("li", {}, el("span", { text: n }), el("b", { class: "num", text: String(c) }))))]
@@ -258,12 +305,26 @@ export async function mount(root, ctx) {
   function send(item, body, labelText) {
     S.sent.add(item.id);
     S.inflight += 1;
+    // Optimistic progress (#19): a decision is one less item left for you, and completes
+    // the item when it is the last label it needs. Rolled back if the POST fails.
+    const pend = body.skip ? null : {
+      id: item.id,
+      left: 1,
+      complete: (item.labels_so_far || 0) + 1 >= (item.labels_needed || 1) ? 1 : 0,
+      acked: false,
+    };
+    if (pend) { S.pend.push(pend); renderProgress(); }
+    showSaving();
     S.chain = S.chain
       .then(() => api.post("/api/labels", { item_id: item.id, labeller: S.labeller, ...body }))
       .finally(() => { S.inflight -= 1; })
       .then(() => {
+        if (pend) pend.acked = true;
+        showSaved();
         refreshQueuesSoon();
       }, (err) => {
+        if (pend) { S.pend = S.pend.filter((p) => p !== pend); renderProgress(); }
+        hideSaveState();
         S.sent.delete(item.id);
         if (err.status === 409 && /already labelled/.test(err.message)) {
           toast(`${item.id} was already labelled by you`);
@@ -330,7 +391,8 @@ export async function mount(root, ctx) {
       announce(`Undid ${what} on ${data.undone.item_id}. Item ${data.item.id} is back.`);
       if (data.undone.note) setNote(data.undone.note, true);
       paint();
-      refreshQueuesSoon();
+      hideSaveState();
+      refreshQueues().catch(() => {});
     } catch (err) {
       showError(err);
     }
@@ -495,6 +557,8 @@ export async function mount(root, ctx) {
 
   return () => {
     document.removeEventListener("keydown", onKey);
+    keybarSize.disconnect();
+    clearTimeout(saveTimer);
     window.removeEventListener("focus", onFocus);
     clearInterval(poll);
     clearTimeout(queuesTimer);

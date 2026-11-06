@@ -9,6 +9,9 @@ setup wizard can use them before a project exists; relative paths then resolve f
 
 from __future__ import annotations
 
+import logging
+import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
@@ -21,6 +24,7 @@ from pydantic import BaseModel, Field
 from . import snapshot
 from .config import get_path, render_template
 from .connectors import ConnectorError, available_connectors, open_connector
+from .connectors import media as media_mod
 from .credentials import credential_status, redact
 from .project import DisplayType, SourceConfig
 
@@ -203,17 +207,42 @@ _MEDIA_HEADERS = {
 }
 
 
-@router.get("/api/media/{item_id}/{field}")
-def media(request: Request, item_id: str, field: str) -> Response:
-    """Image for card field ``field`` (index or column name) of an item.
+_log = logging.getLogger("uvicorn.error")  # the server's console channel (runs at WARNING)
 
-    The client never sends a path: the server reads the value from the snapshot and resolves
-    it through the connector (confined local file, or a 302 to a presigned/HTTP URL).
-    """
-    ctx = _ctx(request)
-    item = ctx.store.item(item_id)
-    if item is None:
-        raise ApiError(404, f"unknown item '{item_id}'")
+
+class _MediaLog:
+    """One console line per distinct media failure, then a count, not one per image."""
+
+    EVERY = 60.0  # seconds between repeats of the same cause
+
+    def __init__(self) -> None:
+        self.seen: dict[str, list[float]] = {}  # detail -> [last_logged, count_since]
+        self.lock = threading.Lock()
+
+    def failed(self, item_id: str, field: str, detail: str, hint: str | None) -> None:
+        now = time.monotonic()
+        with self.lock:
+            rec = self.seen.get(detail)
+            if rec is not None and now - rec[0] < self.EVERY:
+                rec[1] += 1
+                return
+            more = int(rec[1]) if rec else 0
+            self.seen[detail] = [now, 0]
+        tail = f" ({more} more like this since the last line)" if more else ""
+        _log.warning(
+            "caliper label: image for item %s field %s not served: %s%s%s",
+            item_id,
+            field,
+            detail,
+            f". Fix: {hint}" if hint else "",
+            tail,
+        )
+
+
+media_log = _MediaLog()
+
+
+def _image_field(ctx: Any, field: str) -> Any:
     fields = ctx.config.card.fields
     spec = None
     if field.isdigit() and int(field) < len(fields):
@@ -222,23 +251,151 @@ def media(request: Request, item_id: str, field: str) -> Response:
         spec = next((f for f in fields if f.column == field), None)
     if spec is None or spec.type is not DisplayType.IMAGE:
         raise ApiError(404, f"no image field '{field}'", "media is served for image card fields")
+    return spec
+
+
+def _media_value(spec: Any, fields: dict[str, Any]) -> Any:
     if spec.template is not None:
-        value = render_template(spec.template, item.fields)
-    else:
-        value = item.fields.get(spec.column) if spec.column in item.fields else None
-        if value is None and spec.column:
-            value = get_path(item.fields, spec.column)
+        return render_template(spec.template, fields)
+    value = fields.get(spec.column) if spec.column in fields else None
+    if value is None and spec.column:
+        value = get_path(fields, spec.column)
+    return value
+
+
+def _media_status(message: str) -> int:
+    low = message.lower()
+    if "credentials" in low or "sign" in low:
+        return 502
+    if "outside" in low or "type" in low:
+        return 403
+    return 404
+
+
+def _checker(conn: Any, source: SourceConfig | None) -> Callable[[Any], dict[str, Any]]:
+    return lambda value: media_mod.check_ref(value, conn.resolve_media, source)
+
+
+@router.get("/api/media/{item_id}/{field}")
+def media(request: Request, item_id: str, field: str) -> Response:
+    """Image for card field ``field`` (index or column name) of an item.
+
+    The client never sends a path: the server reads the value from the snapshot and resolves
+    it through the connector (confined local file, or a 302 to a presigned/HTTP URL). A
+    failure answers ``{detail, hint}`` and is logged once per cause on the server console;
+    ``GET /api/media/{item_id}/{field}/check`` explains it as JSON for the card.
+    """
+    ctx = _ctx(request)
+    item = ctx.store.item(item_id)
+    if item is None:
+        raise ApiError(404, f"unknown item '{item_id}'")
+    spec = _image_field(ctx, field)
+    value = _media_value(spec, item.fields)
     if not value or not isinstance(value, str):
         raise ApiError(404, "this item has no image", None)
     try:
         ref = ctx.connector.resolve_media(value)
     except ConnectorError as exc:
-        status = 403 if "outside" in exc.message or "type" in exc.message else 404
-        if "credentials" in exc.message.lower() or "sign" in exc.message:
-            status = 502
-        raise ApiError(status, redact(exc.message), exc.hint) from None
+        detail, hint = redact(exc.message, ctx.config.source), exc.hint
+        media_log.failed(item_id, field, detail, hint)
+        raise ApiError(_media_status(exc.message), detail, hint) from None
     if ref.kind == "url" and ref.url:
         return RedirectResponse(ref.url, status_code=302, headers={"Cache-Control": "no-store"})
     if not ref.path:
         raise ApiError(404, "image not found")
     return FileResponse(ref.path, media_type=ref.mime, headers=_MEDIA_HEADERS)
+
+
+@router.get("/api/media/{item_id}/{field}/check")
+def media_check_item(request: Request, item_id: str, field: str) -> dict[str, Any]:
+    """Why an item's image does (not) load: always 200 with ``{ok, kind, status, detail, hint}``.
+
+    Signed S3 links are fetched once (first byte) by the server, so a missing object, a refused
+    signature or a wrong endpoint shows up here; plain http(s) links are not fetched (``ok``
+    is null). The signed URL itself is never returned.
+    """
+    ctx = _ctx(request)
+    item = ctx.store.item(item_id)
+    if item is None:
+        raise ApiError(404, f"unknown item '{item_id}'")
+    spec = _image_field(ctx, field)
+    value = _media_value(spec, item.fields)
+    out = _checker(ctx.connector, ctx.config.source)(value)
+    if out["ok"] is False and out["detail"]:
+        media_log.failed(item_id, field, out["detail"], out["hint"])
+    return {"item_id": item_id, "field": field, "value": value, **out}
+
+
+class MediaCheckIn(SourceIn):
+    column: str | None = None  # a source column holding image values ...
+    template: str | None = None  # ... or a card template such as "cards/{id}.png"
+    n: int = Field(default=5, ge=1, le=20)  # how many non-empty values to try
+
+
+@router.post("/api/source/media-check")
+def media_check(request: Request, body: MediaCheckIn | None = None) -> dict[str, Any]:
+    """Try the first ``n`` image values of a column, as the labeller would load them.
+
+    For the setup wizard (body ``source``) or the open project (no source: every image card
+    field). Always 200: ``{ok, checked, failed, results: [{column, value, ok, kind, status,
+    detail, hint}], detail, hint}``; the top-level ``detail``/``hint`` repeat the first failure.
+    ``ok`` is null when nothing could be checked (only web links, or no values).
+    """
+    body = body or MediaCheckIn()
+    source, pdir, conn, owned = _source(request, body)
+    specs: list[tuple[str, Any]] = []
+    if body.column or body.template:
+        from .project import CardField
+
+        spec = CardField(column=body.column, template=body.template, type=DisplayType.IMAGE)
+        specs.append((body.column or body.template or "", spec))
+    elif body.source is None:
+        ctx = _ctx(request)
+        specs = [
+            (f.column or f.template or str(i), f)
+            for i, f in enumerate(ctx.config.card.fields)
+            if f.type is DisplayType.IMAGE
+        ]
+    else:
+        raise ApiError(400, "which column holds the images?", "send `column` (or `template`)")
+    results: list[dict[str, Any]] = []
+    try:
+        conn = conn or open_connector(source, pdir)
+        try:
+            check = _checker(conn, source)
+            rows = conn.preview(max(body.n * 4, 20)) if specs else []
+            for name, spec in specs:
+                values = [v for r in rows if (v := _media_value(spec, r)) not in (None, "")]
+                for v in values[: body.n]:
+                    results.append({"column": name, "value": v, **check(v)})
+        finally:
+            if owned and hasattr(conn, "close"):
+                conn.close()
+    except ConnectorError as exc:
+        return {
+            "ok": False,
+            "checked": 0,
+            "failed": 0,
+            "results": [],
+            "detail": redact(exc.message, source),
+            "hint": exc.hint and redact(exc.hint, source),
+        }
+    failed = [r for r in results if r["ok"] is False]
+    checked = [r for r in results if r["ok"] is not None]
+    first = failed[0] if failed else None
+    if first is not None:
+        _log.warning(
+            "caliper label: media check: %d of %d image(s) failed: %s%s",
+            len(failed),
+            len(results),
+            first["detail"],
+            f". Fix: {first['hint']}" if first["hint"] else "",
+        )
+    return {
+        "ok": (not failed) if checked else None,
+        "checked": len(results),
+        "failed": len(failed),
+        "results": results,
+        "detail": first["detail"] if first else None,
+        "hint": first["hint"] if first else None,
+    }

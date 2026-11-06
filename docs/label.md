@@ -234,7 +234,16 @@ screen count each group and list every item left out, with who said what.
 
 - `labeller` is `;`-joined when several people agreed;
 - the adjudicator is named for adjudicated items;
-- the item's own columns follow, prefixed `item.`.
+- the item's own columns follow: flat `item.<column>` columns in CSV, Parquet and tables,
+  and one nested `"item": {...}` object in JSON lines, where the card's JSON columns are
+  real objects (CSV/Parquet/tables keep them as JSON text).
+
+`approved` and `human_label` are only in the table when they mean something: the project
+has an option with `approved: true`, an option with a `score`, or the `score` label type.
+In the table, an option that abstains (value or label `unsure`, `uncertain`, `unknown`,
+`maybe`, ...) with no `score` of its own gets `approved: null, human_label: null`, not the
+0 a wrong answer gets. Give it a `score` (for example 0.5) to export a number instead.
+Golden and rollouts exports are unchanged: there Unsure still counts as not approved, 0.
 
 An example row (`--format jsonl`, an adjudicated item):
 
@@ -243,8 +252,12 @@ An example row (`--format jsonl`, an adjudicated item):
  "approved": false, "human_label": 0, "status": "adjudicated", "n_labels": 2,
  "labeller": "lee", "labelled_at": "2026-11-06T22:13:42.543800Z", "note": "billing owns refunds",
  "source": "adjudicated", "stage": "triage", "project_version": 3,
- "item.ticket_id": "t1", "item.subject": "Fictional ticket 1", "item.team": "shipping"}
+ "item": {"ticket_id": "t1", "subject": "Fictional ticket 1", "team": "shipping",
+          "meta": {"channel": "email"}}}
 ```
+
+Downloaded and project-folder files are named `<project>-<format>-<local time><offset>.<ext>`,
+for example `tickets-jsonl-20261106-193600-0300.jsonl` (`Z` when the server runs on UTC).
 
 `project_version` is the config `revision`, bumped on every settings save, so you
 can tell which labels were made under which options.

@@ -1,7 +1,7 @@
 """Start screen + setup wizard API (dev 2): `/api/projects`, `/api/setup/*`.
 
 Projects
-    GET  /api/projects                 recent projects, demo availability, a default folder
+    GET  /api/projects                 recent projects, demo availability, a default parent folder
     POST /api/projects/open            {path}           open an existing project
     POST /api/projects/forget          {path}           drop from the recent list
     POST /api/projects/demo            {reset?}         open the fictional demo project
@@ -13,6 +13,7 @@ Wizard
     POST /api/setup/preview            {source, draft?, n?}  credentials + schema + rows + count
     POST /api/setup/validate           {config}          -> {issues, yaml}
     GET  /api/setup/browse?path=&files=                  folder picker (local requests only)
+    POST /api/setup/check-dir          {dir}             is the folder free / inside a git checkout?
     POST /api/setup/create             {dir, config, draft?, overwrite?}
 
 Opening a project goes through `app.state.open_project(project_dir)` (dev 3's context: it
@@ -126,6 +127,69 @@ def remember(project_dir: Path, name: str) -> None:
     tmp = f.with_suffix(".tmp")
     tmp.write_text(json.dumps(rows[:MAX_RECENT], indent=1), encoding="utf-8")
     tmp.replace(f)
+
+
+def _prefs_file() -> Path:
+    return home() / "prefs.json"
+
+
+def read_prefs() -> dict[str, Any]:
+    try:
+        data = json.loads(_prefs_file().read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_prefs(**updates: Any) -> None:
+    prefs = {**read_prefs(), **updates}
+    f = _prefs_file()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(prefs, indent=1), encoding="utf-8")
+    tmp.replace(f)
+
+
+def git_root(path: Path) -> Path | None:
+    """The git checkout that contains `path` (a `.git` dir, or a `.git` file in worktrees)."""
+    p = Path(path).expanduser()
+    if not p.is_absolute():
+        p = Path.cwd() / p
+    p = p.resolve()
+    for cand in (p, *p.parents):
+        if (cand / ".git").exists():
+            return cand
+    return None
+
+
+def _inside(path: Path, root: Path) -> bool:
+    try:
+        Path(path).resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def default_parent() -> Path:
+    """Where new projects go by default.
+
+    The last parent folder a project was created in, else `$CALIPER_LABEL_PROJECTS`, else
+    `~/caliper-projects`. Never inside the git checkout the server was started from (the
+    usual case is the Caliper source tree itself).
+    """
+    cwd_git = git_root(Path.cwd())
+    env = os.environ.get("CALIPER_LABEL_PROJECTS")
+    candidates = [read_prefs().get("last_parent"), env, str(Path.home() / "caliper-projects")]
+    for c in candidates:
+        if not c:
+            continue
+        p = Path(c).expanduser()
+        if not p.is_absolute():
+            continue
+        if cwd_git is not None and _inside(p, cwd_git):
+            continue
+        return p
+    return Path.home() / "caliper-projects"
 
 
 def forget(path: str) -> None:
@@ -309,6 +373,8 @@ def get_projects() -> dict[str, Any]:
         "demo_available": demo_dir() is not None,
         "cwd": str(Path.cwd()),
         "home": str(Path.home()),
+        "default_parent": str(default_parent()),
+        "sep": os.sep,
     }
 
 
@@ -361,12 +427,17 @@ def get_templates() -> dict[str, Any]:
 
 class TemplateIn(BaseModel):
     categories: str | None = None
+    natural_order: bool = False  # put known scales (low/medium/high) in severity order
 
 
 @router.post("/api/setup/templates/{template_id}")
 def post_template(template_id: str, body: TemplateIn | None = None) -> dict[str, Any]:
     try:
-        labels = template_labels(template_id, body.categories if body else None)
+        labels = template_labels(
+            template_id,
+            body.categories if body else None,
+            natural_order=bool(body and body.natural_order),
+        )
     except ValueError as exc:
         raise SetupError(404, str(exc), "see GET /api/setup/templates") from None
     return {"labels": labels.model_dump(mode="json")}
@@ -535,6 +606,43 @@ def get_browse(request: Request, path: str | None = None, files: bool = True) ->
     }
 
 
+class DirIn(BaseModel):
+    dir: str
+
+
+@router.post("/api/setup/check-dir")
+def post_check_dir(body: DirIn, request: Request) -> dict[str, Any]:
+    """Warnings for the Review step's folder field. Never blocks: the user may want this."""
+    _local_only(request)
+    raw = body.dir.strip()
+    p = Path(raw).expanduser() if raw else Path()
+    if not p.is_absolute():
+        p = Path.cwd() / p
+    p = p.resolve()
+    root = git_root(p)
+    has_project = (p / CONFIG_FILENAME).is_file()
+    not_empty = p.is_dir() and any(c for c in p.iterdir() if not c.name.startswith("."))
+    warnings: list[str] = []
+    if has_project:
+        warnings.append("This folder already holds a project. Choose another folder.")
+    elif p.exists() and not p.is_dir():
+        warnings.append("That path is a file. Choose a folder.")
+    elif not_empty:
+        warnings.append("This folder is not empty. The project files go next to what is there.")
+    if root is not None:
+        warnings.append(
+            f"This folder is inside a git checkout ({root}). caliper.label.yaml would show up in "
+            "its changes; the labels themselves stay ignored by git."
+        )
+    return {
+        "path": str(p),
+        "git_root": str(root) if root else None,
+        "exists": p.exists(),
+        "has_project": has_project,
+        "warnings": warnings,
+    }
+
+
 class CreateIn(BaseModel):
     dir: str
     config: dict[str, Any]
@@ -607,6 +715,7 @@ def post_create(body: CreateIn, request: Request) -> dict[str, Any]:
     path = save_project(project_dir, cfg)
     (project_dir / STATE_DIRNAME).mkdir(exist_ok=True)
     remember(project_dir, cfg.name)
+    write_prefs(last_parent=str(project_dir.parent))
     out: dict[str, Any] = {
         "project": _project_summary(project_dir, cfg),
         "yaml": path.read_text(encoding="utf-8"),
