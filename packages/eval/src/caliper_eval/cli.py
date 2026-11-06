@@ -246,6 +246,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--cap-per-stratum", type=int, default=None)
     s.add_argument("--seed", type=int, default=0)
     s.set_defaults(func=cmd_sample)
+
+    from caliper_eval import cli_kappa
+
+    cli_kappa.register(sub)
     return p
 
 
