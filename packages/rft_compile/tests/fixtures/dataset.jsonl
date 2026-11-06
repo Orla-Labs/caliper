@@ -1,0 +1,3 @@
+{"id": "r1", "rollout": {"prompt": "Invoice A: 2 x $10. What is the total?", "response": "", "gold": "20", "metadata": {"weight": 0.5, "human_label": 1}}}
+{"id": "r2", "rollout": {"prompt": "Invoice B: 3 x $7.50.\nTotal?", "response": "", "gold": "22.5", "metadata": {"weight": 2}}}
+{"id": "r3", "rollout": {"prompt": "Say hi — ünïcödé ✓", "response": "", "gold": null, "metadata": {}}}
