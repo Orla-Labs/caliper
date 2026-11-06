@@ -12,6 +12,7 @@ import {
 } from "../common/dom.js";
 import { cardImages, preloadImages, renderCard } from "./card.js";
 import { decisionText, makePanel } from "./decide.js";
+import { renderMarkdown } from "../common/markdown.js";
 
 const PREFETCH = 5;
 const QUEUE_KEY = "caliper-label-queue";
@@ -57,7 +58,7 @@ export async function mount(root, ctx) {
   const progress = el("div", { class: "lbl-progress", "aria-live": "off" });
   const instructions = cfg.instructions
     ? el("details", { class: "lbl-instructions", open: store("caliper-label-instr") !== "closed" },
-      el("summary", { text: "Instructions" }), el("div", { class: "instr-body", text: cfg.instructions }))
+      el("summary", { text: "Instructions" }), el("div", { class: "instr-body" }, renderMarkdown(cfg.instructions)))
     : null;
   if (instructions) instructions.addEventListener("toggle", () => store("caliper-label-instr", instructions.open ? null : "closed"));
   const card = el("article", { class: "card", id: "card", "aria-label": "Item to label", tabindex: "-1" });

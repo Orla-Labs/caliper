@@ -48,7 +48,17 @@ body[data-route="label"] { padding-bottom: 52px; }
   border-left: 3px solid var(--c-accent); padding: 2px var(--sp-3);
 }
 .lbl-instructions summary { cursor: pointer; color: var(--c-ink); font-weight: var(--fw-medium); width: fit-content; }
-.instr-body { white-space: pre-wrap; margin-top: var(--sp-1); max-height: 9em; overflow: auto; }
+.instr-body { margin-top: var(--sp-1); max-height: 10em; overflow: auto; max-width: 80ch; }
+.md > :first-child { margin-top: 0; }
+.md p, .md ul, .md ol { margin: 0 0 var(--sp-2); }
+.md ul, .md ol { padding-left: var(--sp-5); }
+.md h3, .md h4, .md h5 { font-size: var(--fs-sm); color: var(--c-ink); margin: var(--sp-2) 0 var(--sp-1); }
+.md strong { color: var(--c-ink); }
+.md code { font-size: .92em; background: var(--c-surface-2); padding: 0 4px; border-radius: 4px; }
+.md pre { background: var(--c-surface-2); padding: var(--sp-2); border-radius: var(--radius-s); overflow: auto; }
+.md-table { border-collapse: collapse; margin: 0 0 var(--sp-2); font-size: var(--fs-xs); }
+.md-table th, .md-table td { border: 1px solid var(--c-line); padding: 2px 8px; text-align: left; }
+.md-table th { color: var(--c-ink); background: var(--c-surface-2); }
 
 .card {
   background: var(--c-surface);
