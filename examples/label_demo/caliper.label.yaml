@@ -1,0 +1,66 @@
+# caliper label demo project (fictional data): review the tax code a model assigned to each
+# supplier listing in the catalog_cleanup golden set.
+#
+#   uv run caliper label                    # then "Try the demo" on the start screen
+#   uv run caliper label examples/label_demo  # or open it directly
+#
+# The start screen copies this file to ~/.caliper-label/demo (paths made absolute), so trying
+# the demo never writes into examples/. Reference: docs/label-setup.md
+
+version: 1
+name: Catalog cleanup · tax-code review (demo)
+description: >-
+  Fictional supplier listings from examples/catalog_cleanup. Is the tax code the model
+  picked right?
+
+source:
+  kind: file
+  path: ../catalog_cleanup/golden.jsonl
+  format: jsonl
+  id_column: id
+  options:
+    media_roots: [../catalog_cleanup]   # product cards: cards/<id>.svg
+
+card:
+  fields:
+    - {template: "cards/{id}.svg", type: image, label: Product}
+    - {column: metadata.production_tax_code, type: badge, label: Model's code}
+    - {column: metadata.production_score, type: number, decimals: 2, label: Confidence}
+    - {column: metadata.supplier, type: badge, label: Supplier}
+    - {column: request.messages.-1.content, type: long_text, label: Listing}
+
+labels:
+  type: single
+  options:
+    - {value: correct, label: Code correct, hotkey: "1", color: "#2e7d32", approved: true, outcome: auto_publish}
+    - {value: wrong, label: Wrong code, hotkey: "2", color: "#c62828", outcome: needs_review}
+    - {value: unsure, label: Unsure, hotkey: "3", color: "#a15c00", requires_note: true, outcome: needs_review}
+  category_column: metadata.production_tax_code   # kappa by category
+
+workflow:
+  queues:
+    by: stratum                  # common / mixed / rare_code / lookalike / unlisted
+  double_label: 1
+  assignment: open
+  instructions: |
+    **Is the tax code the model assigned right for this listing?**
+
+    Judge the code, not the description. Use *Unsure* when the listing could honestly fit
+    two codes, and say why in the note.
+
+    | code | meaning |
+    | --- | --- |
+    | CTX-100 | general merchandise |
+    | CTX-210 | packaged food |
+    | CTX-310 | books and maps |
+    | CTX-420 / 430 | kids' / adult clothing and footwear |
+    | CTX-510 / 520 | small electronics / loose batteries |
+    | CTX-610 | home health devices |
+    | CTX-900 | gift cards |
+  source: internal_reviewer
+  stage: tax_code_review
+
+# `export --format rollouts`: what the labelled "response" was
+rollout:
+  prompt: request.messages.-1.content
+  response: metadata.production_tax_code

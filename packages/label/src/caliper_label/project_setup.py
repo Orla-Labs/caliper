@@ -438,18 +438,23 @@ def from_legacy(
     """Old `label.yaml` (`config.LabelConfig`) + its JSONL data -> an equivalent ProjectConfig.
 
     `data_path` is stored relative to `project_dir` when given (and inside it), else as is.
-    `image_root` goes to `source.options.image_root` (relative to the data file, as before).
+    `image_root` (relative to the data file) becomes `source.options.media_roots`; the data
+    file's folder is a media root anyway, as before.
     """
     data = Path(data_path)
-    path = str(data)
-    if project_dir is not None:
+
+    def rel(p: Path) -> str:
+        if project_dir is None:
+            return str(p)
         try:
-            path = str(data.resolve().relative_to(Path(project_dir).resolve()))
+            return str(p.resolve().relative_to(Path(project_dir).resolve()))
         except ValueError:
-            path = str(data.resolve())
+            return str(p.resolve())
+
+    path = rel(data)
     options: dict[str, Any] = {}
-    if legacy.image_root:
-        options["image_root"] = legacy.image_root
+    if legacy.image_root:  # relative to the data file, as before -> dev 1's media_roots
+        options["media_roots"] = [rel(data.parent / legacy.image_root)]
     source = SourceConfig(
         kind=SourceKind.FILE,
         path=path,

@@ -284,7 +284,7 @@ def test_legacy_adapter_roundtrips_and_extras(tmp_path: Path) -> None:
     cfg2 = load_legacy(tmp_path / "label.yaml", tmp_path / "d.jsonl", project_dir=tmp_path)
     assert cfg2.source.path == "d.jsonl"
     assert cfg2.source.id_column == "ticket_id"
-    assert cfg2.source.options == {"image_root": "imgs"}
+    assert cfg2.source.options == {"media_roots": ["imgs"]}
     assert cfg2.card.fields[0].mono is True
     assert [o.approved for o in cfg2.labels.options] == [True, False]
     assert cfg2.rollout is None
