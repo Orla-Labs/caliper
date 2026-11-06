@@ -18,6 +18,20 @@ tax-category scheme, and every number. Nothing here describes a real shop.
   ``caliper sample`` (see README) shows the stratified pick; the golden file
   then adds a human label to every row.
 
+Golden rows also carry (all fictional, all deterministic):
+
+* ``split``: within each stratum, rows alternate between ``val`` and ``test``
+  in digest order, so every hard stratum appears on both sides. Thresholds
+  are picked on val and reported on test.
+* ``label_source`` / ``label_stage``: most rows were checked by an internal
+  reviewer (human truth). Some lookalike, mixed and common rows were labelled
+  by an LLM teacher instead. The teacher is fooled by the same misleading
+  keyword as the production model, so on lookalikes it "approves" a wrong
+  code: its agreement is not accuracy. Two common rows have no recorded
+  source (``unknown``).
+* ``slices``: ``rare_code`` (must never be lost) and ``lookalike`` (must not
+  regress), used by the ``[[slices]]`` gates in ``caliper.toml``.
+
 Production outcomes are computed by replaying ``fake-large`` through
 ``decide.py`` on a replica index the eval never uses, so the golden set's
 ``reference_outcome`` is consistent with, but not identical to, a fresh
@@ -191,6 +205,37 @@ def make_request(listing: str) -> dict:
     }
 
 
+def label_provenance(row_id: str, kind: str) -> tuple[str | None, str | None]:
+    """(label_source, label_stage) for a golden row. Rare rows always get a reviewer."""
+    if kind == "lookalike" and _digest(row_id, "source") % 2 == 0:
+        return "llm_teacher", "teacher_pass"
+    if kind in ("mixed", "common") and _digest(row_id, "source") % 6 == 0:
+        return "llm_teacher", "teacher_pass"
+    if kind == "common" and _digest(row_id, "source") % 6 == 1:
+        return None, None  # source never recorded
+    return "internal_reviewer", "final_review"
+
+
+def teacher_approves(row_id: str, kind: str, approved: bool) -> bool:
+    """The LLM teacher's verdict: fooled by lookalikes, occasionally wrong elsewhere."""
+    if kind == "lookalike":
+        return True  # the misleading keyword convinces the teacher too
+    if _digest(row_id, "teacher") % 8 == 0:
+        return not approved
+    return approved
+
+
+def assign_splits(golden: list[dict]) -> None:
+    """Alternate val/test within each stratum, in digest order."""
+    by_kind: dict[str, list[dict]] = {}
+    for g in golden:
+        by_kind.setdefault(g["stratum"], []).append(g)
+    for rows in by_kind.values():
+        rows.sort(key=lambda g: _digest(g["id"], "split"))
+        for i, g in enumerate(rows):
+            g["split"] = "val" if i % 2 == 0 else "test"
+
+
 def main() -> None:
     fake = _load("fake_models")
     decide = _load("decide")
@@ -240,14 +285,21 @@ def main() -> None:
         take = kind != "common" or common_in_golden < GOLDEN_COMMON
         if take:
             common_in_golden += kind == "common"
+            source, stage = label_provenance(row_id, kind)
+            verdict = approved
+            if source == "llm_teacher":
+                verdict = teacher_approves(row_id, kind, approved)
             golden.append(
                 {
                     "id": row_id,
                     "request": request,
                     "reference_outcome": d.outcome,
-                    "label": "auto_publish" if approved else "needs_review",
-                    "label_approved": approved,
+                    "label": "auto_publish" if verdict else "needs_review",
+                    "label_approved": verdict,
+                    "label_source": source,
+                    "label_stage": stage,
                     "stratum": kind,
+                    "slices": [kind] if kind in ("rare_code", "lookalike") else [],
                     "metadata": {
                         "true_tax_code": true_code,
                         "production_tax_code": code,
@@ -258,6 +310,7 @@ def main() -> None:
                 }
             )
 
+    assign_splits(golden)
     for path, rows in ((HERE / "logs.jsonl", logs), (HERE / "golden.jsonl", golden)):
         with path.open("w", encoding="utf-8") as f:
             for r in rows:

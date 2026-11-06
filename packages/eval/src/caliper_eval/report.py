@@ -639,7 +639,7 @@ def render_markdown(report: EvalReport, gate: Any = None) -> str:
     ]
     prov = _provenance_lines(report)
     if prov:
-        lines += ["", *[ln.strip() + "  " for ln in prov[:-1]], prov[-1].strip()]
+        lines += ["", "; ".join(ln.strip() for ln in prov)]
     lines += [
         "",
         "| candidate | rows | errors | cost $ | p95 ms | who answered "
@@ -690,14 +690,14 @@ def render_markdown(report: EvalReport, gate: Any = None) -> str:
             assert m is not None
             parts = []
             for s in m.by_source:
-                verb = "lost" if s.kind == "human_truth" else f"{s.metric} misses"
+                what = "lost" if s.kind == "human_truth" else "disagreements"
                 parts.append(
-                    f"{s.source}: {verb} {s.candidate.lost} vs {s.reference.lost} "
+                    f"{s.source} {what} {s.candidate.lost} vs {s.reference.lost} "
                     f"(delta {_signed_ci(s.delta)})"
                 )
             at = "own outcomes" if m.threshold is None else f"score >= {m.threshold:.3f}"
             lines.append(
-                f"- `{c.name}` at {at} ({_pct(m.reference_coverage)} coverage on "
+                f"- `{c.name}` at {at} (reference coverage {_pct(m.reference_coverage)} on "
                 f"{m.selection_split}), on {m.report_split}: " + "; ".join(parts)
             )
     cals = [c for c in report.candidates if c.calibration is not None]

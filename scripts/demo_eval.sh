@@ -46,9 +46,14 @@ run() {
 import collections, json, sys
 rows = [json.loads(line) for line in open(sys.argv[1], encoding="utf-8")]
 by = collections.Counter(r["stratum"] for r in rows)
-ok = sum(bool(r["label_approved"]) for r in rows)
 print(f"  {len(rows)} rows: " + ", ".join(f"{k} {v}" for k, v in sorted(by.items())))
-print(f"  human approved the production output on {ok} of {len(rows)} rows")
+src = collections.Counter(r.get("label_source") or "unknown" for r in rows)
+ok = collections.Counter(r.get("label_source") or "unknown" for r in rows if r["label_approved"])
+print("  labelled by: " + ", ".join(f"{k} {v} ({ok[k]} approved)" for k, v in sorted(src.items())))
+split = collections.Counter(r["split"] for r in rows)
+print("  split: " + ", ".join(f"{k} {v}" for k, v in sorted(split.items())) + "; slices: "
+      + ", ".join(f"{k} {v}" for k, v in sorted(collections.Counter(
+          s for r in rows for s in r["slices"]).items())))
 PY
 
   banner "[2/4] Preflight: a candidate shape the provider rejects fails fast"
@@ -60,7 +65,7 @@ PY
   set -e
   echo "(exit $status: nothing was spent on the golden set)"
 
-  banner "[3/4] Evaluate: noise floor, transitions, calibration, CI gate"
+  banner "[3/4] Evaluate: noise floor, slices, matched operating point, calibration, CI gate"
   echo "decide.py replays the feature: 3 replies, majority tax code, auto_publish at score >= 0.75."
   echo "\$ caliper eval --config $EX/caliper.toml --out $OUT --no-resume --ci --summary-md $OUT/summary.md"
   set +e
@@ -71,7 +76,8 @@ PY
   echo
   if [ "$status" -eq 1 ]; then
     echo ">>> caliper eval --ci exited 1: the gate FAILED, so this change would be blocked in CI."
-    echo ">>> (Expected here: 'small' regresses on rare product families.)"
+    echo ">>> (Expected here: 'small' regresses on rare product families; 'small-thinking' is"
+    echo ">>>  non-inferior overall but loses one must-not-lose rare-code record on test.)"
   else
     echo ">>> caliper eval --ci exited $status"
   fi

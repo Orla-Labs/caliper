@@ -177,10 +177,10 @@ EXPECTED_MD = """\
 30 golden rows, reference `baseline`. noise floor (baseline x2, 30 rows): flip 3.3%, cost-\
 weighted 0.050 [0.000, 0.150].
 
-labels (30 rows): unknown 30 (source not recorded)  
-NO HUMAN-TRUTH LABELS: label numbers below are agreement, not precision. Label a human-tru\
-th slice (label_source internal_reviewer / human_end_user).  
-splits: none; thresholds picked and reported on the same rows (optimistic)
+labels (30 rows): unknown 30 (source not recorded); NO HUMAN-TRUTH LABELS: label numbers b\
+elow are agreement, not precision. Label a human-truth slice (label_source internal_review\
+er / human_end_user).; splits: none; thresholds picked and reported on the same rows (opti\
+mistic)
 
 | candidate | rows | errors | cost $ | p95 ms | who answered | flips | regression [95% CI]\
  | excess vs noise (paired) | gate |
