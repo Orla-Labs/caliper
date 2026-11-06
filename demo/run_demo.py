@@ -280,10 +280,12 @@ def step_compile(graders: ModuleType) -> None:
         say(f"  {f.relative_to(out).as_posix():<20} {n_lines:>4} lines")
 
     first = (out / "train.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    row = json.loads(first)
     say()
     say("first train row:")
-    say(f"  {clip(first, WIDTH - 2)}")
-    call_reward_funcs(out, json.loads(first), graders)
+    for key in sorted(row):
+        say(f"  {key:<17} {clip(json.dumps(row[key]), WIDTH - 20)}")
+    call_reward_funcs(out, row, graders)
 
 
 _REWARD_PROBE = """
@@ -304,7 +306,7 @@ def call_reward_funcs(out: Path, first_row: dict, graders: ModuleType) -> None:
     """
     gold = first_row["gold"]
     completions = {
-        "good": f"The TOTAL DUE line is the answer.\n<total>{gold}</total>",
+        "good": f"The amount due is <total>{gold}</total>",
         "hack": f"<total>0.00 or {gold}</total>",
     }
     n = len(completions)
@@ -331,10 +333,10 @@ def call_reward_funcs(out: Path, first_row: dict, graders: ModuleType) -> None:
     say("reward_funcs.py in a bare interpreter (python -I -S: no caliper, no deps):")
     say(f"  reward_funcs = [{', '.join(names)}]   # GRPOTrainer(reward_funcs=...)")
     say()
-    say(f"  {'completion':<40} {'fixed':>6} {'naive':>6}")
+    say(f"  {'completion':<46} {'fixed':>6} {'naive':>6}")
     for (kind, text), score in zip(completions.items(), scores[0], strict=True):
         naive = graders.naive_grader({"prompt": "", "response": text, "gold": gold}).score
-        say(f"  {kind}: {clip(text, 34):<34} {score:>6.2f} {naive:>6.2f}")
+        say(f"  {kind}: {clip(text, 40):<40} {score:>6.2f} {naive:>6.2f}")
 
 
 # --------------------------------------------------------------------------- main
