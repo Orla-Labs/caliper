@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .auth import is_authed
@@ -416,54 +416,9 @@ def _image_file(path: Path) -> FileResponse:
 
 @router.get("/api/image/{item_id}/{n}", include_in_schema=False)
 def get_image_legacy(session: S, request: Request, item_id: str, n: int) -> FileResponse:
-    if session.dataset is None:
-        return get_media(session, request, item_id, n)  # type: ignore[return-value]
+    if session.dataset is None:  # projects: /api/media/{item_id}/{field} (routes_data, dev 1)
+        raise ApiError(404, "no such image", "projects serve images from /api/media/{item}/{field}")
     item = session.dataset.by_id.get(item_id)
     if item is None:
         raise ApiError(404, "unknown item")
     return _image_file(resolve_image(item, n, session.config, request.app.state.image_root))
-
-
-@router.get(
-    "/api/media/{item_id}/{field}",
-    tags=["items"],
-    summary="An image shown on a card",
-    description=(
-        "Field `field` (its index in the card) of item `item_id`. Local files are served "
-        "only from inside the project (or the image root), object-store keys redirect to "
-        "a short-lived presigned URL. The client never sends a path."
-    ),
-    response_model=None,
-)
-def get_media(session: S, request: Request, item_id: str, field: int) -> Any:
-    if session.dataset is not None:  # legacy: same as /api/image
-        return get_image_legacy(session, request, item_id, field)
-    from .context import card_value, require_ctx
-    from .project import DisplayType
-
-    ctx = require_ctx(request)
-    item = session.items.get(item_id)
-    if item is None:
-        raise ApiError(404, "unknown item")
-    fields = ctx.config.card.fields
-    if field < 0 or field >= len(fields) or fields[field].type is not DisplayType.IMAGE:
-        raise ApiError(404, "no such image field")
-    raw = card_value(ctx.config.card, item.data or {}, field)
-    if not raw or not isinstance(raw, str):
-        raise ApiError(404, "no image for this item")
-    if raw.startswith(("http://", "https://")):
-        return RedirectResponse(raw, status_code=302)
-    if ctx.connector is not None and hasattr(ctx.connector, "resolve_media"):
-        ref = ctx.connector.resolve_media(raw)
-        kind = getattr(ref, "kind", None)
-        if kind == "url" and getattr(ref, "url", None):
-            return RedirectResponse(ref.url, status_code=302)
-        if kind == "file" and getattr(ref, "path", None):
-            p = Path(ref.path)
-            if p.suffix.lower() not in IMAGE_TYPES:
-                raise ApiError(403, "not an image file type")
-            if not p.is_file():
-                raise ApiError(404, "image not found", f"no file at {p.name}")
-            return _image_file(p)
-        raise ApiError(404, "image not found")
-    return _image_file(safe_local_image(raw, ctx.project_dir))

@@ -186,7 +186,7 @@ class StoreItems:
         self._golden: list[str] | None = None
 
     def _view(self, row: Any) -> ItemView:
-        disp = _get(row, "display", "display_json")
+        disp = _get(row, "fields", "display", "display_json")
         if isinstance(disp, str):
             disp = json.loads(disp)
         return ItemView(
@@ -217,8 +217,12 @@ class StoreItems:
 
     def golden_ids(self) -> list[str]:
         if self._golden is None:
-            if hasattr(self.store, "golden_ids"):
-                self._golden = list(self.store.golden_ids())
+            if hasattr(self.store, "execute"):  # dev 1's ProjectStore: one indexed query
+                rows = self.store.execute(
+                    "SELECT item_id FROM items WHERE golden_answer IS NOT NULL "
+                    "AND golden_answer <> '' AND removed = 0 ORDER BY ordinal"
+                )
+                self._golden = [r[0] for r in rows]
             else:  # fall back to one paged pass, keeping ids only
                 ids: list[str] = []
                 off, total = 0, self.count()
@@ -259,6 +263,8 @@ class StoreLabels:
         self.store = store
 
     def load(self) -> list[tuple[LabelRecord, int | None]]:
+        if hasattr(self.store, "iter_labels"):
+            return list(self.store.iter_labels())
         out: list[tuple[LabelRecord, int | None]] = []
         for row in self.store.labels():
             if isinstance(row, tuple):
@@ -276,10 +282,7 @@ class StoreLabels:
         return out
 
     def append(self, record: LabelRecord, project_version: int | None) -> None:
-        try:
-            self.store.append_label(record, project_version=project_version)
-        except TypeError:
-            self.store.append_label(record)
+        self.store.append_label(record, project_version)
 
 
 # --------------------------------------------------------------------------- context
@@ -312,7 +315,7 @@ class ProjectContext:
         )
 
     def reload(self, config: ProjectConfig | None = None) -> None:
-        """Settings were saved: re-read the config, bump the version, keep the labels."""
+        """Settings were saved: re-read the config, take its revision, keep the labels."""
         with self._lock:
             if config is None and self.loader is not None:
                 config = self.loader(self.project_dir)
@@ -320,37 +323,43 @@ class ProjectContext:
                 self.config = config
                 if hasattr(self.items, "config"):
                     self.items.config = config
-            self.version += 1
+                if hasattr(self.items, "_golden"):
+                    self.items._golden = None
+            rev = getattr(self.config, "revision", None)
+            self.version = int(rev) if rev and rev > self.version else self.version + 1
+            if hasattr(self.store, "set_project_version"):
+                self.store.set_project_version(self.version)
             self.session.reconfigure(self.config.labels, self.config.workflow, self.version)
 
     @classmethod
     def open(cls, project_dir: str | Path) -> ProjectContext:
-        """Open a project directory with dev 1's store/connector and dev 2's loader."""
+        """Open a project folder: config (dev 2), store + connector + snapshot (dev 1).
+
+        The first open takes the snapshot. Later opens label from the snapshot even
+        when the source cannot be reached right now (the connector is then None and
+        "Refresh from source" reports the connection error).
+        """
         from . import project as project_mod
+        from . import snapshot
+        from .connectors import ConnectorError, open_connector
+        from .project_store import ProjectStore
 
         d = Path(project_dir).resolve()
         load = getattr(project_mod, "load_project", None)
-        if load is None:
-            raise ApiError(501, "opening a project directory is not available in this build", None)
+        if load is None:  # pragma: no cover - dev 2's loader not merged
+            raise ApiError(501, "opening a project folder needs caliper_label.project.load_project")
         config = load(d)
+        store = ProjectStore.open(d)
         try:
-            from .project_store import ProjectStore  # type: ignore[import-not-found]
-        except ImportError:
-            from .store import ProjectStore  # type: ignore[attr-defined,no-redef]
-        from .connectors import open_connector  # type: ignore[import-not-found]
-
-        store = ProjectStore.open(d) if hasattr(ProjectStore, "open") else ProjectStore(d)
-        connector = open_connector(config.source, d)
-        if store.count(None) == 0:
-            from . import snapshot  # type: ignore[attr-defined]
-
-            ctx_like = _SnapshotArgs(d, config, store, connector)
-            snapshot.take(ctx_like)
-        version = (
-            int(getattr(store, "project_version", lambda: 1)() or 1)
-            if callable(getattr(store, "project_version", None))
-            else 1
-        )
+            connector = open_connector(config.source, d)
+        except ConnectorError:
+            if not store.has_snapshot():
+                raise
+            connector = None
+        if not store.has_snapshot():
+            snapshot.take(_SnapshotArgs(d, config, store, connector))
+        version = int(getattr(config, "revision", 1) or 1)
+        store.set_project_version(version)
         return cls(d, config, store, connector, version=version, loader=load)
 
 
@@ -360,7 +369,6 @@ class _SnapshotArgs:
     config: ProjectConfig
     store: Any
     connector: Any
-    version: int = 1
 
 
 # --------------------------------------------------------------------------- app helpers

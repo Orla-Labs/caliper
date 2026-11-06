@@ -59,6 +59,11 @@ ignore = ["S101"]  # allow asserts in tests
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S", "N"]
+# The label data layer builds DuckDB/SQLite SQL from config-owned table names and queries; every
+# value is quoted with lit()/ident() or bound as a parameter (see connectors/duck.py).
+"packages/label/src/caliper_label/{connectors/duck.py,project_store.py,snapshot.py,sinks.py}" = [
+    "S608",
+]
 
 [tool.pytest.ini_options]
 testpaths = [

@@ -1,0 +1,67 @@
+# Test services for the caliper-label connectors (fictional data only, local ports only).
+#
+#   docker compose -f packages/label/docker/compose.yml -p caliper-label-test up -d --wait
+#   uv run pytest -m docker
+#   docker compose -f packages/label/docker/compose.yml -p caliper-label-test down -v
+#
+# Host ports default to 55432 (Postgres), 53306 (MySQL), 59000/59001 (S3). If one is taken, set
+# CALIPER_LABEL_PG_PORT / CALIPER_LABEL_MYSQL_PORT / CALIPER_LABEL_S3_PORT for both compose and
+# pytest (the tests read the same variables).
+#
+# Credentials below are throwaway values for these local containers; tests read them from the
+# environment exactly like a real project would (PG*, MYSQL_*, AWS_*).
+#
+# S3: MinIO's images are no longer pullable anonymously from Docker Hub/quay, so the default
+# S3-compatible server is RustFS (Apache-2.0, MinIO-compatible API). With a MinIO image available
+# locally, run with CALIPER_LABEL_S3_IMAGE=minio/minio:latest: both env-var sets are provided and
+# the command below works for either.
+name: caliper-label-test
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: caliper
+      POSTGRES_PASSWORD: caliper-local-only
+      POSTGRES_DB: shop
+    ports: ["127.0.0.1:${CALIPER_LABEL_PG_PORT:-55432}:5432"]
+    volumes:
+      - ./seed/postgres.sql:/docker-entrypoint-initdb.d/01_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U caliper -d shop && psql -U caliper -d shop -tAc 'select count(*) from support.tickets' | grep -q 40"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: caliper-local-root
+      MYSQL_USER: caliper
+      MYSQL_PASSWORD: caliper-local-only
+      MYSQL_DATABASE: shop
+    ports: ["127.0.0.1:${CALIPER_LABEL_MYSQL_PORT:-53306}:3306"]
+    volumes:
+      - ./seed/mysql.sql:/docker-entrypoint-initdb.d/01_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -ucaliper -pcaliper-local-only -h127.0.0.1 shop -Nse 'select count(*) from tickets' | grep -q 40"]
+      interval: 2s
+      timeout: 5s
+      retries: 90
+
+  minio:
+    image: ${CALIPER_LABEL_S3_IMAGE:-rustfs/rustfs:1.0.4}
+    environment:
+      MINIO_ROOT_USER: caliper-s3-user
+      MINIO_ROOT_PASSWORD: caliper-s3-local-only
+      RUSTFS_ACCESS_KEY: caliper-s3-user
+      RUSTFS_SECRET_KEY: caliper-s3-local-only
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if command -v minio >/dev/null; then exec minio server /data --console-address :9001;
+        else exec /entrypoint.sh rustfs /data; fi
+    ports: ["127.0.0.1:${CALIPER_LABEL_S3_PORT:-59000}:9000", "127.0.0.1:${CALIPER_LABEL_S3_CONSOLE_PORT:-59001}:9001"]
