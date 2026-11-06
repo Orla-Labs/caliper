@@ -86,6 +86,23 @@ steps:
 
 `--ci` exits 1 when any candidate regresses above the noise floor plus `[ci].max_regression`, errors more than `[ci].max_error_rate`, or was answered by a different model than requested. `budget_usd` caps what one run can spend. A stopped run resumes from `results.jsonl`.
 
+## Label your data: `caliper label`
+
+![caliper label: one card at a time, single-key decisions, queues and agreement in the sidebar](docs/label.png)
+
+`caliper label serve golden.jsonl --config label.yaml` opens a local, keyboard-first labelling UI with no accounts and no build step. It shows one item at a time as a card with text, badges, numbers, links and images (`Z` for full size), takes a single key per decision, and offers skip, undo and notes. A sidebar splits the set into named queues with progress. Several people can label at once, and every label records who and when in an append-only log. With `double_label: 2` each item needs two labellers, and the agreement view shows inter-annotator kappa overall and by category. `caliper label export` writes golden rows with `label` / `label_approved` filled in for `caliper eval` calibration, or labeled rollouts ready for `caliper_kappa`. Disagreements are left out and listed, never silently resolved.
+
+```bash
+# Try it on the example (80 fictional catalog cards)
+uv run caliper label serve examples/catalog_cleanup/golden.jsonl \
+    --config examples/catalog_cleanup/label.yaml
+
+# Inter-rater agreement from the label log, overall and by category
+uv run caliper kappa --labels build/labels/golden.labels.jsonl --by category
+```
+
+`caliper kappa --labels` uses Cohen's kappa when exactly two people labelled the overlap items and Fleiss' kappa when three or more did. Undone and skipped labels are dropped, and an LLM teacher's labels are left out unless you pass `--source all`. Categories where kappa is undefined (for example, everyone chose the same label) are flagged, not shown as a number. See [docs/label.md](docs/label.md).
+
 ## Advanced: train against the same grader
 
 If you go further and fine-tune with reinforcement learning (RFT), the grader *is* the objective. The policy is optimized against whatever the grader actually rewards, not what you meant it to reward. A grader that checks "is the gold answer somewhere in the response?" also pays full reward for listing three candidate numbers, for a bare number with no working, or for `1161.69` when the answer is `161.69`. Caliper treats the grader as code under test:
@@ -153,6 +170,7 @@ Caliper is built by [Orla Labs](https://orlalabs.com).
 │   ├── mutate/       mutation testing for graders (8 built-ins + 5 opt-in
 │   │                 classification mutations)                                 (Python)
 │   ├── kappa/        Cohen's κ grader vs labels; inter-rater κ by category     (Python)
+│   ├── label/        caliper label: local keyboard-first labelling UI         (Python)
 │   ├── server/       FastAPI dry-run backend + pluggable executor (in-proc/E2B)(Python)
 │   └── editor/       Monaco-based grader IDE                                   (Next.js)
 ├── examples/
@@ -165,6 +183,8 @@ Caliper is built by [Orla Labs](https://orlalabs.com).
 │   └── record/             re-records docs/demo.gif (Playwright + ffmpeg)
 ├── docs/
 │   ├── eval.md             caliper eval: concepts, config and CLI reference
+│   ├── label.md            caliper label: config, keys, double labelling, export
+│   ├── label.png
 │   ├── demo.gif
 │   └── targets.md          per-target details for caliper-compile
 └── scripts/
@@ -172,6 +192,7 @@ Caliper is built by [Orla Labs](https://orlalabs.com).
     ├── demo.sh                     runs demo/run_demo.py; --check diffs against the transcript
     ├── dev.sh                      starts server (:8000) + editor (:3456) together
     ├── smoke_eval.py               caliper eval end to end: report shape, resume, preflight, sampler
+    ├── smoke_label.py              caliper label end to end
     ├── smoke_dry_run.py            POSTs sample grader → /dry-run, asserts shape
     ├── smoke_mutation_test.py      runs all 8 mutations against robust + naked-gold graders
     ├── smoke_mutate_classification.py  5 classification mutations: naive vs robust classifier grader
@@ -196,6 +217,7 @@ Self-contained end-to-end checks. No network, no API keys (one optional smoke sk
 ```bash
 uv run python scripts/smoke_eval.py
 scripts/demo_eval.sh --check
+uv run python scripts/smoke_label.py
 uv run python scripts/smoke_dry_run.py
 uv run python scripts/smoke_mutation_test.py
 uv run python scripts/smoke_mutate_classification.py

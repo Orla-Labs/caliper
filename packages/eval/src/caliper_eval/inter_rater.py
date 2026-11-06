@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Literal
 
 from caliper_kappa import InterRaterReport, RaterLabel, inter_rater_kappa
+from pydantic import ValidationError
 
 from caliper_eval.types import LabelRecord, LabelSource
 
@@ -95,9 +96,20 @@ def load_label_records(path: str | Path) -> list[LabelRecord]:
             if not line.strip():
                 continue
             try:
-                out.append(LabelRecord.model_validate(json.loads(line)))
+                obj = json.loads(line)
             except ValueError as exc:
-                raise ValueError(f"{path}:{lineno}: not a LabelRecord: {exc}") from exc
+                raise ValueError(f"{path}:{lineno}: not JSON: {exc}") from exc
+            try:
+                out.append(LabelRecord.model_validate(obj))
+            except ValidationError as exc:
+                problems = "; ".join(
+                    f"{'.'.join(str(p) for p in e['loc']) or '<root>'}: {e['msg']}"
+                    for e in exc.errors()[:4]
+                )
+                hint = ""
+                if isinstance(obj, dict) and "rollout" in obj:
+                    hint = " (this looks like a labeled-rollouts file: use --rollouts)"
+                raise ValueError(f"{path}:{lineno}: not a LabelRecord{hint}: {problems}") from exc
     return out
 
 
