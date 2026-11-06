@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>caliper label</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%224%22 fill=%22%232f5bd3%22/%3E%3Crect x=%224%22 y=%224%22 width=%224%22 height=%228%22 fill=%22white%22/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo" aria-hidden="true">◧</span> <span id="title">caliper label</span></div>
+  <div class="overall" id="overall" aria-live="polite"></div>
+  <div class="top-actions">
+    <button type="button" class="ghost" id="agreement-btn" title="Agreement (kappa)">Agreement</button>
+    <button type="button" class="ghost" id="help-btn" title="Keyboard shortcuts (?)">?</button>
+    <button type="button" class="who" id="who-btn" title="Change labeller"></button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="queues" aria-label="Queues">
+    <h2>Queues</h2>
+    <ul id="queue-list"></ul>
+    <div class="labellers" id="labellers"></div>
+  </nav>
+
+  <main class="stage">
+    <div id="instructions" class="instructions" hidden></div>
+    <article class="card" id="card" aria-live="polite">
+      <div class="loading">Loading…</div>
+    </article>
+
+    <section class="decide" aria-label="Decision">
+      <div class="decisions" id="decisions"></div>
+      <div class="secondary">
+        <button type="button" class="ghost" id="skip-btn"></button>
+        <button type="button" class="ghost" id="undo-btn"></button>
+        <button type="button" class="ghost" id="note-btn"></button>
+      </div>
+      <div class="note-wrap" id="note-wrap" hidden>
+        <label for="note">Note <span class="muted">(saved with the next decision; Enter or Esc to go back to keys)</span></label>
+        <textarea id="note" rows="2" maxlength="2000" placeholder="Why? (optional)"></textarea>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer class="keybar" id="keybar" aria-label="Keyboard shortcuts"></footer>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<div class="overlay" id="zoom" hidden role="dialog" aria-label="Image, full size">
+  <img id="zoom-img" alt="">
+  <div class="zoom-hint">Esc to close · decision keys still work</div>
+</div>
+
+<div class="overlay modal-wrap" id="help" hidden role="dialog" aria-labelledby="help-title">
+  <div class="modal">
+    <h2 id="help-title">Keyboard shortcuts</h2>
+    <table class="keys" id="help-keys"></table>
+    <p class="muted">Shortcuts are off while you type a note. Labels are saved the moment you press a key; undo retracts your last label and brings the item back.</p>
+    <div class="modal-actions"><button type="button" data-close>Close <kbd>Esc</kbd></button></div>
+  </div>
+</div>
+
+<div class="overlay modal-wrap" id="agreement" hidden role="dialog" aria-labelledby="agreement-title">
+  <div class="modal wide">
+    <h2 id="agreement-title">Agreement between labellers</h2>
+    <div id="agreement-body"></div>
+    <div class="modal-actions"><button type="button" data-close>Close <kbd>Esc</kbd></button></div>
+  </div>
+</div>
+
+<div class="overlay modal-wrap" id="name" hidden role="dialog" aria-labelledby="name-title">
+  <form class="modal narrow" id="name-form">
+    <h2 id="name-title">Who is labelling?</h2>
+    <p class="muted">Every label records your name and the time. Stored in this browser only.</p>
+    <input id="name-input" autocomplete="nickname" maxlength="80" required placeholder="Your name">
+    <div class="modal-actions"><button type="submit" class="primary">Start labelling</button></div>
+  </form>
+</div>
+</body>
+</html>

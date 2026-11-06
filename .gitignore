@@ -38,5 +38,6 @@ docs/*
 !docs/03-graders-and-rewards.md
 !docs/eval.md
 !docs/label.md
+!docs/label.png
 building/
 CLAUDE.md
