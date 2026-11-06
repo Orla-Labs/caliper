@@ -137,8 +137,17 @@ def test_dataset_errors(tmp_path: Path, base_config: dict) -> None:
     bad.write_text('{"id": 1}\nnot json\n')
     with pytest.raises(ValueError, match=r"b\.jsonl:2"):
         load_dataset(bad, cfg)
-    with pytest.raises(ValueError, match="GoldenRow"):
-        load_dataset(_write(tmp_path / "g.jsonl", [{"id": "1", "request": {}, "bogus": 1}]), cfg)
+
+
+def test_request_rows_that_are_not_golden_fall_back_to_plain(
+    tmp_path: Path, base_config: dict, capsys: pytest.CaptureFixture
+) -> None:
+    cfg = LabelConfig.model_validate(base_config)
+    ds = load_dataset(_write(tmp_path / "g.jsonl", [{"id": "1", "request": {}, "outcome": 1}]), cfg)
+    assert ds.kind is DataKind.PLAIN
+    assert "treating the file as plain rows" in capsys.readouterr().err
+    logs = load_dataset(ROOT / "examples/catalog_cleanup/logs.jsonl", cfg)
+    assert logs.kind is DataKind.PLAIN and len(logs.items) == 300
 
 
 # --------------------------------------------------------------------------- store
@@ -171,6 +180,20 @@ def test_jsonl_ignores_torn_last_line(tmp_path: Path, capsys: pytest.CaptureFixt
     p.write_text(_rec(0).model_dump_json() + "\n" + '{"item_id": "g1", "deci')
     assert [r.record_id for r in load_records(p)] == ["r0"]
     assert "incomplete last line" in capsys.readouterr().err
+
+
+def test_jsonl_recovers_from_torn_tail_and_keeps_appending(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    p = tmp_path / "labels.jsonl"
+    p.write_text(_rec(0).model_dump_json() + "\n" + '{"item_id": "g1", "deci')
+    store = open_store(p)  # as `serve` does after a crash
+    assert "dropping an incomplete last line" in capsys.readouterr().err
+    assert [r.record_id for r in store.load()] == ["r0"]
+    store.append(_rec(1))
+    store.close()
+    assert [r.record_id for r in load_records(p)] == ["r0", "r1"]  # and it reopens fine
+    assert [r.record_id for r in load_records(p)] == ["r0", "r1"]
 
 
 def test_jsonl_rejects_corrupt_middle_line(tmp_path: Path) -> None:

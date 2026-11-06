@@ -8,6 +8,7 @@ kept so exports round-trip it unchanged apart from the label fields.
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -90,8 +91,15 @@ def load_dataset(path: str | Path, config: LabelConfig) -> Dataset:
             try:
                 GoldenRow.model_validate(row)
             except ValueError as exc:
-                msg = f"{path}: row {n} looks like a GoldenRow but is not: {exc}"
-                raise ValueError(msg) from exc
+                # e.g. production logs: a `request` plus other keys. Label them as plain rows.
+                first = str(exc).splitlines()[0]
+                print(
+                    f"caliper label: {path} row {n} has a 'request' but is not a GoldenRow "
+                    f"({first}); treating the file as plain rows",
+                    file=sys.stderr,
+                )
+                kind = DataKind.PLAIN
+                break
 
     items: list[Item] = []
     seen: set[str] = set()

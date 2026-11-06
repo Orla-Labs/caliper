@@ -40,7 +40,12 @@ def test_golden_export_fills_label_fields(make_session, tmp_path: Path) -> None:
     assert (g2.label, g2.label_approved) == ("needs_review", False)
     assert g0.label_source.value == "internal_reviewer" and g0.label_stage == "triage"
     assert g0.metadata["labelling"]["labellers"] == ["ana"]
-    assert g0.request == s.dataset.by_id["g0"].raw["request"]  # request untouched
+    label_keys = {"label", "label_approved", "label_source", "label_stage", "metadata"}
+    raw_out, raw_in = read(out)[0], s.dataset.by_id["g0"].raw
+    assert {k: v for k, v in raw_out.items() if k not in label_keys} == {
+        k: v for k, v in raw_in.items() if k not in label_keys
+    }  # everything else untouched, no keys added
+    assert {k: v for k, v in raw_out["metadata"].items() if k != "labelling"} == raw_in["metadata"]
     assert load_golden(str(out))[0].id == "g0"  # eval's own loader reads it
 
     n, _ = export(s.dataset, s.config, s.records, out, ExportFormat.GOLDEN, include_unlabelled=True)
