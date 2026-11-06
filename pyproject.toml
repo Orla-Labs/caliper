@@ -74,4 +74,8 @@ testpaths = [
     "packages/label/tests",
     "examples/catalog_cleanup/tests",
 ]
-addopts = "-ra --strict-markers --import-mode=importlib"
+addopts = "-ra --strict-markers --import-mode=importlib -m 'not docker and not slow'"
+markers = [
+    "docker: needs the label test services (docker compose); run with -m docker",
+    "slow: large-data tests (e.g. 1M-row Parquet); run with -m slow",
+]

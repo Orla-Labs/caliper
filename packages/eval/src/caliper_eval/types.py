@@ -81,10 +81,15 @@ class LabelSource(StrEnum):
     INTERNAL_REVIEWER = "internal_reviewer"  # staff labelling (e.g. via `caliper label`)
     LLM_TEACHER = "llm_teacher"  # an LLM's verdict
     HEURISTIC = "heuristic"  # a rule / weak label
+    ADJUDICATED = "adjudicated"  # final label set by an adjudicator after a disagreement
 
     @property
     def is_human(self) -> bool:
-        return self in (LabelSource.HUMAN_END_USER, LabelSource.INTERNAL_REVIEWER)
+        return self in (
+            LabelSource.HUMAN_END_USER,
+            LabelSource.INTERNAL_REVIEWER,
+            LabelSource.ADJUDICATED,
+        )
 
 
 class Split(StrEnum):
