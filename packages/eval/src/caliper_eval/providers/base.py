@@ -42,10 +42,15 @@ class PreflightResult(BaseModel):
 def minimal_request(candidate: Candidate) -> dict[str, Any]:
     """Smallest request with the candidate's exact shape (used by preflight).
 
-    ``max_tokens`` leaves room for an explicit thinking budget, which must be
-    smaller than ``max_tokens``.
+    ``max_tokens`` leaves room for an explicit thinking budget (which must be
+    smaller than ``max_tokens``) and, in structured modes, for thinking plus a
+    schema-shaped answer. Truncation does not fail preflight anyway: a response
+    means the shape was accepted.
     """
-    max_tokens = 64 + (candidate.thinking_budget_tokens or 0)
+    from caliper_eval.types import OutputMode
+
+    room = 64 if candidate.output_mode == OutputMode.TEXT else 1024
+    max_tokens = room + (candidate.thinking_budget_tokens or 0)
     return {
         "system": None,
         "messages": [{"role": "user", "content": "Reply with the single word OK."}],
@@ -108,12 +113,26 @@ class Provider(ABC):
         reply = self.send(
             minimal_request(candidate), candidate, row_id=PREFLIGHT_ROW_ID, replica=0, sample=0
         )
-        return preflight_from_reply(candidate, reply)
+        return preflight_from_response(candidate, reply)
 
     # helpers ---------------------------------------------------------------
 
     def cost(self, usage: Usage, model: str) -> float:
         return cost_usd(usage, lookup_price(model, self.pricing, provider=self.kind).price)
+
+
+def preflight_from_response(candidate: Candidate, reply: Reply) -> PreflightResult:
+    """Real providers: a response that names the requested model means the shape
+    was accepted, even if the tiny preflight answer was truncated or did not
+    parse (noted in ``reason``). No response, or another model, fails."""
+    if reply.served_by is None:
+        return preflight_from_reply(candidate, reply)
+    if not reply.served_by.matches_request:
+        return preflight_from_reply(candidate, reply.model_copy(update={"error": None}))
+    note = f"shape accepted; preflight answer note: {reply.error}" if reply.error else None
+    return PreflightResult(
+        candidate=candidate.name, ok=True, reason=note, served_by=reply.served_by
+    )
 
 
 def preflight_from_reply(candidate: Candidate, reply: Reply) -> PreflightResult:

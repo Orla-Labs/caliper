@@ -38,6 +38,11 @@ def request_sha256(request: dict[str, Any]) -> str:
     return hashlib.sha256(canonical_json(request).encode("utf-8")).hexdigest()
 
 
+def candidate_sha256(candidate: Candidate) -> str:
+    """Hash of everything that defines a candidate (model, modes, schema, params...)."""
+    return request_sha256(candidate.model_dump(mode="json"))
+
+
 # --------------------------------------------------------------------------- golden set
 
 
@@ -165,6 +170,7 @@ class RowResult(BaseModel):
     row_id: str
     replica: int = 0  # replay index; the reference is replayed >= 2x for the noise floor
     request_sha256: str  # hash of GoldenRow.request (pre-overlay)
+    candidate_sha256: str | None = None  # hash of the Candidate settings (stale-resume check)
     replies: list[Reply]
     decision: Decision | None = None  # None if decide() raised
     error: str | None = None  # decide() error or row-level failure

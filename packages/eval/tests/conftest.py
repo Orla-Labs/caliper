@@ -11,6 +11,7 @@ import pytest
 FAKE_MODELS = textwrap.dedent(
     """
     import hashlib
+    import os
 
     def _u(*parts):
         h = hashlib.sha256("|".join(map(str, parts)).encode()).hexdigest()
@@ -24,6 +25,8 @@ FAKE_MODELS = textwrap.dedent(
     def respond(request, *, model, row_id, replica, sample):
         if row_id == "__preflight__":
             return {"text": "OK", "served_model": "fake-other" if model == "fake-swap" else model}
+        if os.environ.get("CALIPER_TEST_OUTAGE") == row_id:
+            return {"error": "simulated 429 rate limited"}
         text = request["messages"][-1]["content"]
         if "boom" in text:
             return {"error": "simulated 529 overloaded"}

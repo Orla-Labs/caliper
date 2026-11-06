@@ -366,3 +366,24 @@ def test_openai_parse_tool_refusal_and_substitution():
     swapped = oai.parse_response(_chat("x", model="other-model"), oc(), "e")
     assert swapped.served_by.matches_request is False
     assert oai.parse_response({"model": "m"}, oc(), "e").error == "response has no choices"
+
+
+def test_anthropic_preflight_passes_when_tiny_answer_is_truncated():
+    """A response from the requested model means the shape was accepted."""
+    messages = StubMessages(response=_msg([{"type": "text", "text": '{"lab'}], stop="max_tokens"))
+    provider, _ = _provider(messages)
+    c = cand(thinking="on", output_mode="json_schema", output_schema=SCHEMA)
+    pf = provider.preflight(c)
+    assert pf.ok and "max_tokens" in pf.reason
+    assert messages.calls[0]["max_tokens"] == 1024
+
+
+def test_openai_preflight_passes_on_unparseable_answer():
+    def handler(request):
+        return httpx.Response(200, json=_chat("{"))
+
+    provider = OpenAICompatProvider(
+        http_client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    pf = provider.preflight(oc(output_mode="json_schema", output_schema=SCHEMA))
+    assert pf.ok and "not valid JSON" in pf.reason
