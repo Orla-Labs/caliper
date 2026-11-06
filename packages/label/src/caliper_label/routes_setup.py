@@ -385,11 +385,17 @@ async def put_upload(request: Request, filename: str, draft: str | None = None) 
 class PreviewIn(BaseModel):
     source: dict[str, Any]
     draft: str | None = None
+    project: bool = False  # resolve relative paths against the open project (settings)
     n: int = 50
 
 
-def _source_base(draft: str | None) -> Path:
-    d = _draft_dir(draft)
+def _source_base(request: Request, body: PreviewIn) -> Path:
+    if body.project:
+        ctx = getattr(request.app.state, "ctx", None)
+        if ctx is None:
+            raise SetupError(409, "no project open", "open the project first")
+        return Path(ctx.project_dir)
+    d = _draft_dir(body.draft)
     return d if d is not None else Path.cwd()
 
 
@@ -409,7 +415,7 @@ def post_preview(body: PreviewIn, request: Request) -> dict[str, Any]:
         raise SetupError(
             422, f"source: {_short_errors(exc)}", "check the connection form"
         ) from None
-    base = _source_base(body.draft)
+    base = _source_base(request, body)
     try:
         creds = [c.model_dump() for c in credential_status(source)]
     except ConnectorError as exc:
