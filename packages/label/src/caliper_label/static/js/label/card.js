@@ -100,7 +100,8 @@ function figure(f, i, { onZoom, explain }) {
   const img = el("img", { src: f.src, alt: f.label || "image", decoding: "async" });
   img.addEventListener("error", () => img.closest("button")?.replaceWith(missingImage(f, explain)));
   const btn = el("button", { type: "button", class: "zoom-btn", "aria-label": `${f.label || "Image"}: view full size (Z)`, onclick: () => onZoom && onZoom(i) }, img);
-  return el("figure", {}, btn, el("figcaption", { text: f.label }));
+  // caption above, like every other field's label (usability r3)
+  return el("figure", {}, el("figcaption", { class: "field-label", text: f.label }), btn);
 }
 
 export function renderCard(item, { onZoom, optionLabel, options, explain } = {}) {

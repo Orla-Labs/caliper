@@ -21,14 +21,16 @@ function optionButton(o, attrs = {}) {
     class: "opt" + (o.approved ? " opt-approved" : ""),
     "data-value": o.value,
     "aria-keyshortcuts": key ? key.toUpperCase() : null,
-    "aria-label": `${shownName(key, o.label)}${o.requires_note ? ", needs a note" : ""}`,
+    "aria-label": `${shownName(key, o.label)}${o.requires_note ? " + note, needs a note" : ""}`,
     style: o.color ? `--opt:${o.color}` : null,
     ...attrs,
   },
   key ? el("kbd", { "aria-hidden": "true", text: keyLabel(key) }) : null,
   key ? " " : null, // the visible text reads "1 Code correct", like the accessible name
   el("span", { class: "opt-label", text: o.label }),
-  o.requires_note ? el("span", { class: "opt-note", "aria-hidden": "true", title: "needs a note", text: "✎" }) : null);
+  // say it in words on the button, not just an icon (usability r3)
+  o.requires_note ? " " : null,
+  o.requires_note ? el("span", { class: "opt-note", title: "this answer needs a note", text: "+ note" }) : null);
 }
 
 function flash(btn) {

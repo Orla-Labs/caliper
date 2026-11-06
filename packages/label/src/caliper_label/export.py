@@ -394,6 +394,33 @@ def _row_of(session: Session, item: ItemView) -> dict[str, Any]:
     return dict(data or {})
 
 
+def card_columns(session: Session) -> list[str]:
+    """The item's own columns in the order the card shows them (top-level names)."""
+    cfg = getattr(session.items, "config", None)
+    names: list[str | None] = []
+    card = getattr(cfg, "card", None)
+    if card is not None:  # project: CardField.column
+        names = [f.column for f in card.fields]
+    elif session.config is not None:  # legacy: FieldSpec.key
+        names = [getattr(f, "key", None) for f in getattr(session.config, "fields", [])]
+    out: list[str] = []
+    for n in names:
+        if n and n not in out:
+            out.append(n)
+    return out
+
+
+def _ordered(row: dict[str, Any], first: list[str]) -> dict[str, Any]:
+    """Card columns first, in card order (a dotted path counts for its top-level column),
+    then every other column (hidden fields, ids, ...) in source order."""
+    head: list[str] = []
+    for n in first:
+        k = n if n in row else n.split(".", 1)[0]
+        if k in row and k not in head:
+            head.append(k)
+    return {**{k: row[k] for k in head}, **{k: v for k, v in row.items() if k not in head}}
+
+
 def _items_in_order(session: Session, ids: Iterable[str]) -> list[ItemView]:
     got = [session.items.get(i) for i in ids]
     return sorted((g for g in got if g is not None), key=lambda it: it.ordinal)
@@ -486,6 +513,7 @@ def table_rows(
     """The label table. Item columns come after the label columns, prefixed ``item.``."""
     rules = session.rules
     with_scores = scored(rules)
+    order = card_columns(session)
     if mode is RowsMode.LABELS:
         for r in session.active:
             if r.skipped or r.decision is None or session.is_golden(r.item_id):
@@ -503,7 +531,8 @@ def table_rows(
                 "retired_option": retired_option(rules, r.decision),
                 "record_id": r.record_id,
             }
-            row.update({f"item.{k}": _flat(v) for k, v in _row_of(session, it).items()})
+            data = _ordered(_row_of(session, it), order)
+            row.update({f"item.{k}": _flat(v) for k, v in data.items()})
             yield row
         return
     ids: list[str] = list(cons.resolved)
@@ -539,7 +568,8 @@ def table_rows(
         if not with_scores:
             row.pop("approved", None)
             row.pop("human_label", None)
-        row.update({f"item.{k}": _flat(v) for k, v in _row_of(session, it).items()})
+        data = _ordered(_row_of(session, it), order)
+        row.update({f"item.{k}": _flat(v) for k, v in data.items()})
         yield row
 
 
@@ -658,13 +688,16 @@ def session_rows(
 # --------------------------------------------------------------------------- writing
 
 
-def write_jsonl(rows: Iterable[dict[str, Any]], out_path: str | Path) -> int:
+def write_jsonl(
+    rows: Iterable[dict[str, Any]], out_path: str | Path, *, sort_keys: bool = True
+) -> int:
+    """JSON lines. The label table keeps its column order (``sort_keys=False``)."""
     p = Path(out_path)
     p.parent.mkdir(parents=True, exist_ok=True)
     n = 0
     with p.open("w", encoding="utf-8") as fh:
         for row in rows:
-            fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+            fh.write(json.dumps(row, ensure_ascii=False, sort_keys=sort_keys) + "\n")
             n += 1
     return n
 
@@ -695,7 +728,7 @@ def write_local(rows: Iterable[dict[str, Any]], fmt: ExportFormat, out_path: str
         return write_via_sinks(
             rows, {"kind": "file", "path": str(p), "format": "parquet"}, "parquet"
         )
-    return write_jsonl(rows, p)
+    return write_jsonl(rows, p, sort_keys=fmt is not ExportFormat.JSONL)
 
 
 def write_via_sinks(

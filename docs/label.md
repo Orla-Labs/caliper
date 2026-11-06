@@ -232,6 +232,9 @@ screen count each group and list every item left out, with who said what.
 **Provenance.** Every label-table row carries `labeller`, `labelled_at`, `note`,
 `source`, `stage` and `project_version`:
 
+- `source` says what kind of labeller made the label. It is the project's `workflow.source`
+  (default `internal_reviewer`; also `human_end_user`, `llm_teacher`, `heuristic`), or
+  `adjudicated` when an adjudicator set the final label. It is not the data source.
 - `labeller` is `;`-joined when several people agreed;
 - the adjudicator is named for adjudicated items;
 - the item's own columns follow: flat `item.<column>` columns in CSV, Parquet and tables,
@@ -260,8 +263,13 @@ An example row (`--format jsonl`, an adjudicated item):
           "meta": {"channel": "email"}}}
 ```
 
-Downloaded and project-folder files are named `<project>-<format>-<local time><offset>.<ext>`,
-for example `tickets-jsonl-20261106-193600-0300.jsonl` (`Z` when the server runs on UTC).
+**Times are UTC.** `labelled_at` is UTC ISO 8601 with a `Z`, and file names use the same clock:
+`<project>-<format>-<UTC time>Z.<ext>`, for example `tickets-jsonl-20261106-223600Z.jsonl`.
+Only the labeller's screen shows local time.
+
+**Column order.** The item's columns come in card order (the order set in the wizard or in
+Settings → Card), then the columns the card doesn't show (hidden fields, the id, the rest of the
+source row).
 
 `project_version` is the config `revision`, bumped on every settings save, so you
 can tell which labels were made under which options.

@@ -7,6 +7,7 @@ import { el, errorState, link, loadingState, toast } from "../common/dom.js";
 // (usability #12). Plain names first; the technical detail is the secondary line (#11).
 const FORMAT_ORDER = ["csv", "jsonl", "parquet", "golden", "rollouts", "records"];
 const TABULAR = ["csv", "jsonl", "parquet"];
+const EVAL = ["golden", "rollouts", "records"]; // behind "For Caliper evaluations" (usability r3)
 const NICE = { csv: "CSV", jsonl: "JSON lines", parquet: "Parquet", golden: "answer key", rollouts: "human scores", records: "label history", table: "database table" };
 const EXT = { csv: "csv", jsonl: "jsonl", parquet: "parquet", golden: "jsonl", rollouts: "jsonl", records: "jsonl" };
 
@@ -23,6 +24,10 @@ export async function mount(root, { api }) {
   const S = { format: "csv", conflicts: "exclude", rows: "items", include: false, dest: "download", path: "", s3: "", table: "" };
   const fmtMeta = (f) => meta.formats.find((x) => x.name === f) || { name: f };
   const sent = () => (S.dest === "table" ? "table" : S.format); // what the API gets
+  // One label per item: nothing to disagree on, so no conflict section (usability r3).
+  const single = (meta.double_label || 1) <= 1;
+  let step = 0;
+  const legend = (text) => el("legend", { text: `${++step}. ${text}` });
   const summaryBox = el("div", { class: "exp-summary", "aria-live": "polite" });
   const result = el("div", { class: "exp-result", role: "status" });
 
@@ -35,28 +40,38 @@ export async function mount(root, { api }) {
   }
 
   const tableNote = el("p", { class: "muted small", hidden: true, text: "A database table always gets the label table: one row per item (or per label), the same columns as CSV." });
-  const formats = el("fieldset", { class: "panel exp-block", id: "format-block" }, el("legend", { text: "1. Format" }),
+  const fmtRadio = (f) => {
+    const m = fmtMeta(f);
+    return radio("format", f, m.title || NICE[f], m.plain || m.help, f === S.format, () => { S.format = f; sync(); },
+      m.title && !TABULAR.includes(f) ? m.help : null);
+  };
+  const offered = FORMAT_ORDER.filter((f) => meta.formats.some((x) => x.name === f));
+  const evalFormats = offered.filter((f) => EVAL.includes(f));
+  const evalBox = evalFormats.length
+    ? el("details", { class: "exp-eval" },
+      el("summary", { text: "For Caliper evaluations" }),
+      el("p", { class: "muted small", text: "Files that caliper eval and caliper kappa read. For spreadsheets and scripts, use the formats above." }),
+      el("div", { class: "choices" }, ...evalFormats.map(fmtRadio)))
+    : null;
+  const formats = el("fieldset", { class: "panel exp-block", id: "format-block" }, legend("Format"),
     tableNote,
-    el("div", { class: "choices" }, ...FORMAT_ORDER.filter((f) => meta.formats.some((x) => x.name === f)).map((f) => {
-      const m = fmtMeta(f);
-      return radio("format", f, m.title || NICE[f], m.plain || m.help, f === S.format, () => { S.format = f; sync(); },
-        m.title && !TABULAR.includes(f) ? m.help : null);
-    })));
+    el("div", { class: "choices" }, ...offered.filter((f) => !EVAL.includes(f)).map(fmtRadio)),
+    evalBox);
 
-  const policy = el("fieldset", { class: "panel exp-block" }, el("legend", { text: "2. Items labellers disagree on" }),
+  const policy = single ? null : el("fieldset", { class: "panel exp-block" }, legend("Items labellers disagree on"),
     el("p", { class: "muted small", text: "Adjudicated items always use the adjudicator's label. This choice is for disagreements nobody has settled." }),
     el("div", { class: "choices" },
       radio("conflicts", "exclude", "Leave them out", "safest: only agreed and adjudicated labels", true, () => { S.conflicts = "exclude"; sync(); refresh(); }),
       radio("conflicts", "majority", "Strict majority", "2 of 3 wins; ties are still left out", false, () => { S.conflicts = "majority"; sync(); refresh(); })));
 
-  const rowsBlock = el("fieldset", { class: "panel exp-block", id: "rows-block" }, el("legend", { text: "3. Rows" }),
+  const rowsBlock = el("fieldset", { class: "panel exp-block", id: "rows-block" }, legend("Rows"),
     el("div", { class: "choices" },
       radio("rows", "items", "One row per item", "its final label, who decided and when", true, () => { S.rows = "items"; sync(); }),
       radio("rows", "labels", "One row per label", "every labeller's label, for your own analysis", false, () => { S.rows = "labels"; sync(); })),
     el("label", { class: "check" }, el("input", { type: "checkbox", onchange: (e) => { S.include = e.target.checked; sync(); } }), " Also include items without a final label (marked by status)"));
 
   const destInput = (id, ph, key) => el("input", { id, type: "text", placeholder: ph, oninput: (e) => { S[key] = e.target.value.trim(); sync(); } });
-  const destBlock = el("fieldset", { class: "panel exp-block" }, el("legend", { text: "4. Where" }),
+  const destBlock = el("fieldset", { class: "panel exp-block" }, legend("Where"),
     el("div", { class: "choices", id: "dest-choices" },
       radio("dest", "download", "Download", "save the file from your browser", true, () => { S.dest = "download"; sync(); }),
       radio("dest", "file", "File in the project folder", "e.g. exports/labels.csv", false, () => { S.dest = "file"; sync(); }),
@@ -107,10 +122,11 @@ export async function mount(root, { api }) {
       // replaceChildren() would print a null child as the text "null" (usability #4)
       summaryBox.replaceChildren(...[
         el("div", { class: "exp-counts" },
-          el("div", {}, el("b", { class: "num", text: String(s.resolved) }), el("span", { text: "items with a final label" })),
-          el("div", {}, el("b", { class: "num", text: String(s.adjudicated) }), el("span", { text: "adjudicated" })),
-          el("div", { class: s.conflicts ? "warn" : "" }, el("b", { class: "num", text: String(s.conflicts) }), el("span", { text: "disagreements left out" })),
-          el("div", {}, el("b", { class: "num", text: String(s.incomplete) }), el("span", { text: "waiting for more labels" })),
+          el("div", {}, el("b", { class: "num", text: String(s.resolved) }), el("span", { text: single ? "items labelled" : "items with a final label" })),
+          // double labelling only: one label per item never disagrees or waits
+          single && !s.adjudicated ? null : el("div", {}, el("b", { class: "num", text: String(s.adjudicated) }), el("span", { text: "adjudicated" })),
+          single && !s.conflicts ? null : el("div", { class: s.conflicts ? "warn" : "" }, el("b", { class: "num", text: String(s.conflicts) }), el("span", { text: "disagreements left out" })),
+          single && !s.incomplete ? null : el("div", {}, el("b", { class: "num", text: String(s.incomplete) }), el("span", { text: "waiting for more labels" })),
           el("div", {}, el("b", { class: "num", text: String(s.unlabelled) }), el("span", { text: "not labelled" }))),
         left.length ? el("details", { class: "left-out" },
           el("summary", { text: `What is left out (${left.length})` }),
@@ -122,16 +138,42 @@ export async function mount(root, { api }) {
     }
   }
 
+  // Fetch the file, then hand it to the browser: "Saved <name>" only once it is really there
+  // (a plain link left "Downloading…" on screen forever, usability r3).
+  async function download(url) {
+    go.disabled = true;
+    result.replaceChildren(el("p", { class: "muted", text: "Preparing the file…" }));
+    try {
+      const headers = {};
+      try { const t = localStorage.getItem("caliper-label-token"); if (t) headers.Authorization = `Bearer ${t}`; } catch { /* no storage */ }
+      const res = await fetch(url, { headers, credentials: "same-origin" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const err = new Error(data.detail || res.statusText);
+        err.hint = data.hint;
+        throw err;
+      }
+      const cd = res.headers.get("content-disposition") || "";
+      const name = (/filename="([^"]+)"/.exec(cd) || [])[1] || `labels.${EXT[sent()] || "txt"}`;
+      const href = URL.createObjectURL(await res.blob());
+      const a = el("a", { href, download: name });
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(href), 60000);
+      result.replaceChildren(el("p", { class: "ok" }, "✓ Saved ", el("b", { text: name }), el("span", { class: "muted", text: " to your downloads" })));
+    } catch (err) {
+      result.replaceChildren(el("div", { class: "err", role: "alert" }, el("b", { text: err.message }), err.hint ? el("p", { text: `Fix: ${err.hint}` }) : null));
+    } finally {
+      go.disabled = false;
+    }
+  }
+
   async function run() {
     result.replaceChildren();
     const q = `format=${sent()}&conflicts=${S.conflicts}&rows=${S.rows}&include_unlabelled=${S.include}`;
     if (S.dest === "download") {
-      // A plain link: the auth cookie rides along, and the browser handles the file.
-      const a = el("a", { href: `/api/export/download?${q}`, download: "" });
-      document.body.append(a);
-      a.click();
-      a.remove();
-      result.replaceChildren(el("p", { class: "ok", text: "Downloading…" }));
+      await download(`/api/export/download?${q}`);
       return;
     }
     const body = { format: sent(), conflicts: S.conflicts, rows: S.rows, include_unlabelled: S.include };

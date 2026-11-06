@@ -34,3 +34,6 @@
 .exp-block.is-off .choices { opacity: .55; }
 .cli-hint { max-width: 520px; text-align: right; }
 .cli-code { font-size: var(--fs-xs); background: var(--c-surface-2); padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+.exp-eval { margin-top: var(--sp-3); border-top: 1px solid var(--c-line); padding-top: var(--sp-3); }
+.exp-eval > summary { cursor: pointer; font-weight: var(--fw-medium); width: fit-content; }
+.exp-eval > p { margin: var(--sp-2) 0; }
