@@ -25,7 +25,7 @@ jobs:
         run: uv sync --all-extras
 
       - name: Lint
-        run: uv run ruff check packages
+        run: uv run ruff check packages examples
 
       - name: Test
         run: uv run pytest -q
@@ -62,6 +62,12 @@ jobs:
 
       - name: smoke_e2b_sandbox
         run: uv run python scripts/smoke_e2b_sandbox.py
+
+      - name: smoke_eval
+        run: uv run python scripts/smoke_eval.py
+
+      - name: eval demo transcript (byte-exact)
+        run: scripts/demo_eval.sh --check
 
   editor:
     name: editor typecheck + build

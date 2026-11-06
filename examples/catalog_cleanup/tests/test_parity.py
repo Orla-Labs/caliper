@@ -22,7 +22,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from caliper_eval.decision import ParityError, assert_parity
 from caliper_eval.types import Reply
 
