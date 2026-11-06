@@ -145,8 +145,12 @@ No server-side fallback is ever enabled.
 
 ### Preflight and who answered
 
-Before touching the golden set, `caliper eval` sends one small request per
-candidate. A shape the provider rejects fails in seconds with the provider's
+Before touching the golden set, `caliper eval` sends one minimal request per
+candidate, with the candidate's exact shape (model, thinking, output mode,
+params). The fake provider sends the first golden row instead. The shape counts
+as accepted when a response comes back from the requested model, even if that
+tiny answer was truncated. A rejected shape (for example a 400), no response,
+or an answer from a different model fails in seconds with the provider's
 reason, and the run exits 3 before anything else is spent. Fake scripts can
 reject shapes offline with `supports(candidate) -> str | None`. Skip the
 preflight with `--skip-preflight`.
@@ -170,9 +174,10 @@ the CI gate.
   `--retry-errors` to re-run rows whose provider call failed.
 - Resume is stale-aware. Each result stores the hash of its golden request and
   of its candidate settings, and a row whose golden request or candidate changed
-  is re-run. An edited `decide` is **not** detected, so pass `--no-resume` after
-  changing it. Results that still look stale are reported as a warning and fail the gate.
-- Run IDs are derived from the config and golden content. There are no timestamps
+  is re-run. An edited `decide`, or edited code in a fake script, is **not**
+  detected, so pass `--no-resume` after changing either. Results that still look stale are reported as a warning and fail the gate.
+- Run IDs are derived from the candidates and the golden set, so budget, cost
+  and CI edits keep the same run ID. There are no timestamps
   anywhere, so fake-provider output is byte-identical across runs and machines.
 
 ### Pricing caveats
