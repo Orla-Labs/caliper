@@ -28,7 +28,7 @@ export function cleanConfig(obj) {
 
 export function suggestFields(columns, idCol) {
   const skip = (n) => n === idCol || /^(id|uuid|_?row_?id)$/i.test(n);
-  const rank = { image: 0, long_text: 1, text: 1, badge: 2, number: 3, link: 4, json: 5 };
+  const rank = { image: 0, long_text: 1, text: 1, badge: 2, datetime: 3, number: 3, link: 4, json: 5 };
   return columns
     .filter((c) => !skip(c.name))
     .slice(0, 8)

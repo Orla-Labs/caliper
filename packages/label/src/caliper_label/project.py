@@ -106,6 +106,7 @@ class DisplayType(StrEnum):
     LINK = "link"
     IMAGE = "image"  # URL, s3:// key, or local path (served safely / presigned)
     JSON = "json"
+    DATETIME = "datetime"  # date / timestamp; shown in the labeller's local time
 
 
 class CardField(_M):

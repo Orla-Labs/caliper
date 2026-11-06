@@ -7,6 +7,7 @@ settings, `caliper label init` and the legacy `serve` path share one implementat
 from __future__ import annotations
 
 import re
+from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
@@ -29,6 +30,7 @@ from .project import (
     SourceKind,
     WorkflowConfig,
 )
+from .typedetect import ISO_DATETIME
 
 # Keys the labelling screen binds itself (same set as the legacy config) plus Backspace etc.
 RESERVED_KEYS = {"z", "?", "escape", "enter", "tab", " "}
@@ -532,9 +534,13 @@ def default_display(dtype: str, sample: list[Any]) -> DisplayType:
         isinstance(v, dict | list) for v in vals
     ):
         return DisplayType.JSON
+    if d.startswith(("timestamp", "datetime", "date")):
+        return DisplayType.DATETIME
     if any(t in d for t in ("int", "float", "double", "decimal", "numeric", "real")):
         return DisplayType.NUMBER
     strs = [str(v) for v in vals]
+    if strs and all(isinstance(v, date) or ISO_DATETIME.match(str(v).strip()) for v in vals):
+        return DisplayType.DATETIME
     img = re.compile(r"\.(png|jpe?g|gif|webp|svg|avif)(\?.*)?$", re.I)
     if strs and all(img.search(s) for s in strs):
         return DisplayType.IMAGE
