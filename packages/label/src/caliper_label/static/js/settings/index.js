@@ -26,6 +26,7 @@ export async function mount(el, { api, go, args }) {
   let cfg = null; // working copy
   let preview = null;
   let needsRefresh = false;
+  let remoteOnly = null; // team mode, not on the server machine: settings are read-only here
 
   const root = h("div", { class: "wz-root se-root" });
   clear(el, root);
@@ -49,6 +50,7 @@ export async function mount(el, { api, go, args }) {
     try {
       preview = await api.post("/api/setup/preview", { source: cleanConfig(cfg.source), project: true, n: 50 });
     } catch (err) {
+      if (err.status === 403) remoteOnly = { message: err.message, hint: err.hint };
       preview = { ok: false, columns: [], rows: [], credentials: [], error: { detail: err.message, hint: err.hint } };
     }
   }
@@ -59,6 +61,7 @@ export async function mount(el, { api, go, args }) {
 
   const dirty = () => strip(cfg) !== strip(data.config);
   const saveBar = h("div", { class: "se-savebar", role: "region", "aria-label": "Save changes" });
+  const banner = h("div", { class: "se-banner", role: "note", hidden: true });
   const panel = h("div", { class: "se-panel", role: "tabpanel", tabindex: "-1" });
   const tablist = h("div", { class: "se-tabs", role: "tablist", "aria-label": "Settings sections", "aria-orientation": "vertical" });
 
@@ -70,7 +73,7 @@ export async function mount(el, { api, go, args }) {
     clear(saveBar,
       h("span", { class: "se-save-state" }, d ? "Unsaved changes" : `Saved · revision ${data.revision}`),
       h("button", { type: "button", class: "wz-btn", disabled: !d, onclick: () => { cfg = structuredClone(data.config); render(); announce("Changes discarded"); } }, "Discard"),
-      h("button", { type: "button", class: "wz-btn wz-btn-primary", id: "se-save", disabled: !d, onclick: saveFlow }, "Save"));
+      h("button", { type: "button", class: "wz-btn wz-btn-primary", id: "se-save", disabled: !d || !!remoteOnly, onclick: saveFlow }, "Save"));
   }
 
   async function saveFlow() {
@@ -259,6 +262,8 @@ export async function mount(el, { api, go, args }) {
 
   function render() {
     renderTabs();
+    banner.hidden = !remoteOnly;
+    if (remoteOnly) clear(banner, h("strong", {}, "Read-only here. "), "Settings can only be changed on the machine running caliper label. ", remoteOnly.hint ? h("span", { class: "wz-muted" }, remoteOnly.hint) : null);
     renderSaveBar();
     panel.id = "se-panel";
     panel.setAttribute("aria-labelledby", `se-tab-${tab}`);
@@ -301,6 +306,7 @@ export async function mount(el, { api, go, args }) {
       h("a", { href: "#/start", class: "wz-brand" }, h("span", { class: "wz-logo", "aria-hidden": "true" }, "◧"), " caliper label"),
       h("span", { class: "wz-top-title" }, "Settings · ", cfg.name),
       h("a", { href: "#/label", class: "wz-btn wz-btn-small" }, "Back to labelling")),
+    banner,
     h("div", { class: "se-layout" }, h("nav", { class: "se-nav", "aria-label": "Settings" }, tablist), h("main", { class: "se-main" }, panel)),
     saveBar);
   render();

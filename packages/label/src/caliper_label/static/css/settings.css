@@ -38,3 +38,5 @@
 
 .se-diff { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 0; margin: 4px 0 12px; }
 .se-diff strong { font-size: 1.25rem; font-variant-numeric: tabular-nums; margin-right: 4px; }
+.se-banner { max-width: 1240px; margin: 16px max(16px, calc((100% - 1240px) / 2)) 0; padding: 12px 16px; border-radius: 10px;
+  background: var(--c-warn-soft, #fbf0d4); color: var(--wz-ink); border: 1px solid color-mix(in srgb, var(--wz-warn) 40%, var(--wz-line)); }
