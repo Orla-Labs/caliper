@@ -1,73 +1,63 @@
 """Inter-annotator agreement on double-labelled items.
 
-Each item with at least two active labels contributes one pair: its first and
-second label in time order (rater slots A and B, since different people label
-different items). Cohen's kappa is computed over those pairs, overall and per
-category (``category_key`` in the config).
+Delegates to :func:`caliper_eval.inter_rater.inter_rater_from_records` (Cohen's
+kappa when exactly two people labelled the overlap set, Fleiss' kappa for three
+or more, overall and by category). Only human sources count: agreement with an
+LLM teacher is teacher agreement, not inter-rater agreement. This module adds
+the list of items whose labels disagree, for the agreement view.
 """
 
 from __future__ import annotations
 
-from collections import Counter
 from typing import Any
 
-from caliper_eval.types import LabelRecord
+from caliper_eval.inter_rater import inter_rater_from_records
+from caliper_kappa import AgreementStats
 
 from .state import Session
 
 
-def _cohen(pairs: list[tuple[str, str]]) -> dict[str, Any]:
-    n = len(pairs)
-    if n == 0:
-        return {"n": 0, "kappa": None, "observed": None, "expected": None, "undefined": True}
-    observed = sum(1 for a, b in pairs if a == b) / n
-    ca = Counter(a for a, _ in pairs)
-    cb = Counter(b for _, b in pairs)
-    expected = sum(ca[k] * cb.get(k, 0) for k in ca) / (n * n)
-    if expected >= 1.0:
-        return {
-            "n": n,
-            "kappa": None,
-            "observed": observed,
-            "expected": expected,
-            "undefined": True,
-        }
-    kappa = (observed - expected) / (1.0 - expected)
-    return {"n": n, "kappa": kappa, "observed": observed, "expected": expected, "undefined": False}
-
-
-def label_pairs(session: Session) -> list[tuple[str, str | None, LabelRecord, LabelRecord]]:
-    """(item_id, category, first, second) for every item with >= 2 active labels."""
-    out = []
-    for item in session.dataset.items:
-        labels = sorted(session.state(item.id).labels.values(), key=lambda r: r.labelled_at)
-        if len(labels) >= 2:
-            out.append((item.id, item.category, labels[0], labels[1]))
-    return out
+def _stats(s: AgreementStats) -> dict[str, Any]:
+    return {
+        "n_items": s.n_items,
+        "n_raters": s.n_raters,
+        "kappa": None if s.kappa_undefined else s.kappa,
+        "undefined": s.kappa_undefined,
+        "undefined_reason": s.undefined_reason,
+        "percent_all_agree": s.percent_all_agree if s.n_items else None,
+        "observed": s.observed_agreement,
+        "expected": s.expected_agreement,
+        "label_counts": s.label_counts,
+    }
 
 
 def agreement(session: Session) -> dict[str, Any]:
-    pairs = label_pairs(session)
-    overall = _cohen([(a.decision or "", b.decision or "") for _, _, a, b in pairs])
-    by_cat: dict[str, list[tuple[str, str]]] = {}
-    for _, cat, a, b in pairs:
-        by_cat.setdefault(cat or "(none)", []).append((a.decision or "", b.decision or ""))
-    categories = [{"category": c, **_cohen(p)} for c, p in sorted(by_cat.items())]
-    disagreements = [
-        {
-            "item_id": iid,
-            "category": cat,
-            "labels": [
-                {"labeller": r.labeller, "decision": r.decision, "note": r.note} for r in (a, b)
-            ],
-        }
-        for iid, cat, a, b in pairs
-        if a.decision != b.decision
-    ]
+    known = session.dataset.by_id
+    records = [r for r in session.records if r.item_id in known]
+    rep = inter_rater_from_records(records)
+    disagreements = []
+    for item in session.dataset.items:
+        labels = session.state(item.id).labels
+        if len(labels) >= 2 and len({r.decision for r in labels.values()}) > 1:
+            disagreements.append(
+                {
+                    "item_id": item.id,
+                    "category": item.category,
+                    "labels": [
+                        {"labeller": r.labeller, "decision": r.decision, "note": r.note}
+                        for r in sorted(labels.values(), key=lambda r: r.labelled_at)
+                    ],
+                }
+            )
     return {
-        "method": "cohen_kappa_first_two_labels",
+        "method": rep.method,
         "double_label": session.needed,
-        "overall": overall,
-        "by_category": categories,
+        "n_items_overlap": rep.overall.n_items,
+        "n_items_single_rated": rep.n_items_single_rated,
+        "overall": _stats(rep.overall),
+        "by_category": [
+            {"category": cat, **_stats(s)} for cat, s in sorted(rep.by_category.items())
+        ],
+        "pairs": [p.model_dump(mode="json") for p in rep.pairs],
         "disagreements": disagreements,
     }

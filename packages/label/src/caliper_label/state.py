@@ -102,25 +102,38 @@ class Session:
         return others < self.needed
 
     def next_item(self, labeller: str, queue: str | None = None) -> Item | None:
-        """First item in data order this labeller may label; skipped ones come last."""
+        """Next item this labeller may label, in data order.
+
+        With double labelling, items someone else already labelled come first, so
+        the overlap set (and the agreement numbers) fill up early. Items this
+        labeller skipped come last.
+        """
         with self._lock:
             now = time.monotonic()
+            started: Item | None = None  # someone else labelled it: finish the overlap first
+            fresh: Item | None = None
             skipped_fallback: Item | None = None
             for item in self.dataset.items:
                 if queue and item.queue != queue:
                     continue
                 if not self._eligible(item, labeller, now):
                     continue
-                if labeller in self.state(item.id).skips:
+                st = self.state(item.id)
+                if labeller in st.skips:
                     skipped_fallback = skipped_fallback or item
-                    continue
-                self._leases[labeller] = (item.id, now + LEASE_SECONDS)
-                return item
-            if skipped_fallback is not None:
-                self._leases[labeller] = (skipped_fallback.id, now + LEASE_SECONDS)
+                elif st.labels:
+                    started = item
+                    break
+                elif fresh is None:
+                    fresh = item
+                    if self.needed == 1:
+                        break
+            chosen = started or fresh or skipped_fallback
+            if chosen is not None:
+                self._leases[labeller] = (chosen.id, now + LEASE_SECONDS)
             else:
                 self._leases.pop(labeller, None)
-            return skipped_fallback
+            return chosen
 
     def hold(self, labeller: str, item_id: str) -> None:
         with self._lock:
