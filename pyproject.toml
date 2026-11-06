@@ -15,6 +15,7 @@ members = [
     "packages/kappa",
     "packages/store",
     "packages/server",
+    "packages/eval",
 ]
 
 [tool.uv.sources]
@@ -26,6 +27,7 @@ caliper-mutate = { workspace = true }
 caliper-kappa = { workspace = true }
 caliper-store = { workspace = true }
 caliper-server = { workspace = true }
+caliper-eval = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -41,6 +43,7 @@ dev = [
     "caliper-kappa",
     "caliper-store",
     "caliper-server",
+    "caliper-eval",
 ]
 
 [tool.ruff]
@@ -64,5 +67,6 @@ testpaths = [
     "packages/kappa/tests",
     "packages/store/tests",
     "packages/server/tests",
+    "packages/eval/tests",
 ]
 addopts = "-ra --strict-markers --import-mode=importlib"

@@ -36,5 +36,6 @@ docs/*
 !docs/targets.md
 !docs/02-technical-state.md
 !docs/03-graders-and-rewards.md
+!docs/eval.md
 building/
 CLAUDE.md

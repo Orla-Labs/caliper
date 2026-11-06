@@ -1,0 +1,23 @@
+[project]
+name = "caliper-eval"
+version = "0.0.1"
+description = "Evaluate and regression-test an LLM feature in CI: candidates, noise floor, transitions, calibration."
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.7",
+    "caliper-sdk",
+    "caliper-kappa",
+]
+
+[project.optional-dependencies]
+# Real providers are optional; core + fake provider run fully offline.
+
+[project.scripts]
+caliper = "caliper_eval.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/caliper_eval"]

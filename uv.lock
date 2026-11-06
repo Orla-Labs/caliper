@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 members = [
     "caliper",
     "caliper-differ",
+    "caliper-eval",
     "caliper-kappa",
     "caliper-monitor",
     "caliper-mutate",
@@ -63,6 +64,210 @@ sdist = { url = "https://files.pythonhosted.org/packages/63/9a/fec38644694abfaae
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9d/2a/9186535ce58db529927f6cf5990a849aa9e052eea3e2cfefe20b9e1802da/bracex-2.6-py3-none-any.whl", hash = "sha256:0b0049264e7340b3ec782b5cb99beb325f36c3782a32e36e876452fd49a09952", size = 11508, upload-time = "2025-06-22T19:12:29.781Z" },
 ]
+
+[[package]]
+name = "caliper"
+version = "0.0.1"
+source = { virtual = "." }
+
+[package.dev-dependencies]
+dev = [
+    { name = "caliper-differ" },
+    { name = "caliper-eval" },
+    { name = "caliper-kappa" },
+    { name = "caliper-monitor" },
+    { name = "caliper-mutate" },
+    { name = "caliper-rft" },
+    { name = "caliper-sdk" },
+    { name = "caliper-server" },
+    { name = "caliper-store" },
+    { name = "httpx" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "caliper-differ", editable = "packages/differ" },
+    { name = "caliper-eval", editable = "packages/eval" },
+    { name = "caliper-kappa", editable = "packages/kappa" },
+    { name = "caliper-monitor", editable = "packages/monitor" },
+    { name = "caliper-mutate", editable = "packages/mutate" },
+    { name = "caliper-rft", editable = "packages/rft_compile" },
+    { name = "caliper-sdk", editable = "packages/sdk" },
+    { name = "caliper-server", editable = "packages/server" },
+    { name = "caliper-store", editable = "packages/store" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-cov", specifier = ">=5.0" },
+    { name = "ruff", specifier = ">=0.6" },
+]
+
+[[package]]
+name = "caliper-differ"
+version = "0.0.1"
+source = { editable = "packages/differ" }
+dependencies = [
+    { name = "caliper-sdk" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "caliper-sdk", editable = "packages/sdk" },
+    { name = "pydantic", specifier = ">=2.7" },
+]
+
+[[package]]
+name = "caliper-eval"
+version = "0.0.1"
+source = { editable = "packages/eval" }
+dependencies = [
+    { name = "caliper-kappa" },
+    { name = "caliper-sdk" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "caliper-kappa", editable = "packages/kappa" },
+    { name = "caliper-sdk", editable = "packages/sdk" },
+    { name = "pydantic", specifier = ">=2.7" },
+]
+
+[[package]]
+name = "caliper-kappa"
+version = "0.0.1"
+source = { editable = "packages/kappa" }
+dependencies = [
+    { name = "caliper-sdk" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "caliper-sdk", editable = "packages/sdk" },
+    { name = "pydantic", specifier = ">=2.7" },
+]
+
+[[package]]
+name = "caliper-monitor"
+version = "0.0.1"
+source = { editable = "packages/monitor" }
+dependencies = [
+    { name = "caliper-sdk" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "caliper-sdk", editable = "packages/sdk" },
+    { name = "pydantic", specifier = ">=2.7" },
+]
+
+[[package]]
+name = "caliper-mutate"
+version = "0.0.1"
+source = { editable = "packages/mutate" }
+dependencies = [
+    { name = "caliper-sdk" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "caliper-sdk", editable = "packages/sdk" },
+    { name = "pydantic", specifier = ">=2.7" },
+]
+
+[[package]]
+name = "caliper-rft"
+version = "0.0.1"
+source = { editable = "packages/rft_compile" }
+dependencies = [
+    { name = "caliper-sdk" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "caliper-sdk", editable = "packages/sdk" },
+    { name = "pydantic", specifier = ">=2.7" },
+]
+
+[[package]]
+name = "caliper-sdk"
+version = "0.0.1"
+source = { editable = "packages/sdk" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.7" }]
+
+[[package]]
+name = "caliper-server"
+version = "0.0.1"
+source = { editable = "packages/server" }
+dependencies = [
+    { name = "caliper-sdk" },
+    { name = "caliper-store" },
+    { name = "fastapi" },
+    { name = "pydantic" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.optional-dependencies]
+e2b = [
+    { name = "e2b-code-interpreter" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "httpx" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "caliper-sdk", editable = "packages/sdk" },
+    { name = "caliper-store", editable = "packages/store" },
+    { name = "e2b-code-interpreter", marker = "extra == 'e2b'", specifier = ">=1.0" },
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
+]
+provides-extras = ["e2b"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "httpx", specifier = ">=0.27" }]
+
+[[package]]
+name = "caliper-store"
+version = "0.0.1"
+source = { editable = "packages/store" }
+dependencies = [
+    { name = "caliper-sdk" },
+    { name = "pydantic" },
+    { name = "sqlalchemy" },
+]
+
+[package.optional-dependencies]
+postgres = [
+    { name = "psycopg", extra = ["binary"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "caliper-sdk", editable = "packages/sdk" },
+    { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = ">=3.2" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
+]
+provides-extras = ["postgres"]
 
 [[package]]
 name = "certifi"
@@ -221,191 +426,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/07/ff/624d4aecaff4876ab
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2d/58/5b2438a4059d8333e37e54fb32a2f9fabb02b4257b8f14e426aef625a0bf/e2b_code_interpreter-2.6.1-py3-none-any.whl", hash = "sha256:2265fb7e0fc7a35f66a997e4bf7823291ad46d17b5a77bb1ce08343f5d3e9d1c", size = 13715, upload-time = "2026-04-28T02:13:09.993Z" },
 ]
-
-[[package]]
-name = "caliper"
-version = "0.0.1"
-source = { virtual = "." }
-
-[package.dev-dependencies]
-dev = [
-    { name = "caliper-differ" },
-    { name = "caliper-kappa" },
-    { name = "caliper-monitor" },
-    { name = "caliper-mutate" },
-    { name = "caliper-rft" },
-    { name = "caliper-sdk" },
-    { name = "caliper-server" },
-    { name = "caliper-store" },
-    { name = "httpx" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "caliper-differ", editable = "packages/differ" },
-    { name = "caliper-kappa", editable = "packages/kappa" },
-    { name = "caliper-monitor", editable = "packages/monitor" },
-    { name = "caliper-mutate", editable = "packages/mutate" },
-    { name = "caliper-rft", editable = "packages/rft_compile" },
-    { name = "caliper-sdk", editable = "packages/sdk" },
-    { name = "caliper-server", editable = "packages/server" },
-    { name = "caliper-store", editable = "packages/store" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "pytest", specifier = ">=8.0" },
-    { name = "pytest-cov", specifier = ">=5.0" },
-    { name = "ruff", specifier = ">=0.6" },
-]
-
-[[package]]
-name = "caliper-differ"
-version = "0.0.1"
-source = { editable = "packages/differ" }
-dependencies = [
-    { name = "caliper-sdk" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "caliper-sdk", editable = "packages/sdk" },
-    { name = "pydantic", specifier = ">=2.7" },
-]
-
-[[package]]
-name = "caliper-kappa"
-version = "0.0.1"
-source = { editable = "packages/kappa" }
-dependencies = [
-    { name = "caliper-sdk" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "caliper-sdk", editable = "packages/sdk" },
-    { name = "pydantic", specifier = ">=2.7" },
-]
-
-[[package]]
-name = "caliper-monitor"
-version = "0.0.1"
-source = { editable = "packages/monitor" }
-dependencies = [
-    { name = "caliper-sdk" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "caliper-sdk", editable = "packages/sdk" },
-    { name = "pydantic", specifier = ">=2.7" },
-]
-
-[[package]]
-name = "caliper-mutate"
-version = "0.0.1"
-source = { editable = "packages/mutate" }
-dependencies = [
-    { name = "caliper-sdk" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "caliper-sdk", editable = "packages/sdk" },
-    { name = "pydantic", specifier = ">=2.7" },
-]
-
-[[package]]
-name = "caliper-rft"
-version = "0.0.1"
-source = { editable = "packages/rft_compile" }
-dependencies = [
-    { name = "caliper-sdk" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "caliper-sdk", editable = "packages/sdk" },
-    { name = "pydantic", specifier = ">=2.7" },
-]
-
-[[package]]
-name = "caliper-sdk"
-version = "0.0.1"
-source = { editable = "packages/sdk" }
-dependencies = [
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.7" }]
-
-[[package]]
-name = "caliper-server"
-version = "0.0.1"
-source = { editable = "packages/server" }
-dependencies = [
-    { name = "caliper-sdk" },
-    { name = "caliper-store" },
-    { name = "fastapi" },
-    { name = "pydantic" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.optional-dependencies]
-e2b = [
-    { name = "e2b-code-interpreter" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "httpx" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "e2b-code-interpreter", marker = "extra == 'e2b'", specifier = ">=1.0" },
-    { name = "caliper-sdk", editable = "packages/sdk" },
-    { name = "caliper-store", editable = "packages/store" },
-    { name = "fastapi", specifier = ">=0.115" },
-    { name = "pydantic", specifier = ">=2.7" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
-]
-provides-extras = ["e2b"]
-
-[package.metadata.requires-dev]
-dev = [{ name = "httpx", specifier = ">=0.27" }]
-
-[[package]]
-name = "caliper-store"
-version = "0.0.1"
-source = { editable = "packages/store" }
-dependencies = [
-    { name = "caliper-sdk" },
-    { name = "pydantic" },
-    { name = "sqlalchemy" },
-]
-
-[package.optional-dependencies]
-postgres = [
-    { name = "psycopg", extra = ["binary"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "caliper-sdk", editable = "packages/sdk" },
-    { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = ">=3.2" },
-    { name = "pydantic", specifier = ">=2.7" },
-    { name = "sqlalchemy", specifier = ">=2.0" },
-]
-provides-extras = ["postgres"]
 
 [[package]]
 name = "fastapi"
