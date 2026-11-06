@@ -88,8 +88,14 @@ def test_team_mode_is_local_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("CALIPER_LABEL_HOME", str(tmp_path / "home"))
     app = create_app(ctx=None, auth_token="tok")
     remote = TestClient(app, client=("203.0.113.9", 5000))
-    r = remote.get("/api/setup/browse", headers={"Authorization": "Bearer tok"})
+    auth = {"Authorization": "Bearer tok"}
+    r = remote.get("/api/setup/browse", headers=auth)
     assert r.status_code == 403 and r.json()["hint"]
+    src = {"source": {"kind": "file", "path": "/etc/hosts"}}
+    assert remote.post("/api/setup/preview", json=src, headers=auth).status_code == 403
+    assert remote.post("/api/projects/demo", json={}, headers=auth).status_code == 403
+    assert remote.put("/api/settings", json={"config": {}}, headers=auth).status_code == 403
+    assert remote.get("/api/setup/templates", headers=auth).status_code == 200  # harmless reads
 
 
 def test_settings_card_change_then_refresh(client: TestClient, tmp_path: Path) -> None:

@@ -334,13 +334,15 @@ def post_open(body: PathIn, request: Request) -> dict[str, Any]:
 
 
 @router.post("/api/projects/forget")
-def post_forget(body: PathIn) -> dict[str, Any]:
+def post_forget(body: PathIn, request: Request) -> dict[str, Any]:
+    _local_only(request)
     forget(body.path)
     return {"ok": True}
 
 
 @router.post("/api/projects/demo")
 def post_demo(request: Request, body: DemoIn | None = None) -> dict[str, Any]:
+    _local_only(request)
     project_dir = prepare_demo(reset=bool(body and body.reset))
     cfg = load_project(project_dir)
     _open(request, project_dir)
@@ -434,6 +436,7 @@ def post_preview(body: PreviewIn, request: Request) -> dict[str, Any]:
     A source that cannot be read is a normal answer here (`ok: false` plus `error`), so the
     wizard can show the fix next to the credential checks.
     """
+    _local_only(request)  # an arbitrary source can read files / use the server's credentials
     from .connectors import ConnectorError, open_connector
     from .credentials import credential_status, redact
 

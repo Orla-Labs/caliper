@@ -24,7 +24,7 @@ from pydantic import BaseModel
 
 from .project import CONFIG_FILENAME, ProjectConfig, load_project, render_project, save_project
 from .project_setup import errors, plan_label_migration, validate_project
-from .routes_setup import ErrorShapeRoute, SetupError, _parse_config
+from .routes_setup import ErrorShapeRoute, SetupError, _local_only, _parse_config
 
 router = APIRouter(tags=["settings"], route_class=ErrorShapeRoute)
 
@@ -132,6 +132,7 @@ class SaveIn(BaseModel):
 
 @router.put("/api/settings")
 def put_settings(body: SaveIn, request: Request) -> dict[str, Any]:
+    _local_only(request)  # a save can point the project at any source
     ctx = _ctx(request)
     on_disk = load_project(ctx.project_dir)
     if body.revision is not None and body.revision != on_disk.revision:
