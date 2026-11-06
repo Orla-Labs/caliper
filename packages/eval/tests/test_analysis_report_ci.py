@@ -269,3 +269,23 @@ def test_text_golden():
     config, res, golden = fixture()
     rep = build_report(config, res, golden, n_boot=200, target_precision=0.9)
     assert render_text(rep, evaluate_gate(rep)) == EXPECTED_TEXT
+
+
+def test_candidate_sha_mismatch_is_stale():
+    from caliper_eval.types import candidate_sha256
+
+    config, res, golden = fixture()
+    small = config.candidates[1]
+    good = candidate_sha256(small)
+    res = [
+        r.model_copy(update={"candidate_sha256": good if r.row_id != "sku-000" else "old"})
+        if r.candidate == "small"
+        else r
+        for r in res
+    ]
+    rep = build_report(config, res, golden, n_boot=20)
+    assert rep.candidate("small").stale_results == 1
+    assert rep.candidate("baseline").stale_results == 0  # None = not recorded, not stale
+    gate = evaluate_gate(rep, max_regression=10.0)
+    small_gate = next(g for g in gate.candidates if g.name == "small")
+    assert any("candidate settings" in r for r in small_gate.reasons)

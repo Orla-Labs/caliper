@@ -47,7 +47,7 @@ def test_stale_resumed_results_fail_the_gate(in_project, capsys):
     (in_project / "golden.jsonl").write_text(golden)
     code, out, _ = run(capsys, "eval", "--config", "eval.toml", "--ci", "--n-boot", "50")
     assert code == 1
-    assert "results recorded for a different request" in out
+    assert "results recorded for a different request or candidate" in out
     code, _, _ = run(capsys, "eval", "--config", "eval.toml", "--ci", "--n-boot", "50",
                      "--no-resume")
     assert code == 0

@@ -31,7 +31,7 @@ from ._stats import DEFAULT_N_BOOT, nearest_rank
 from .calibration import Calibration, compute_calibration
 from .noise import NoiseFloor, compute_noise_floor, index_results
 from .transitions import Transitions, compute_transitions
-from .types import Candidate, GoldenRow, RowResult, request_sha256
+from .types import Candidate, GoldenRow, RowResult, candidate_sha256, request_sha256
 
 
 class Tokens(BaseModel):
@@ -65,7 +65,7 @@ class CandidateReport(BaseModel):
     served_models: list[str] = Field(default_factory=list)  # "provider:model", sorted
     served_mismatches: int = 0  # replies with matches_request=False
     served_unknown: int = 0  # non-error replies with no served_by
-    stale_results: int = 0  # results recorded for a different request than the golden row now has
+    stale_results: int = 0  # recorded for a different request or candidate settings than now
     transitions: Transitions | None = None
     excess_regression: float | None = None
     calibration: Calibration | None = None
@@ -189,9 +189,16 @@ def build_report(
     noise_upper = noise.cost_weighted_flip_rate.high if noise is not None else 0.0
 
     want_sha = {g.id: request_sha256(g.request) for g in golden}
+    want_cand = {c.name: candidate_sha256(c) for c in config.candidates}
     stale: dict[str, int] = {}
     for r in latest:
-        if r.row_id in want_sha and r.request_sha256 != want_sha[r.row_id]:
+        old_request = r.row_id in want_sha and r.request_sha256 != want_sha[r.row_id]
+        old_candidate = (
+            r.candidate_sha256 is not None
+            and r.candidate in want_cand
+            and r.candidate_sha256 != want_cand[r.candidate]
+        )
+        if old_request or old_candidate:
             stale[r.candidate] = stale.get(r.candidate, 0) + 1
 
     by_cand: dict[str, list[RowResult]] = {}
@@ -207,7 +214,8 @@ def build_report(
         if rep.stale_results:
             warnings.append(
                 f"{cand.name}: {rep.stale_results} results were recorded for a different "
-                "request than the golden set now holds; re-run with --no-resume"
+                "request or candidate settings than the config now holds; "
+                "re-run with --no-resume"
             )
         if not is_ref:
             rep.transitions = compute_transitions(
