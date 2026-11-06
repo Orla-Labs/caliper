@@ -376,3 +376,86 @@ def test_extension_offline_gives_clear_error(
     assert (
         "internet" in (e.value.hint or "") and "CALIPER_LABEL_DUCKDB_EXTENSION_DIR" in e.value.hint
     )
+
+
+# --------------------------------------------------------------------------- sqlite + http
+
+
+@pytest.mark.skipif(not has_ext("sqlite"), reason="DuckDB sqlite extension unavailable (offline)")
+def test_sqlite_table_and_query(tmp_path: Path) -> None:
+    import sqlite3
+
+    db = sqlite3.connect(tmp_path / "shop.db")
+    db.execute("CREATE TABLE tickets (id TEXT, subject TEXT, priority TEXT)")
+    db.executemany(
+        "INSERT INTO tickets VALUES (?, ?, ?)",
+        [(f"S-{i}", f"Fictional {i}", "high" if i % 2 else "low") for i in range(9)],
+    )
+    db.commit()
+    db.close()
+    t = open_connector(src(kind="sqlite", path="shop.db", table="tickets"), tmp_path)
+    assert t.count() == 9 and t.preview(1) == [
+        {"id": "S-0", "subject": "Fictional 0", "priority": "low"}
+    ]
+    q = open_connector(
+        src(kind="sqlite", path="shop.db", query="SELECT id FROM tickets WHERE priority = 'high';"),
+        tmp_path,
+    )
+    assert q.count() == 4
+    with pytest.raises(ConnectorError):
+        open_connector(src(kind="sqlite", path="shop.db"), tmp_path)  # neither table nor query
+    with pytest.raises(ConnectorError):
+        open_connector(src(kind="sqlite", path="nope.db", table="t"), tmp_path)
+
+
+@pytest.mark.skipif(not has_ext("httpfs"), reason="DuckDB httpfs extension unavailable (offline)")
+def test_http_source_with_bearer_token(proj: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import http.server
+    import threading
+
+    data = (proj / "data" / "tickets.csv").read_bytes()
+    seen: list[str | None] = []
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def _send(self, body: bool) -> None:
+            seen.append(self.headers.get("Authorization"))
+            if self.headers.get("Authorization") != "Bearer fictional-token-123":
+                self.send_response(401)
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            if body:
+                self.wfile.write(data)
+
+        def do_HEAD(self) -> None:
+            self._send(False)
+
+        def do_GET(self) -> None:
+            self._send(True)
+
+        def log_message(self, *a: Any) -> None:
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_port}/tickets.csv"
+    try:
+        monkeypatch.setenv("TICKETS_TOKEN", "fictional-token-123")
+        c = open_connector(src(kind="http", path=url, credentials={"env": "TICKETS_TOKEN"}), proj)
+        assert c.count() == 12
+        assert "Bearer fictional-token-123" in seen
+        anon = open_connector(src(kind="http", path=url), proj)
+        with pytest.raises(ConnectorError) as e:
+            anon.count()
+        assert e.value.hint and "fictional-token-123" not in e.value.message
+        monkeypatch.delenv("TICKETS_TOKEN")
+        with pytest.raises(ConnectorError) as e:
+            open_connector(
+                src(kind="http", path=url, credentials={"env": "TICKETS_TOKEN"}), proj
+            ).count()
+        assert "TICKETS_TOKEN" in e.value.message
+    finally:
+        srv.shutdown()

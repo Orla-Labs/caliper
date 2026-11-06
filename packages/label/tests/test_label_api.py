@@ -27,7 +27,8 @@ def lab(c: TestClient, item: str, decision: str | None, who: str = "ana", **kw) 
 def test_index_and_config(make_client: Callable[..., TestClient]) -> None:
     c = make_client()
     assert "caliper label" in c.get("/").text
-    assert c.get("/static/app.js").status_code == 200
+    assert c.get("/static/js/label/index.js").status_code == 200
+    assert c.get("/static/css/tokens.css").status_code == 200
     cfg = c.get("/api/config").json()
     assert cfg["title"] == "Test project" and cfg["n_items"] == 5
     assert [d["key"] for d in cfg["decisions"]] == ["t", "f", "u"]

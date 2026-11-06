@@ -82,8 +82,16 @@ def _new_connection() -> duckdb.DuckDBPyConnection:
         cfg["custom_extension_repository"] = repo
         cfg["autoinstall_extension_repository"] = repo
     con = duckdb.connect(":memory:", config=cfg)
-    con.execute("SET TimeZone='UTC'")  # row hashes must not depend on the machine's zone
+    _utc(con)
     return con
+
+
+def _utc(con: duckdb.DuckDBPyConnection) -> None:
+    """Row hashes must not depend on the machine's zone. A session setting: set per cursor."""
+    try:
+        con.execute("SET TimeZone = 'UTC'")
+    except duckdb.Error:  # icu unavailable: TIMESTAMPTZ then renders in UTC offsets anyway
+        pass
 
 
 def load_extension(con: duckdb.DuckDBPyConnection, name: str) -> None:
@@ -107,6 +115,18 @@ def load_extension(con: duckdb.DuckDBPyConnection, name: str) -> None:
         ) from None
 
 
+_CONNECT_HINTS = {
+    SourceKind.POSTGRES: "check that Postgres is running and reachable, and PGHOST/PGPORT "
+    "(or the host and port in DATABASE_URL)",
+    SourceKind.MYSQL: "check that MySQL is running and reachable, and MYSQL_HOST/MYSQL_TCP_PORT "
+    "(or the host and port in DATABASE_URL)",
+    SourceKind.S3: "check the network and credentials.endpoint_url (S3-compatible) or "
+    "credentials.region (AWS)",
+    SourceKind.GCS: "check the network connection to storage.googleapis.com",
+    SourceKind.HTTP: "check the URL and that the server is reachable from this machine",
+}
+
+
 def translate(exc: Exception, source: SourceConfig | None, what: str = "") -> ConnectorError:
     """DuckDB/driver exception -> ConnectorError with secrets removed and a hint."""
     if isinstance(exc, ConnectorError):
@@ -125,11 +145,8 @@ def translate(exc: Exception, source: SourceConfig | None, what: str = "") -> Co
             )
         else:
             hint = "the server refused access: check the credentials env vars"
-    elif "could not connect" in low or "connection refused" in low or "can't connect" in low:
-        hint = (
-            "check that the database is running and reachable, and the host/port settings "
-            "(PGHOST/PGPORT, MYSQL_HOST/MYSQL_TCP_PORT or DATABASE_URL)"
-        )
+    elif any(k in low for k in ("could not connect", "connection refused", "can't connect")):
+        hint = _CONNECT_HINTS.get(kind, "check the address and that the server is reachable")
     elif "password authentication failed" in low or "access denied for user" in low:
         hint = "the database rejected the user/password: check the env vars that hold them"
     elif "catalog error" in low or "does not exist" in low or "doesn't exist" in low:
@@ -149,6 +166,11 @@ class DuckDBConnector(BaseConnector):
 
     extensions: tuple[str, ...] = ()
     default_id_column: str | None = None
+    read_only = True  # databases are ATTACHed READ_ONLY; sinks.py flips this for write-back
+    session_sql: tuple[str, ...] = ()  # per-cursor statements (USE ...); cursors don't inherit
+
+    def _ro(self) -> str:
+        return ", READ_ONLY" if self.read_only else ""
 
     def __init__(self, source: SourceConfig, project_dir: Path | None = None) -> None:
         super().__init__(source, project_dir)
@@ -200,6 +222,9 @@ class DuckDBConnector(BaseConnector):
     def _run(self, sql: str) -> duckdb.DuckDBPyConnection:
         cur = self.con().cursor()
         try:
+            _utc(cur)
+            for stmt in self.session_sql:
+                cur.execute(stmt)
             cur.execute(sql)
         except Exception as exc:
             cur.close()
@@ -568,7 +593,7 @@ class _ServerDbConnector(DuckDBConnector):
         try:
             con.execute(f"CREATE OR REPLACE TEMPORARY SECRET caliper_db ({', '.join(parts)})")
             con.execute(
-                f"ATTACH {lit(extra)} AS src (TYPE {self.db_type}, SECRET caliper_db, READ_ONLY)"
+                f"ATTACH {lit(extra)} AS src (TYPE {self.db_type}, SECRET caliper_db{self._ro()})"
             )
         except Exception as exc:
             where = f"{p.host or 'localhost'}:{p.port or 'default port'}"
@@ -617,6 +642,7 @@ class MySQLConnector(_ServerDbConnector):
 
 class SQLiteConnector(DuckDBConnector):
     extensions = ("sqlite",)
+    session_sql = ("USE src",)  # a query's bare table names resolve in the SQLite file
 
     def __init__(self, source: SourceConfig, project_dir: Path | None = None) -> None:
         super().__init__(source, project_dir)
@@ -624,12 +650,11 @@ class SQLiteConnector(DuckDBConnector):
             raise ConnectorError("source.path is empty", "set the SQLite database file")
         self.table, self.query = _db_target(source)
         self.db_path = Path(self.local_path(source.path))
-        if not self.db_path.is_file():
+        if self.read_only and not self.db_path.is_file():
             raise ConnectorError(f"SQLite file not found: {source.path}", "check the path")
 
     def setup(self, con: duckdb.DuckDBPyConnection) -> None:
-        con.execute(f"ATTACH {lit(str(self.db_path))} AS src (TYPE sqlite, READ_ONLY)")
-        con.execute("USE src")
+        con.execute(f"ATTACH {lit(str(self.db_path))} AS src (TYPE sqlite{self._ro()})")
 
     def relation(self) -> str:
         if self.query:
