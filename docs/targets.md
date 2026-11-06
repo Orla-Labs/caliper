@@ -90,6 +90,12 @@ reward(completions=["Total: $20"], prompts=["..."], gold=["20"])  # -> [1.0]
 
 Caliper itself never imports `trl`, `torch` or `datasets`.
 
+**Not confirmed in TRL docs or source.** The artifact is built to tolerate these:
+- that callables are logged by `__name__`. TRL's `get_callable_name` was not read; we set both `__name__` and `__qualname__`;
+- how `None` rewards are aggregated: the docs say they're excluded, and the source turns them into NaN, but the NaN-aware sum was not read;
+- which release these docs match: all citations are to TRL `main`, not a pinned release;
+- the GRPOTrainer snippet above, which is assembled from the docs rather than copied from an official example.
+
 ## `bedrock`: Amazon Bedrock reinforcement fine-tuning
 
 References:
@@ -182,6 +188,10 @@ For gpt-oss and Qwen3, which go through Bedrock's OpenAI-compatible fine-tuning 
 The target writes two files:
 - **`rft_job.json`** is the `POST /v1/fine_tuning/jobs` body from `caliper_rft.build_payload`. `model` and `training_file` hold the placeholders `<BASE_MODEL>` and `<UPLOADED_TRAINING_FILE_ID>`, which you replace. `method.reinforcement.grader` is a `python` grader whose `source` contains the shim, your grader and `grade(sample, item)`. That function reads `sample["output_text"]` and the training row's `messages`, `gold` and `caliper_metadata` (graders guide: https://developers.openai.com/api/docs/guides/graders).
 - **`train.jsonl`** has rows of the form `{"messages": [...], "gold": ..., "caliper_metadata": "..."}`.
+
+**Not confirmed in OpenAI docs:**
+- whether the python-grader sandbox allows `exec` with a replaced `__builtins__` (the shim's import hook). The docs list only resource limits;
+- whether custom training-row fields (`gold`, `caliper_metadata`) reach the grader as `item[...]`. This is inferred from "item ... will include keys from each training data row"; the docs only show `reference_answer`.
 
 ## Library API
 
