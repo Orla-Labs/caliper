@@ -92,7 +92,19 @@ source = "self-hosted placeholder"
 "fallback->auto_publish" = 5.0
 
 [ci]
-max_regression = 0.02
+max_regression = 0.10    # paired excess upper bound; see caliper.toml for why 0.10 on 80 rows
+
+[operating_point]
+auto_outcomes = ["auto_publish"]
+
+[[slices]]
+name = "rare_code"
+rule = "must_not_lose"
+
+[[slices]]
+name = "lookalike"
+rule = "max_regression"
+threshold = 0.5
 
 [calibration]
 thresholds = [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9]

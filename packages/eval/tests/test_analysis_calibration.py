@@ -35,11 +35,11 @@ def test_sweep_metrics():
     assert cal.n_rows == 10 and cal.n_approved == 4
     p = {pt.threshold: pt for pt in cal.sweep}
     assert p[0.5].n_auto == 5 and p[0.5].coverage == 0.5
-    assert p[0.5].precision == 4 / 5
+    assert p[0.5].auto_approved_rate == 4 / 5
     assert p[0.5].approved_to_review == 0.0
-    assert p[0.9].n_auto == 1 and p[0.9].precision == 0.0
+    assert p[0.9].n_auto == 1 and p[0.9].auto_approved_rate == 0.0
     assert p[0.9].approved_to_review == 1.0
-    assert p[0.99].precision is None and p[0.99].n_auto == 0
+    assert p[0.99].auto_approved_rate is None and p[0.99].n_auto == 0
     assert p[0.99].kappa == 0.0  # constant rule: no agreement beyond chance
     # 2x2 at t=0.5: auto&ok=4, auto&!ok=1, rev&ok=0, rev&!ok=5 -> po=.9, pe=.5 -> kappa .8
     assert p[0.5].kappa == pytest.approx(0.8)
@@ -49,7 +49,7 @@ def test_recommendation_lowest_meeting_target():
     cal = compute_calibration(GOLDEN, RESULTS, "c", target_precision=0.75)
     assert cal.recommended_threshold == 0.5
     pts = {p.threshold: p for p in cal.sweep}
-    assert pts[0.45].precision == 4 / 6 < 0.75 <= pts[0.5].precision
+    assert pts[0.45].auto_approved_rate == 4 / 6 < 0.75 <= pts[0.5].auto_approved_rate
     strict = compute_calibration(GOLDEN, RESULTS, "c", target_precision=0.99)
     assert strict.recommended_threshold is None
 

@@ -58,8 +58,30 @@ source = "fictional price for the fake provider"
 "fallback->auto_publish" = 5.0
 
 [ci]
-max_regression = 0.02    # allowed regression rate above the noise floor
+# The gate reads the paired bootstrap CI of (candidate regression - baseline replay
+# noise), row by row. require = "non_inferiority" (the default) passes a candidate
+# only when the CI's upper bound is within max_regression. On 80 rows that CI is
+# about +-0.09 wide, so the allowance is 0.10 cost units per record (roughly one
+# extra review per ten records). A tighter allowance needs a bigger golden set.
+max_regression = 0.10
+require = "non_inferiority"
+
+# Matched operating point: what counts as "handled without a person". The
+# candidate's score threshold is set on val so it auto-publishes the same share
+# as the baseline does; then both are scored on test against the labels.
+[operating_point]
+auto_outcomes = ["auto_publish"]
+
+# Named slices (rows tagged in golden.jsonl "slices"), each with its own rule.
+[[slices]]
+name = "rare_code"       # batteries, health devices, gift cards: never lose one
+rule = "must_not_lose"
+
+[[slices]]
+name = "lookalike"       # misleading keywords: must not regress beyond noise
+rule = "max_regression"
+threshold = 0.5
 
 [calibration]
-thresholds = [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9]
-target_precision = 0.95  # recommend the lowest threshold whose auto-published rows are >= 95% approved
+thresholds = [0.6, 0.7, 0.75, 0.8, 0.85, 0.9]
+target_precision = 0.95  # picked on val (human labels): lowest threshold with >= 95% approved

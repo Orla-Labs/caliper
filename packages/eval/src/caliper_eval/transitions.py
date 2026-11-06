@@ -16,8 +16,15 @@ from collections.abc import Iterable, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ._stats import CI, DEFAULT_N_BOOT, bootstrap_mean_ci, derive_seed, transition_cost
-from .noise import index_results
+from ._stats import (
+    CI,
+    DEFAULT_N_BOOT,
+    bootstrap_mean_ci,
+    derive_seed,
+    paired_bootstrap_delta,
+    transition_cost,
+)
+from .noise import index_results, noise_row_costs
 from .types import RowResult
 
 
@@ -113,4 +120,85 @@ def compute_transitions(
     )
 
 
-__all__ = ["FlippedRow", "TransitionCount", "Transitions", "compute_transitions"]
+class PairedExcess(BaseModel):
+    """Candidate regression minus reference replay noise, paired per row.
+
+    For every compared row ``i``: ``d_i = cost(ref replica 0 -> candidate) - n_i``
+    where ``n_i`` is the reference's own symmetrized replay cost on that row
+    (0 when the row has no complete noise replays). ``delta`` is the paired
+    bootstrap CI of ``mean(d)``: one row resample per draw, both terms
+    computed on the same rows.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    n_rows: int
+    n_without_noise: int  # compared rows with no complete reference replays (n_i = 0)
+    regression: float  # mean candidate cost on these rows
+    noise: float  # mean reference replay cost on these rows
+    delta: CI  # paired: regression - noise
+
+
+def transition_row_costs(
+    results: Iterable[RowResult],
+    candidate: str,
+    reference: str,
+    *,
+    costs: Mapping[str, float] | None = None,
+) -> dict[str, float]:
+    """Per-row ``cost(reference replica 0 -> candidate)``, rows decided on both sides."""
+    costs = costs or {}
+    idx = index_results(results)
+    out: dict[str, float] = {}
+    for (cand, row_id, replica), res in idx.items():
+        if cand != candidate or replica != 0:
+            continue
+        ref = idx.get((reference, row_id, 0))
+        if ref is None or ref.decision is None or res.decision is None:
+            continue
+        out[row_id] = transition_cost(costs, ref.decision.outcome, res.decision.outcome)
+    return out
+
+
+def compute_paired_excess(
+    results: Iterable[RowResult],
+    candidate: str,
+    reference: str,
+    *,
+    costs: Mapping[str, float] | None = None,
+    rows: Iterable[str] | None = None,
+    seed: int = 0,
+    n_boot: int = DEFAULT_N_BOOT,
+    label: str = "all",
+) -> PairedExcess:
+    """Paired excess regression of ``candidate`` over the reference's noise.
+
+    ``rows`` restricts the comparison (a slice); ``label`` keeps the bootstrap
+    seed of each slice independent of the others.
+    """
+    results = list(results)
+    reg = transition_row_costs(results, candidate, reference, costs=costs)
+    noise = noise_row_costs(results, reference, costs=costs)
+    keep = sorted(reg if rows is None else set(reg) & set(rows))
+    a = [reg[r] for r in keep]
+    b = [noise.get(r, 0.0) for r in keep]
+    return PairedExcess(
+        n_rows=len(keep),
+        n_without_noise=sum(1 for r in keep if r not in noise),
+        regression=sum(a) / len(a) if a else 0.0,
+        noise=sum(b) / len(b) if b else 0.0,
+        delta=paired_bootstrap_delta(
+            a, b, seed=derive_seed(seed, "paired", candidate, label), n_boot=n_boot
+        ),
+    )
+
+
+__all__ = [
+    "FlippedRow",
+    "PairedExcess",
+    "TransitionCount",
+    "Transitions",
+    "compute_paired_excess",
+    "compute_transitions",
+    "transition_row_costs",
+]

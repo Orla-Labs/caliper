@@ -107,7 +107,13 @@ def test_build_report_aggregates():
     assert rep.noise_floor.cost_weighted_flip_rate.estimate == 1.5 / N
     small = rep.candidate("small")
     assert small.transitions.regression.estimate == 2.0 * 10 / N
-    assert small.excess_regression == small.transitions.regression.estimate - rep.noise_upper
+    # paired excess: regression minus the per-row replay noise, on the same rows
+    pe = small.paired_excess
+    assert pe.n_rows == N and pe.n_without_noise == 0
+    assert pe.regression == small.transitions.regression.estimate
+    assert pe.noise == rep.noise_floor.cost_weighted_flip_rate.estimate
+    assert abs(pe.delta.estimate - (pe.regression - pe.noise)) < 1e-12
+    assert pe.delta.low <= pe.delta.estimate <= pe.delta.high
     sw = rep.candidate("swapped")
     assert sw.served_mismatches == 2
     assert sw.served_models == ["fake:fake-medium", "fake:fake-other"]
@@ -168,17 +174,22 @@ def test_renderings_deterministic_and_compact():
 EXPECTED_MD = """\
 ## Caliper eval: FAIL
 
-30 golden rows, reference `baseline`. noise floor (baseline x2, 30 rows): flip 3.3%, \
-cost-weighted 0.050 [0.000, 0.150].
+30 golden rows, reference `baseline`. noise floor (baseline x2, 30 rows): flip 3.3%, cost-\
+weighted 0.050 [0.000, 0.150].
 
-| candidate | rows | errors | cost $ | p95 ms | who answered | flips | regression [95% \
-CI] | excess | gate |
-|---|---:|---:|---:|---:|---|---:|---|---:|---|
+labels (30 rows): unknown 30 (source not recorded); NO HUMAN-TRUTH LABELS: label numbers b\
+elow are agreement, not precision. Label a human-truth slice (label_source internal_review\
+er / human_end_user).; splits: none; thresholds picked and reported on the same rows (opti\
+mistic)
+
+| candidate | rows | errors | cost $ | p95 ms | who answered | flips | regression [95% CI]\
+ | excess vs noise (paired) | gate |
+|---|---:|---:|---:|---:|---|---:|---|---|---|
 | `baseline` (ref) | 30 | 0p/0d | 0.0120 | 148 | fake-large | - | - | - | PASS |
-| `small` | 30 | 0p/0d | 0.0060 | 148 | fake-small | 10/30 | 0.667 [0.333, 1.000] | 0.517 \
-| FAIL |
-| `swapped` | 30 | 1p/1d | 0.0060 | 148 | fake-medium,fake-other (MISMATCH x2) | 0/29 | \
-0.000 [0.000, 0.000] | -0.150 | FAIL |
+| `small` | 30 | 0p/0d | 0.0060 | 148 | fake-small | 10/30 | 0.667 [0.333, 1.000] | 0.617 \
+[0.300, 0.901] | FAIL |
+| `swapped` | 30 | 1p/1d | 0.0060 | 148 | fake-medium,fake-other (MISMATCH x2) | 0/29 | 0.\
+000 [0.000, 0.000] | -0.052 [-0.155, 0.000] | FAIL |
 
 **Changed outcomes vs reference**
 
@@ -187,18 +198,19 @@ CI] | excess | gate |
 
 **Calibration** (auto-accept when score >= threshold)
 
-- `baseline`: 30 labeled, ECE 0.167; score >= 0.50: coverage 66.7%, precision 100.0%, \
-approved sent to review 0.0%, kappa 1.000
-- `small`: 30 labeled, ECE 0.133; score >= 0.50: coverage 33.3%, precision 100.0%, \
-approved sent to review 50.0%, kappa 0.400
-- `swapped`: 29 labeled, ECE 0.169; score >= 0.50: coverage 65.5%, precision 100.0%, \
-approved sent to review 0.0%, kappa 1.000
+- `baseline`: 30 rows on all (agreement (unknown source)), ECE 0.167; picked 0.50: coverag\
+e 66.7%, agreement (unknown source) 100.0%, approved sent to review 0.0%, kappa 1.000
+- `small`: 30 rows on all (agreement (unknown source)), ECE 0.133; picked 0.50: coverage 3\
+3.3%, agreement (unknown source) 100.0%, approved sent to review 50.0%, kappa 0.400
+- `swapped`: 29 rows on all (agreement (unknown source)), ECE 0.169; picked 0.50: coverage\
+ 65.5%, agreement (unknown source) 100.0%, approved sent to review 0.0%, kappa 1.000
 
-**Gate failures**
+**Gate failures** (pass when paired excess upper bound <= 0.02)
 
-- `small`: cost-weighted regression 0.667 > noise upper 0.150 + allowed 0.020 (10 rows flipped)
-- `swapped`: 2 replies served by a model other than requested (fake:fake-medium, \
-fake:fake-other)
+- `small`: paired excess regression 0.617 [0.300, 0.901]: upper bound 0.901 > allowed 0.02\
+0 (regression 0.667 - noise 0.050; 10 rows flipped)
+- `swapped`: 2 replies served by a model other than requested (fake:fake-medium, fake:fake\
+-other)
 - `swapped`: error rate 3.3% > allowed 0.0% (no decision: 1, provider errors: 1)
 """
 
@@ -211,56 +223,58 @@ def test_markdown_golden():
 
 EXPECTED_TEXT = """\
 caliper eval: 3 candidates, 30 golden rows, reference=baseline, seed=0, bootstrap n=200
+labels (30 rows): unknown 30 (source not recorded)
+  NO HUMAN-TRUTH LABELS: label numbers below are agreement, not precision. Label a human-t\
+ruth slice (label_source internal_reviewer / human_end_user).
+splits: none; thresholds picked and reported on the same rows (optimistic)
 noise floor (baseline x2, 30 rows): flip 3.3%, cost-weighted 0.050 [0.000, 0.150]
 
 candidate       rows  errors  tokens in/out/cache  p50/p95 ms  cost $  who answered       \
-                   flips  regression [95% CI]   excess  gate
---------------  ----  ------  -------------------  ----------  ------  \
-------------------------------------  -----  --------------------  ------  ----
+                   flips  regression [95% CI]   excess vs noise (paired)  gate
+--------------  ----  ------  -------------------  ----------  ------  -------------------\
+-----------------  -----  --------------------  ------------------------  ----
 baseline (ref)  30    0p/0d   6000/600/3000        125/148     0.0120  fake-large         \
-                   -      -                     -       PASS
+                   -      -                     -                         PASS
 small           30    0p/0d   3000/300/1500        125/148     0.0060  fake-small         \
-                   10/30  0.667 [0.333, 1.000]  0.517   FAIL
-swapped         30    1p/1d   3000/300/1500        125/148     0.0060  \
-fake-medium,fake-other (MISMATCH x2)  0/29   0.000 [0.000, 0.000]  -0.150  FAIL
+                   10/30  0.667 [0.333, 1.000]  0.617 [0.300, 0.901]      FAIL
+swapped         30    1p/1d   3000/300/1500        125/148     0.0060  fake-medium,fake-ot\
+her (MISMATCH x2)  0/29   0.000 [0.000, 0.000]  -0.052 [-0.155, 0.000]    FAIL
 
 transitions baseline -> small:
           high -> high            10
           high -> low             10  (cost 2 each)
            low -> low             10
-  flipped: sku-001 (high->low), sku-004 (high->low), sku-007 (high->low), sku-010 \
-(high->low), sku-013 (high->low), sku-016 (high->low), sku-019 (high->low), sku-022 \
-(high->low) +2 more
+  flipped: sku-001 (high->low), sku-004 (high->low), sku-007 (high->low), sku-010 (high->l\
+ow), sku-013 (high->low), sku-016 (high->low), sku-019 (high->low), sku-022 (high->low) +2\
+ more
 
 transitions baseline -> swapped:
           high -> high            19
            low -> low             10
   errored rows: 1, missing rows: 0
 
-calibration baseline: 30 labeled rows, 20 approved, ECE 0.167, recommended threshold 0.50 \
-(target precision 90.0%)
-  score >=  auto  coverage  precision  approved->review  kappa
-  --------  ----  --------  ---------  ----------------  -----
-  0.50      20    66.7%     100.0%     0.0%              1.000
-  0.85      20    66.7%     100.0%     0.0%              1.000
+calibration baseline (sweep on all: 30 rows labelled by unknown; ECE 0.167): picked 0.50 (\
+lowest with agreement (unknown source) >= 90.0%)
+  score >=  auto  coverage  agreement (unknown source)  approved->review  kappa
+  --------  ----  --------  --------------------------  ----------------  -----
+  0.50      20    66.7%     100.0%                      0.0%              1.000
+  0.85      20    66.7%     100.0%                      0.0%              1.000
 
-calibration small: 30 labeled rows, 20 approved, ECE 0.133, recommended threshold 0.50 \
-(target precision 90.0%)
-  score >=  auto  coverage  precision  approved->review  kappa
-  --------  ----  --------  ---------  ----------------  -----
-  0.50      10    33.3%     100.0%     50.0%             0.400
-  0.85      0     0.0%      -          100.0%            0.000
+calibration small (sweep on all: 30 rows labelled by unknown; ECE 0.133): picked 0.50 (low\
+est with agreement (unknown source) >= 90.0%)
+  at 0.50: coverage 33.3%, agreement (unknown source) 100.0%, approved->review 50.0%, kapp\
+a 0.400
 
-calibration swapped: 29 labeled rows, 19 approved, ECE 0.169, recommended threshold 0.50 \
-(target precision 90.0%)
-  score >=  auto  coverage  precision  approved->review  kappa
-  --------  ----  --------  ---------  ----------------  -----
-  0.50      19    65.5%     100.0%     0.0%              1.000
-  0.85      19    65.5%     100.0%     0.0%              1.000
+calibration swapped (sweep on all: 29 rows labelled by unknown; ECE 0.169): picked 0.50 (l\
+owest with agreement (unknown source) >= 90.0%)
+  at 0.50: coverage 65.5%, agreement (unknown source) 100.0%, approved->review 0.0%, kappa\
+ 1.000
 
-CI gate: FAIL
-  small: cost-weighted regression 0.667 > noise upper 0.150 + allowed 0.020 (10 rows flipped)
-  swapped: 2 replies served by a model other than requested (fake:fake-medium, fake:fake-other)
+CI gate: FAIL (pass when paired excess upper bound <= 0.02)
+  small: paired excess regression 0.617 [0.300, 0.901]: upper bound 0.901 > allowed 0.020 \
+(regression 0.667 - noise 0.050; 10 rows flipped)
+  swapped: 2 replies served by a model other than requested (fake:fake-medium, fake:fake-o\
+ther)
   swapped: error rate 3.3% > allowed 0.0% (no decision: 1, provider errors: 1)
 """
 
