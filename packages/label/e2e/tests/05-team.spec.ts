@@ -93,7 +93,7 @@ test("team mode: token gate → two labellers → dashboard κ → adjudicate �
   await ana.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Export" }).click();
   await expect(ana.getByRole("heading", { level: 1, name: /export/i })).toBeVisible();
   const dl = ana.waitForEvent("download");
-  await ana.getByRole("button", { name: /download csv/i }).click();
+  await ana.getByRole("button", { name: /download.*csv/i }).click();
   const file = await dl;
   const out = join(test.info().outputDir, "team-export.csv");
   await file.saveAs(out);

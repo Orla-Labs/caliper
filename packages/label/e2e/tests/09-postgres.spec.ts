@@ -50,7 +50,7 @@ test("Postgres wizard: env-var connection → table → label → export", async
 
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Export" }).click();
   const dl = page.waitForEvent("download");
-  await page.getByRole("button", { name: /download csv/i }).click();
+  await page.getByRole("button", { name: /download.*csv/i }).click();
   const out = join(test.info().outputDir, "pg-export.csv");
   await (await dl).saveAs(out);
   const rows = parseCsv(readFileSync(out, "utf8"));

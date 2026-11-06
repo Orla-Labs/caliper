@@ -146,9 +146,9 @@ test("CSV wizard end to end: upload → card → labels → workflow → review 
   // ------------------------------------------------------------------ export
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Export" }).click();
   await expect(page.getByRole("heading", { level: 1, name: /export/i })).toBeVisible();
-  await page.getByRole("radio", { name: /^csv/i }).check();
+  await page.getByRole("radio", { name: /\(csv\)/i }).check();
   const dl = page.waitForEvent("download");
-  await page.getByRole("button", { name: /download csv/i }).click();
+  await page.getByRole("button", { name: /download.*csv/i }).click();
   const file = await dl;
   const out = join(test.info().outputDir, file.suggestedFilename() || "labels.csv");
   await file.saveAs(out);

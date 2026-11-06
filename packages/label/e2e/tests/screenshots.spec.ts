@@ -132,7 +132,7 @@ test("founder screenshots", async ({ page, browser, launch, request }) => {
   await expect(page.getByRole("status").filter({ hasText: /final label/i }).first()).toBeAttached();
 
   await page.goto(`${team.base}/#/export`);
-  await expect(page.getByRole("button", { name: /download csv/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /download.*csv/i })).toBeVisible();
   await expect(page.getByRole("complementary", { name: /what the export holds/i })).toContainText(/\d/);
   await shot(page, "10-export.png");
 
