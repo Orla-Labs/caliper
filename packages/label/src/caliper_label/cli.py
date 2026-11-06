@@ -25,6 +25,7 @@ from typing import Any
 
 EXIT_OK = 0
 EXIT_USAGE = 2
+ALL_INTERFACES = ("0.0.0.0", "::")  # noqa: S104 - only compared, never bound here
 DEFAULT_PORT = 8765
 
 
@@ -61,14 +62,14 @@ def _run(app: Any, args: argparse.Namespace, token: str | None, path: str = "/")
 
     from .auth import install_log_redaction
 
-    host_for_url = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
+    host_for_url = "127.0.0.1" if args.host in ALL_INTERFACES else args.host
     url = f"http://{host_for_url}:{args.port}{path}"
     if token:
         print(f"team mode: share this link (it carries the access token): {url}?token={token}")
         print("  scripts: send the header  Authorization: Bearer <token>")
     else:
         print(f"open {url}  (Ctrl+C to stop)")
-    if args.host in ("0.0.0.0", "::") and not token:
+    if args.host in ALL_INTERFACES and not token:
         _err("note: listening on all interfaces without a token; add --auth token for team mode")
     sys.stdout.flush()
     if not args.no_browser:
@@ -132,7 +133,7 @@ def cmd_open(args: argparse.Namespace) -> int:
             return EXIT_USAGE
         try:
             ctx = open_project(str(d))
-        except Exception as exc:  # noqa: BLE001 - one clear line, not a traceback
+        except Exception as exc:  # one clear line, not a traceback
             hint = getattr(exc, "hint", None)
             _err(f"caliper label: cannot open {d}: {getattr(exc, 'detail', None) or exc}")
             if hint:
@@ -267,7 +268,7 @@ def _export_project(args: argparse.Namespace) -> int:
         if exc.hint:
             _err(f"  fix: {exc.hint}")
         return EXIT_USAGE
-    except Exception as exc:  # noqa: BLE001 - one clear line, not a traceback
+    except Exception as exc:  # one clear line, not a traceback
         _err(f"caliper label export: {getattr(exc, 'detail', None) or exc}")
         hint = getattr(exc, "hint", None)
         if hint:
