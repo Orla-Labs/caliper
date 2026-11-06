@@ -312,7 +312,7 @@ export async function mount(el, ctx) {
       h("h1", { class: "wz-h1" }, "Design the card"),
       h("p", { class: "wz-lead" }, "Choose what a labeller sees for each item. Types are detected; change them if they look wrong."),
       box);
-    cardDesigner(box, { card: state.config.card, columns: p.columns, rows: p.rows, onChange: () => { state.touched.card = true; changed(); } });
+    cardDesigner(box, { card: state.config.card, columns: p.columns, rows: p.rows, options: () => state.config.labels.options, onChange: () => { state.touched.card = true; changed(); } });
   }
 
   async function renderLabels() {

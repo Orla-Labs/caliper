@@ -2,6 +2,9 @@
 // shows them. Values are always inserted as text.
 
 import { h } from "./wizard-dom.js";
+import { badgeTone, formatDateTime } from "./label-display.js";
+
+export { formatDateTime }; // same local-time rendering as the labeller
 
 export const DISPLAY_TYPES = [
   ["text", "Text"],
@@ -48,26 +51,9 @@ export function fieldValue(field, row) {
   return v;
 }
 
-function hue(s) {
-  let x = 0;
-  for (const ch of String(s)) x = (x * 31 + ch.codePointAt(0)) >>> 0;
-  return x % 360;
-}
-
-// ISO-8601 text -> the viewer's local date/time (date-only values stay dates, no timezone shift).
-export function formatDateTime(raw) {
-  const s = String(raw).trim();
-  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(s);
-  const d = dateOnly ? new Date(`${s}T00:00:00`) : new Date(s.replace(" ", "T"));
-  if (Number.isNaN(d.getTime())) return null;
-  return dateOnly
-    ? d.toLocaleDateString(undefined, { dateStyle: "medium" })
-    : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-}
-
 const isUrl = (s) => /^https?:\/\//i.test(s);
 
-export function renderValue(field, raw) {
+export function renderValue(field, raw, options = []) {
   const type = field.type || "text";
   if (raw === undefined || raw === null || raw === "") return h("span", { class: "wz-missing", "aria-label": "no value" }, "—");
   const asText = typeof raw === "string" ? raw : JSON.stringify(raw, null, 2);
@@ -78,7 +64,11 @@ export function renderValue(field, raw) {
       return h("span", { class: "wz-v-number" }, txt);
     }
     case "badge":
-      return h("span", { class: "wz-v-badge", style: { "--badge-h": hue(asText) } }, asText);
+    {
+      // the labeller's badge (label-display.js): colour follows the value's meaning
+      const t = badgeTone(asText, options);
+      return h("span", { class: `f-badge ${t.cls}`, style: t.color ? { "--opt": t.color } : null }, asText);
+    }
     case "link":
       return isUrl(asText)
         ? h("a", { class: "wz-v-link", href: asText, target: "_blank", rel: "noopener noreferrer" }, asText)
@@ -109,7 +99,7 @@ export function renderValue(field, raw) {
   }
 }
 
-export function renderCard(fields, row, { title } = {}) {
+export function renderCard(fields, row, { title, options } = {}) {
   const shown = (fields || []).filter((f) => !f.hidden);
   if (!shown.length) {
     return h("div", { class: "wz-card wz-card-empty" },
@@ -120,5 +110,5 @@ export function renderCard(fields, row, { title } = {}) {
     shown.map((f) =>
       h("div", { class: `wz-card-field wz-card-${f.type || "text"}` },
         h("div", { class: "wz-card-label" }, f.label || f.column || f.template),
-        h("div", { class: "wz-card-value" }, renderValue(f, fieldValue(f, row))))));
+        h("div", { class: "wz-card-value" }, renderValue(f, fieldValue(f, row), options)))));
 }

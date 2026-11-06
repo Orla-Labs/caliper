@@ -14,10 +14,6 @@ import { writeCsv, writeProject } from "../fixtures/data.ts";
 import { tempDir } from "../fixtures/server.ts";
 
 const KNOWN: { bug: string; rule: string; target: RegExp }[] = [
-  { bug: "LPF-C-1", rule: "color-contrast", target: /wz-btn-primary|#wz-next|#wz-create|#st-new/ },
-  { bug: "LPF-C-2", rule: "label", target: /#file-\d+/ },
-  { bug: "LPF-C-3", rule: "color-contrast", target: /\.wz-colbtn-type/ },
-  { bug: "LPF-C-4", rule: "label-content-name-mismatch", target: /\.st-item-open|button\[aria-label="Open / },
 ];
 
 type Found = { screen: string; id: string; impact: string; help: string; nodes: number; targets: string[]; detail: string };

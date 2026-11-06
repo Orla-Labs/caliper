@@ -274,7 +274,7 @@ export async function mount(el, { api, go, args }) {
     else if (tab === "card") {
       const box = h("div");
       clear(panel, h("h2", {}, "Card"), preview && !preview.ok ? h("p", { class: "wz-warn" }, "The source could not be read, so the preview is empty. Fields can still be edited.") : null, box);
-      cardDesigner(box, { card: cfg.card, columns: cols, rows, onChange });
+      cardDesigner(box, { card: cfg.card, columns: cols, rows, options: () => cfg.labels.options, onChange });
     } else if (tab === "labels") {
       const box = h("div");
       clear(panel, h("h2", {}, "Labels"),
