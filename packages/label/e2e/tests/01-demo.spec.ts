@@ -17,7 +17,7 @@ test("start screen → Try the demo → label 5 items with the keys", async ({ p
   await enterName(page, who);
   await expect(card(page)).toContainText(ID);
   await expect(page.getByRole("group", { name: "Decision" }).getByRole("button")).toHaveCount(3);
-  await expect(page.getByRole("button", { name: /code correct.*key 1/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^1 code correct/i })).toBeVisible();
 
   const keys = ["1", "2", "1", "1", "2"];
   const ids: string[] = [];

@@ -30,7 +30,7 @@
   .exp-grid { grid-template-columns: minmax(0, 1fr); }
   .exp-side { position: static; order: -1; }
 }
-.choice-text .tech { font-family: var(--font-mono); font-size: 11px; color: var(--c-ink-2); opacity: .85; margin-top: 2px; }
+.choice-text .tech { font-family: var(--font-mono); font-size: 11px; color: var(--c-ink-2); margin-top: 2px; }
 .exp-block.is-off .choices { opacity: .55; }
 .cli-hint { max-width: 520px; text-align: right; }
 .cli-code { font-size: var(--fs-xs); background: var(--c-surface-2); padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; }

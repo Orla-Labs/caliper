@@ -135,7 +135,7 @@ test("founder screenshots", async ({ page, browser, launch, request }) => {
   await expect(page.getByRole("list", { name: /what each labeller said/i })).toBeVisible();
   await expect(page.getByRole("article").getByRole("img").first()).toBeVisible();
   await shot(page, "09-adjudicate.png");
-  await page.getByRole("button", { name: /final label: code correct/i }).click();
+  await page.getByRole("button", { name: /code correct, set as the final label/i }).click();
   await expect(page.getByRole("status").filter({ hasText: /final label/i }).first()).toBeAttached();
   await expect(page.getByText(/: final label /)).toBeHidden({ timeout: 15_000 }); // let the toast go
 
