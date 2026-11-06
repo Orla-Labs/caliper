@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 import threading
 from collections.abc import Iterator
 from pathlib import Path
@@ -72,8 +73,27 @@ def _opt_value(v: Any) -> str:
 # --------------------------------------------------------------------------- engine
 
 
+# DuckDB keeps a query's result in engine memory while Python pulls batches, and producer
+# threads run ahead of the consumer. A memory limit makes them wait instead, so iter_rows stays
+# bounded however big the source is (measured: 3M Parquet rows, 966 MB RSS unbounded vs ~320 MB
+# with these defaults). Sorts/joins that need more spill to temp_directory.
+DEFAULT_MEMORY_LIMIT = "384MB"
+DEFAULT_THREADS = 2
+
+
+def _engine_config() -> dict[str, Any]:
+    tmp = os.environ.get("CALIPER_LABEL_DUCKDB_TEMP_DIR") or str(
+        Path(tempfile.gettempdir()) / "caliper-label-duckdb"
+    )
+    return {
+        "memory_limit": os.environ.get("CALIPER_LABEL_DUCKDB_MEMORY_LIMIT", DEFAULT_MEMORY_LIMIT),
+        "threads": int(os.environ.get("CALIPER_LABEL_DUCKDB_THREADS", DEFAULT_THREADS)),
+        "temp_directory": tmp,
+    }
+
+
 def _new_connection() -> duckdb.DuckDBPyConnection:
-    cfg: dict[str, Any] = {}
+    cfg: dict[str, Any] = _engine_config()
     ext_dir = os.environ.get("CALIPER_LABEL_DUCKDB_EXTENSION_DIR")
     if ext_dir:
         cfg["extension_directory"] = ext_dir
