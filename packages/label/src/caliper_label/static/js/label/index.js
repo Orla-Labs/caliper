@@ -63,7 +63,7 @@ export async function mount(root, ctx) {
   const topRow = el("div", { class: "lbl-top" }, progress, saveState);
   const instructions = cfg.instructions
     ? el("details", { class: "lbl-instructions", open: store("caliper-label-instr") !== "closed" },
-      el("summary", { text: "Instructions" }), el("div", { class: "instr-body" }, renderMarkdown(cfg.instructions)))
+      el("summary", { text: "Instructions" }), el("div", { class: "instr-body", tabindex: "0", role: "region", "aria-label": "Instructions" }, renderMarkdown(cfg.instructions)))
     : null;
   if (instructions) instructions.addEventListener("toggle", () => store("caliper-label-instr", instructions.open ? null : "closed"));
   const card = el("article", { class: "card", id: "card", "aria-label": "Item to label", tabindex: "-1" });
@@ -123,7 +123,7 @@ export async function mount(root, ctx) {
 
   function setWho() {
     whoBtn.replaceChildren(el("span", { class: "dot", "aria-hidden": "true" }), el("span", { text: S.labeller || "Name?" }));
-    whoBtn.setAttribute("aria-label", `Labelling as ${S.labeller}. Change name`);
+    whoBtn.setAttribute("aria-label", `${S.labeller || "Name?"}: labelling as this name, change it`);
   }
 
   // ------------------------------------------------------------ rendering
@@ -233,10 +233,11 @@ export async function mount(root, ctx) {
       return el("li", { class: done ? "q-done" : "" }, el("button", {
         type: "button",
         "aria-current": q.name === S.queue ? "true" : "false",
-        "aria-label": `${q.name === null ? "All items" : q.name}: ${q.complete} of ${q.total} complete, ${q.left} left for you`,
+        "aria-label": `${q.name === null ? "All items" : q.name} ${done ? "done" : `${q.left} left`}, ${q.complete} of ${q.total} complete`,
         onclick: () => selectQueue(q.name),
       },
       el("span", { class: "q-name", text: q.name === null ? "All items" : q.name }),
+      " ",
       el("span", { class: "q-left", text: done ? "done" : `${q.left} left` }),
       el("span", { class: "q-bar", "aria-hidden": "true" }, el("span", { style: `width:${pct}%` }))));
     }));

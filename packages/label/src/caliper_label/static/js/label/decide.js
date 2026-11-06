@@ -10,6 +10,10 @@
 
 import { el, keyLabel } from "../common/dom.js";
 
+// The accessible name starts with exactly what the button shows ("1 Code correct"), so
+// voice-control users can say what they see (WCAG 2.5.3, LPF-C-6).
+export const shownName = (key, label) => (key ? `${keyLabel(key)} ${label}` : label);
+
 function optionButton(o, attrs = {}) {
   const key = o.hotkey;
   return el("button", {
@@ -17,11 +21,12 @@ function optionButton(o, attrs = {}) {
     class: "opt" + (o.approved ? " opt-approved" : ""),
     "data-value": o.value,
     "aria-keyshortcuts": key ? key.toUpperCase() : null,
-    "aria-label": `${o.label}${key ? ` (key ${keyLabel(key)})` : ""}${o.requires_note ? ", needs a note" : ""}`,
+    "aria-label": `${shownName(key, o.label)}${o.requires_note ? ", needs a note" : ""}`,
     style: o.color ? `--opt:${o.color}` : null,
     ...attrs,
   },
   key ? el("kbd", { "aria-hidden": "true", text: keyLabel(key) }) : null,
+  key ? " " : null, // the visible text reads "1 Code correct", like the accessible name
   el("span", { class: "opt-label", text: o.label }),
   o.requires_note ? el("span", { class: "opt-note", "aria-hidden": "true", title: "needs a note", text: "✎" }) : null);
 }
@@ -125,7 +130,7 @@ function score(cfg, onDecide) {
     const byKey = new Map();
     for (const o of opts) {
       const b = optionButton({ ...o, value: String(o.value) }, { onclick: () => { flash(b); onDecide(o.value, o.label, []); } });
-      b.setAttribute("aria-label", `Score ${o.label}${o.hotkey ? ` (key ${o.hotkey})` : ""}`);
+      b.setAttribute("aria-label", `${shownName(o.hotkey, o.label)}, score`);
       box.append(b);
       if (o.hotkey) byKey.set(o.hotkey, [o, b]);
     }

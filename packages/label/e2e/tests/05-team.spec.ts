@@ -84,7 +84,7 @@ test("team mode: token gate → two labellers → dashboard κ → adjudicate �
   await expect(votes).toContainText("Ana");
   await expect(votes).toContainText("Ben");
   await ana.getByRole("textbox", { name: /note/i }).fill("neither: the ticket is ambiguous");
-  await ana.getByRole("button", { name: /final label: unsure/i }).click();
+  await ana.getByRole("button", { name: /unsure, set as the final label/i }).click();
   await expect(ana.getByRole("tab", { name: /to decide \(2\)/i })).toBeVisible();
   const adj = (await (await request.get(`${srv.base}/api/labels?all=true&item_id=${target}`, { headers: AUTH })).json()).labels as LabelRow[];
   expect(adj.find((r) => r.source === "adjudicated")).toMatchObject({ decision: "unsure", labeller: "Ana" });

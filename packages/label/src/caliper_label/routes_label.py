@@ -97,8 +97,12 @@ def item_payload(session: Session, item: ItemView, labeller: str | None) -> dict
 
 
 def record_payload(session: Session, rec: Any) -> dict[str, Any]:
+    from .export import retired_option
+
     d = rec.model_dump(mode="json")
     d["project_version"] = session.versions.get(rec.record_id)
+    # the option was retired in Settings after this label was made: kept, flagged (LPF-C-9)
+    d["retired_option"] = retired_option(session.rules, rec.decision)
     return d
 
 

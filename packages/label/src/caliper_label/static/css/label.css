@@ -27,6 +27,8 @@ body[data-route="label"] { padding-bottom: var(--keybar-h, 52px); }
 }
 .q-list button:hover { background: var(--c-surface-2); border-color: transparent; }
 .q-list button[aria-current="true"] { background: var(--c-surface); border-color: var(--c-line); box-shadow: var(--shadow-1); }
+.q-list button:focus-visible, .q-list button[aria-current="true"]:focus-visible { box-shadow: var(--focus-ring); }
+.instr-body:focus-visible { box-shadow: var(--focus-ring); }
 .q-name { font-weight: var(--fw-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .q-left { color: var(--c-ink-2); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; align-self: center; }
 .q-bar { grid-column: 1 / -1; height: 4px; border-radius: 4px; background: var(--c-surface-2); overflow: hidden; }
@@ -160,6 +162,8 @@ span.f-badge.tone-option {
 .opt.opt-approved { --opt: var(--c-good); }
 .opt.pressed { transform: scale(.97); background: var(--c-surface-2); }
 .opt.mine { box-shadow: inset 0 -3px 0 var(--opt), 0 0 0 2px var(--c-accent); }
+/* keep the colour bar and add the focus ring (the bar's box-shadow used to hide it: LPF-C-5) */
+.opt:focus-visible, .opt.mine:focus-visible { box-shadow: inset 0 -3px 0 var(--opt), var(--focus-ring); }
 .opt[aria-pressed="true"] { background: var(--c-accent-soft); border-color: var(--c-accent); color: var(--c-ink); }
 .opt[aria-pressed="true"] .opt-label::before { content: "✓ "; color: var(--c-accent); }
 .opt-note { color: var(--c-ink-2); font-weight: normal; }

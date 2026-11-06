@@ -160,7 +160,7 @@ try {
   check((await ana.locator(".q-list li").count()) === 6, "sidebar: All + 5 queues");
   check((await ana.locator(".decisions .opt").count()) === 3, "three decision buttons");
   const aria = await ana.locator(".decisions .opt").first().getAttribute("aria-label");
-  check(/Code correct \(key 1\)/.test(aria), `decision buttons have screen-reader labels ("${aria}")`);
+  check(/^1 Code correct/.test(aria), `decision buttons have screen-reader names that start with their visible text ("${aria}")`);
   await ana.screenshot({ path: join(OUT, "label-card.png") });
 
   // usability fixes (lpf-b): config order, badges by meaning, decisions above the key bar
