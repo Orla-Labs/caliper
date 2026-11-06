@@ -22,14 +22,16 @@
 <body>
 <a class="skip-link" href="#view">Skip to content</a>
 <header class="appbar">
-  <a class="brand" href="#/" aria-label="caliper label home"><span class="logo" aria-hidden="true">◧</span><span>caliper label</span></a>
-  <span class="project-name" id="project-name"></span>
+  <a class="brand" href="#/start" aria-label="caliper label: all projects" title="All projects"><span class="logo" aria-hidden="true">◧</span><span>caliper label</span></a>
+  <a class="project-name" id="project-name" href="#/start" title="Switch project, or start a new one" aria-describedby="project-name-hint"></a>
+  <span id="project-name-hint" class="visually-hidden">Switch project, or start a new one</span>
   <nav class="appnav" id="appnav" aria-label="Main" hidden>
     <a href="#/label" data-route="label">Label</a>
     <a href="#/dashboard" data-route="dashboard">Dashboard</a>
     <a href="#/adjudicate" data-route="adjudicate">Adjudicate</a>
     <a href="#/export" data-route="export">Export</a>
     <a href="#/settings" data-route="settings" data-project-only>Settings</a>
+    <a href="#/start" data-route="start" class="appnav-projects" data-project-only title="Open another project or start a new one">Projects</a>
   </nav>
   <div class="appbar-slot" id="appbar-slot"></div>
 </header>

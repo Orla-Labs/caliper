@@ -10,6 +10,7 @@ export async function mount(el, { api, go }) {
 
   const recentBox = h("div", { class: "st-recent", "aria-busy": "true" }, stateBox("loading", "Loading recent projects…"));
   const status = h("div", { class: "st-status", "aria-live": "polite" });
+  const current = h("div", { class: "st-current-slot" });
   const pathInput = h("input", { type: "text", id: "st-path", class: "wz-path", spellcheck: "false", placeholder: "/path/to/project", autocomplete: "off" });
 
   async function openPath(path) {
@@ -61,6 +62,7 @@ export async function mount(el, { api, go }) {
       h("h1", {}, "Label your data, from wherever it lives."),
       h("p", { class: "wz-lead" }, "Set up in the browser, keep it as a readable caliper.label.yaml, label from the keyboard. Your data stays on this machine.")),
     h("main", { class: "st-main" },
+      current,
       h("div", { class: "st-actions" }, newBtn, openBtn, demoBtn),
       status,
       h("section", { class: "wz-panel st-open-panel", id: "st-open-panel", "aria-labelledby": "st-open-h" },
@@ -75,6 +77,16 @@ export async function mount(el, { api, go }) {
           h("button", { type: "submit", class: "wz-btn wz-btn-primary" }, "Open")),
         h("h3", { class: "st-recent-h" }, "Recent"),
         recentBox))));
+
+  // A project is already open: say so, and offer the way back to it.
+  api.get("/api/status").then((st) => {
+    if (!st || !st.project || st.mode !== "project") return;
+    clear(current, h("section", { class: "st-current", "aria-label": "Open project" },
+      h("div", { class: "st-current-text" },
+        h("span", { class: "wz-muted" }, "Open now: "), h("span", { class: "st-current-name" }, st.project.name),
+        h("div", { class: "wz-muted" }, "Starting or opening another project keeps this one as it is.")),
+      h("a", { href: "#/label", class: "wz-btn", id: "st-continue" }, "Continue labelling →")));
+  }).catch(() => { /* no status: nothing to continue */ });
 
   async function loadRecent() {
     try {

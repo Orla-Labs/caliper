@@ -319,11 +319,15 @@ export async function mount(el, ctx) {
       try {
         const res = await api.post("/api/setup/templates/correct_wrong_unsure", {});
         L.options = res.labels.options;
+        state.fromTemplate = null; // set by the editor below from the options as loaded
         state.touched.labels = true;
         changed();
       } catch { /* empty state explains */ }
     }
-    labelsEditor(box, { labels: L, api, onChange: () => { state.touched.labels = true; changed(); } });
+    const ed = { labels: L, api, fromTemplate: state.fromTemplate, onTemplate: (k) => { state.fromTemplate = k; changed(); },
+      suggestions: optionSuggestions(), card: state.config.card,
+      onChange: () => { state.touched.labels = true; changed(); } };
+    labelsEditor(box, ed);
   }
 
   function renderWorkflow() {
@@ -349,12 +353,26 @@ export async function mount(el, ctx) {
 
     let projects = null;
     try { projects = await api.get("/api/projects"); } catch { /* fall back to a relative folder */ }
-    const sep = projects && projects.cwd && projects.cwd.includes("\\") ? "\\" : "/";
-    const slugName = (cfg.name || "project").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
-    if (!state.dirEdited) state.dir = projects ? `${projects.cwd}${sep}${slugName}` : slugName;
+    const sep = (projects && projects.sep) || (projects && projects.cwd && projects.cwd.includes("\\") ? "\\" : "/");
+    const slugOf = (name) => (name || "project").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
+    // The folder is <parent>/<slug of the name>. The parent defaults to the last one used
+    // (else ~/caliper-projects), never to the server's working directory.
+    if (!state.dirEdited) {
+      const parent = state.parent || (projects && (projects.default_parent || projects.cwd)) || "";
+      state.dir = parent ? `${parent.replace(/[\\/]+$/, "")}${sep}${slugOf(cfg.name)}` : slugOf(cfg.name);
+    }
+
+    const dirWarn = h("div", { class: "wz-dir-warn", "aria-live": "polite" });
+    const checkDir = debounce(async () => {
+      try {
+        const res = await api.post("/api/setup/check-dir", { dir: state.dir });
+        clear(dirWarn, (res.warnings || []).map((w) => h("p", { class: "wz-warn", role: "note" }, w)));
+      } catch { clear(dirWarn); }
+    }, 250);
 
     const dirInput = h("input", { id: dirId, type: "text", value: state.dir, class: "wz-path", spellcheck: "false",
-      oninput: (e) => { state.dir = e.target.value; state.dirEdited = true; changed(); } });
+      "aria-describedby": `${dirId}-help`,
+      oninput: (e) => { state.dir = e.target.value; state.dirEdited = true; changed(); checkDir(); } });
 
     const refresh = debounce(async () => {
       try {
@@ -389,20 +407,29 @@ export async function mount(el, ctx) {
             h("div", { class: "wz-field-block" }, h("label", { for: nameId }, "Project name"),
               h("input", { id: nameId, type: "text", value: cfg.name, oninput: (e) => {
                 cfg.name = e.target.value;
-                if (!state.dirEdited && projects) {
-                  const s = (cfg.name || "project").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
-                  state.dir = `${projects.cwd}${sep}${s}`;
+                if (!state.dirEdited) {
+                  // keep the chosen parent, follow the name
+                  const cut = Math.max(state.dir.lastIndexOf("/"), state.dir.lastIndexOf("\\"));
+                  state.dir = cut >= 0 ? `${state.dir.slice(0, cut)}${sep}${slugOf(cfg.name)}` : slugOf(cfg.name);
                   dirInput.value = state.dir;
+                  checkDir();
                 }
                 changed(); refresh();
               } })),
             h("div", { class: "wz-field-block" }, h("label", { for: dirId }, "Save in folder"),
               h("div", { class: "wz-path-row" }, dirInput,
                 h("button", { type: "button", class: "wz-btn", onclick: async () => {
-                  const picked = await folderPicker(api, { start: state.dir, title: "Choose a parent folder", files: false });
-                  if (picked) { state.dir = `${picked}${sep}${slugName}`; state.dirEdited = true; dirInput.value = state.dir; changed(); }
+                  const cut = Math.max(state.dir.lastIndexOf("/"), state.dir.lastIndexOf("\\"));
+                  const picked = await folderPicker(api, { start: cut > 0 ? state.dir.slice(0, cut) : state.dir, title: "Choose where to put the project folder", files: false });
+                  if (picked) {
+                    state.parent = picked;
+                    state.dir = `${picked.replace(/[\\/]+$/, "")}${sep}${slugOf(cfg.name)}`;
+                    state.dirEdited = false; // still follows the name
+                    dirInput.value = state.dir; changed(); checkDir();
+                  }
                 } }, "Browse…")),
-              h("p", { class: "wz-help" }, "The folder gets caliper.label.yaml (commit it) and .caliper-label/ (labels; ignored by git)."))),
+              h("p", { class: "wz-help", id: `${dirId}-help` }, "A new folder named after the project. It gets caliper.label.yaml (commit it) and .caliper-label/ (labels; ignored by git)."),
+              dirWarn)),
           h("section", { class: "wz-panel" },
             h("h3", {}, "Summary"),
             h("dl", { class: "wz-summary" },
@@ -419,6 +446,7 @@ export async function mount(el, ctx) {
           status),
         h("div", { class: "wz-review-right" }, yamlBox)));
 
+    checkDir();
     createBtn.addEventListener("click", async () => {
       createBtn.disabled = true;
       clear(status, stateBox("loading", "Creating the project…", "Writing caliper.label.yaml and taking a snapshot of the items."));

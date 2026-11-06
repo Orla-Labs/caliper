@@ -21,6 +21,19 @@ function capturedKey(e) {
   return e.key.toLowerCase();
 }
 
+// What a key looks like to a person ("backspace" -> "⌫ Backspace").
+const KEY_NAMES = {
+  backspace: "⌫ Backspace", delete: "Delete", escape: "Esc", enter: "Enter", tab: "Tab", " ": "Space", space: "Space",
+  arrowleft: "←", arrowright: "→", arrowup: "↑", arrowdown: "↓", home: "Home", end: "End", pageup: "Page Up", pagedown: "Page Down",
+};
+export function keyLabel(k) {
+  if (k === null || k === undefined || k === "") return "";
+  const n = normKey(k);
+  return KEY_NAMES[n] || (n.length === 1 ? n.toUpperCase() : n.charAt(0).toUpperCase() + n.slice(1));
+}
+// Key cells show the friendly name and grow to fit it.
+const keySize = (k) => Math.max(3, keyLabel(k).length + 1);
+
 export function normKey(k) {
   if (k === null || k === undefined) return "";
   k = String(k);
@@ -279,9 +292,18 @@ export function labelsEditor(el, ctx) {
 
   function changed() { ctx.onChange && ctx.onChange(); render(); }
 
+  // Options exactly as the last template made them: replacing those loses nothing.
+  const optsKey = (opts) => JSON.stringify((opts || []).map((o) => Object.fromEntries(Object.entries(o).filter(([k, v]) => !k.startsWith("_") && v !== null && v !== undefined && v !== false))));
+  const untouched = () => ctx.fromTemplate !== undefined && ctx.fromTemplate !== null && optsKey(L.options) === ctx.fromTemplate;
+
+  if (ctx.fromTemplate === null) { // the caller just loaded these options from a template
+    ctx.fromTemplate = optsKey(L.options);
+    ctx.onTemplate && ctx.onTemplate(ctx.fromTemplate);
+  }
+
   async function applyTemplate(id, categories) {
     const hasLabels = L.options.some((o) => counts[o.value]);
-    if (L.options.length && !(await confirmDialog({
+    if (L.options.length && (hasLabels || !untouched()) && !(await confirmDialog({
       title: "Replace the options?",
       body: hasLabels
         ? h("p", {}, "Some options already have labels. They will be kept and flagged as retired when you save.")
@@ -293,6 +315,8 @@ export function labelsEditor(el, ctx) {
       const keepRetired = L.options.filter((o) => o.retired);
       L.type = res.labels.type;
       L.options = [...res.labels.options, ...keepRetired];
+      ctx.fromTemplate = optsKey(L.options);
+      ctx.onTemplate && ctx.onTemplate(ctx.fromTemplate);
       announce(`${res.labels.options.length} options from the template`);
       changed();
     } catch (err) {
@@ -383,7 +407,7 @@ export function labelsEditor(el, ctx) {
         o.retired ? h("span", { class: "wz-tag" }, "retired") : null,
         n ? h("span", { class: "wz-tag wz-tag-count" }, `${n} label${n === 1 ? "" : "s"}`) : null),
       h("td", {}, h("input", {
-        type: "text", class: `wz-hotkey${issue ? " wz-invalid" : ""}`, value: o.hotkey || "", maxlength: "9", disabled: o.retired,
+        type: "text", class: `wz-hotkey${issue ? " wz-invalid" : ""}`, value: keyLabel(o.hotkey), size: keySize(o.hotkey), disabled: o.retired,
         "aria-label": `Hotkey for ${name}`, "aria-invalid": issue ? "true" : null, "aria-describedby": errId, "data-fid": `ohot-${i}`,
         onkeydown: (e) => {
           // press a key to bind it (Backspace/Delete clear, Esc leaves, Tab moves on)
@@ -394,7 +418,7 @@ export function labelsEditor(el, ctx) {
         },
       }), issue ? h("div", { id: errId, class: "wz-field-error", role: "alert" }, issue) : null),
       h("td", { class: "wz-center" }, h("input", {
-        type: "checkbox", checked: !!o.approved, "aria-label": `${name} counts as approved / positive`, "data-fid": `oappr-${i}`, disabled: o.retired,
+        type: "checkbox", checked: !!o.approved, "aria-label": `${name} counts as a positive (accepted) answer`, "aria-describedby": "wz-positive-help", "data-fid": `oappr-${i}`, disabled: o.retired,
         onchange: (e) => { o.approved = e.target.checked; changed(); },
       })),
       h("td", { class: "wz-center" }, h("input", {
@@ -424,7 +448,7 @@ export function labelsEditor(el, ctx) {
     clear(buttonsBox, L.options.filter((o) => !o.retired).map((o) =>
       h("span", { class: "wz-decision", style: { "--opt": o.color || "#455a64" } },
         o.hotkey ? kbd(o.hotkey) : null, h("span", {}, o.label || o.value),
-        o.approved ? h("span", { class: "wz-decision-flag", title: "counts as approved" }, "✓") : null)));
+        o.approved ? h("span", { class: "wz-decision-flag", title: "counts as a positive answer" }, "✓") : null)));
   }
 
   function render() {
@@ -462,11 +486,14 @@ export function labelsEditor(el, ctx) {
                 h("th", { scope: "col" }, h("span", { class: "wz-sr" }, "Colour")),
                 h("th", { scope: "col" }, "Name ", h("span", { class: "wz-muted" }, "· stored value")),
                 h("th", { scope: "col" }, "Hotkey"),
-                h("th", { scope: "col", class: "wz-center" }, "Approved"),
+                h("th", { scope: "col", class: "wz-center", title: "Counts as a positive / accepted answer. Used by eval exports." }, "Positive"),
                 h("th", { scope: "col", class: "wz-center" }, "Needs note"),
                 h("th", { scope: "col" }, h("span", { class: "wz-sr" }, "Actions")))),
               h("tbody", {}, L.options.map((o, i) => optionRow(o, i, issues)))))
             : h("div", { class: "wz-empty-inline" }, "No options yet. Pick a template above or add your own."),
+          L.options.length ? h("p", { class: "wz-help", id: "wz-positive-help" },
+            h("strong", {}, "Positive"), " marks an answer that accepts the item (e.g. Correct). Eval exports (golden, rollouts) score positive answers as 1. ",
+            "For plain categories such as a priority, leave it unticked.") : null,
           h("div", { class: "wz-row-between" },
             h("button", { type: "button", class: "wz-btn", "data-fid": "add-opt", onclick: addOption }, "+ Add option"),
             h("p", { class: "wz-help" }, "Hotkey cells: press the key to bind it (Backspace clears, Esc leaves). Reserved: ", kbd("Z"), " zoom, ", kbd("?"), " help, ", kbd("Esc"), ", ", kbd("Enter"), ", ", kbd("Tab"), ", ", kbd("Space"), "."))) : null,
@@ -498,7 +525,8 @@ export function labelsEditor(el, ctx) {
       const issue = issues[`key-${name}`];
       return h("div", { class: "wz-inline-field" }, h("label", { for: id }, label),
         h("input", {
-          id, type: "text", class: `wz-hotkey${issue ? " wz-invalid" : ""}`, value: L.keys[name], "data-fid": `key-${name}`, "aria-invalid": issue ? "true" : null,
+          id, type: "text", class: `wz-hotkey wz-hotkey-wide${issue ? " wz-invalid" : ""}`, value: keyLabel(L.keys[name]), size: keySize(L.keys[name]),
+          "data-fid": `key-${name}`, "aria-invalid": issue ? "true" : null, title: "Press the key to use",
           onkeydown: (e) => {
             const k = capturedKey(e);
             if (!k) return; // skip/undo/note always need a key
@@ -561,7 +589,7 @@ export function workflowEditor(el, ctx) {
           h("div", { class: "wz-radio-row" },
             [["none", "One queue", "Everything in data order."],
               ["column", "By a column", "One queue per value, e.g. priority."],
-              ["strata", "By caliper sample strata", "Uses the stratum column `caliper sample` writes."]].map(([v, t, d]) =>
+              ["strata", "By sample group", "For data from caliper sample: one queue per group (its stratum column)."]].map(([v, t, d]) =>
               h("label", { class: `wz-radio-card${qmode === v ? " wz-on" : ""}` },
                 h("input", {
                   type: "radio", name: qname, value: v, checked: qmode === v, "data-fid": `q-${v}`,
@@ -590,7 +618,7 @@ export function workflowEditor(el, ctx) {
                 h("button", { type: "button", class: "wz-icon", "aria-label": "More labellers per item", "data-fid": "dl-plus", disabled: W.double_label >= 10,
                   onclick: () => { W.double_label = Math.min(10, W.double_label + 1); changed(); } }, "+")),
               h("span", { class: "wz-muted" }, W.double_label === 1 ? "person" : "different people")),
-            W.double_label > 1 ? h("p", { class: "wz-help" }, "Agreement (κ) and disagreements to adjudicate appear on the dashboard.") : null),
+            W.double_label > 1 ? h("p", { class: "wz-help" }, "The dashboard shows how often labellers agree (Cohen's κ) and lists the items they disagree on, so someone can settle them.") : null),
           h("fieldset", { class: "wz-radios wz-plain" },
             h("legend", {}, "Assignment"),
             [["open", "Open", "Anyone takes the next unlabelled item."],
@@ -616,7 +644,7 @@ export function workflowEditor(el, ctx) {
               W.instructions ? (() => { const d = h("div"); d.innerHTML = markdown(W.instructions); return d; })() : h("p", { class: "wz-muted" }, "No instructions yet."))),
         h("section", { class: "wz-panel wz-grid-2" },
           h("div", {},
-            h("h3", {}, "Golden checks ", h("span", { class: "wz-muted" }, "(optional)")),
+            h("h3", {}, "Quality checks ", h("span", { class: "wz-muted" }, "(optional, “golden” items)")),
             h("label", { class: "wz-check" },
               h("input", { type: "checkbox", checked: !!W.golden, "data-fid": "golden-on",
                 onchange: (e) => { W.golden = e.target.checked ? { answer_column: cols()[0] || "", rate: 0.05 } : null; changed(); } }),
@@ -630,10 +658,10 @@ export function workflowEditor(el, ctx) {
                 h("span", { class: "wz-muted" }, "%"))) : null,
             W.golden ? h("p", { class: "wz-help" }, "Rows with a value in the answer column are golden items; the answer must match an option's stored value.") : null),
           ctx.labels ? h("div", {},
-            h("h3", {}, "Agreement by category ", h("span", { class: "wz-muted" }, "(optional)")),
+            h("h3", {}, "Agreement by group ", h("span", { class: "wz-muted" }, "(optional)")),
             h("div", { class: "wz-inline-field" }, h("label", { for: ccol }, "Category column"),
               select(ccol, ctx.labels.category_column, (v) => { ctx.labels.category_column = v; changed(); }, "none", "ccol")),
-            h("p", { class: "wz-help" }, "The dashboard reports κ per value of this column.")) : null),
+            h("p", { class: "wz-help" }, "The dashboard shows labeller agreement separately for each value of this column. Useful with 2+ labels per item.")) : null),
       );
     });
   }

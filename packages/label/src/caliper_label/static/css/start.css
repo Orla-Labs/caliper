@@ -1,5 +1,20 @@
 /* Start screen (dev 2). Shared pieces come from wizard.css. */
 
+/* App bar (lpf-a). The project name links to the start screen (switch / new project). The
+   tabs belong to the open project, so they are hidden while choosing or creating one. */
+a.project-name { color: inherit; text-decoration: none; border-radius: 6px; padding: 4px 8px 4px 0; }
+a.project-name:hover { color: var(--c-ink, inherit); text-decoration: underline; text-underline-offset: 3px; }
+a.project-name:empty { display: none; }
+body[data-route="start"] #appnav, body[data-route="wizard"] #appnav,
+body[data-route="start"] #project-name, body[data-route="wizard"] #project-name { display: none !important; }
+
+.st-current {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0 0 18px; padding: 14px 18px;
+  background: var(--wz-panel); border: 1px solid var(--wz-line); border-left: 4px solid var(--wz-accent); border-radius: 12px;
+}
+.st-current-text { flex: 1; min-width: 0; }
+.st-current-name { font-weight: 700; }
+
 .st-root { display: flex; flex-direction: column; }
 .st-hero { max-width: 1040px; width: 100%; margin: 0 auto; padding: clamp(28px, 6vh, 64px) clamp(16px, 3vw, 32px) 8px; }
 .st-brand { font-size: 15px; color: var(--wz-muted); margin-bottom: 18px; }
