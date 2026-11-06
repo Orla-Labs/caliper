@@ -62,9 +62,13 @@ export async function mount(el, ctx) {
     save(state);
     history.replaceState(null, "", `#/wizard/${ctx.args[0] || "data"}`); // a reload keeps the draft
   }
-  const persist = debounce(() => save(state), 150);
+  // Each step is a fresh mount with its own copy of the draft. Once this mount is gone its
+  // pending debounced save must not fire: it would overwrite the next step's newer draft
+  // (edits made right before Next were lost, e.g. the whole workflow on Review).
+  let alive = true;
+  const persist = debounce(() => { if (alive) save(state); }, 150);
   const changed = () => { persist(); updateNav(); };
-  const saveNow = () => save(state);
+  const saveNow = () => { if (alive) save(state); };
   window.addEventListener("pagehide", saveNow); // a reload right after a change keeps it
 
   // can the user go past each step?
@@ -137,7 +141,12 @@ export async function mount(el, ctx) {
     const i = idx(step);
     if (i <= 0) go("start"); else go("wizard", STEPS[i - 1][0]);
   });
-  nextBtn.addEventListener("click", () => {
+  // A step renders asynchronously (e.g. Labels fetches its default template, Review the
+  // folder defaults). Next / Ctrl+Enter pressed meanwhile wait for it instead of judging a
+  // half-built step ("Add at least one option") or missing the Create button.
+  let rendered = Promise.resolve();
+  nextBtn.addEventListener("click", async () => {
+    await rendered;
     const b = blocker(step);
     if (b) { announce(b); why.textContent = b; return; }
     const i = idx(step);
@@ -158,7 +167,7 @@ export async function mount(el, ctx) {
   const onKey = (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
-      if (step === "review") root.querySelector("#wz-create")?.click(); else nextBtn.click();
+      rendered.then(() => { if (step === "review") root.querySelector("#wz-create")?.click(); else nextBtn.click(); });
     }
   };
   document.addEventListener("keydown", onKey);
@@ -508,7 +517,8 @@ export async function mount(el, ctx) {
 
   const renderers = { data: renderData, card: renderCard, labels: renderLabels, workflow: renderWorkflow, review: renderReview };
   updateNav();
-  await renderers[step]();
+  rendered = Promise.resolve(renderers[step]()); // some renderers are sync
+  await rendered;
   updateNav();
   const h1 = body.querySelector("h1");
   if (h1) { h1.tabIndex = -1; h1.focus({ preventScroll: true }); }
@@ -519,5 +529,6 @@ export async function mount(el, ctx) {
     window.removeEventListener("pagehide", saveNow);
     clearSlot();
     save(state);
+    alive = false;
   };
 }
