@@ -94,14 +94,28 @@ def test_jsonl_nests_the_item_and_parses_json_columns_csv_stays_flat(tmp_path: P
     assert json.loads(flat["item.meta"]) == {"channel": "email", "n": 3}
 
 
-def test_file_names_use_local_time_with_the_offset(tmp_path: Path) -> None:
+def test_file_names_use_utc_like_labelled_at(tmp_path: Path) -> None:
+    """The name's clock is the data's clock: UTC, marked Z (usability r3)."""
     c = client_for(make_ctx(tmp_path))
     post(c, "t0", "correct")
     cd = c.get("/api/export/download?format=csv").headers["content-disposition"]
     name = re.search(r'filename="([^"]+)"', cd).group(1)
-    assert re.fullmatch(r"ticket-triage-fictional-csv-\d{8}-\d{6}(Z|[+-]\d{4})\.csv", name), name
+    assert re.fullmatch(r"ticket-triage-fictional-csv-\d{8}-\d{6}Z\.csv", name), name
     r = c.post("/api/export", json={"format": "jsonl", "destination": {"kind": "file"}}).json()
-    assert re.search(r"-jsonl-\d{8}-\d{6}(Z|[+-]\d{4})\.jsonl$", r["destination"])
+    assert re.search(r"-jsonl-\d{8}-\d{6}Z\.jsonl$", r["destination"])
+    assert _jsonl(c)[0]["labelled_at"].endswith("Z")
+
+
+def test_item_columns_follow_the_card_then_the_rest(tmp_path: Path) -> None:
+    c = client_for(make_ctx(tmp_path))  # card: subject, body, team, score
+    post(c, "t0", "correct")
+    want = ["subject", "body", "team", "score", "ticket_id", "priority", "known"]
+    raw = c.get("/api/export/download?format=jsonl").text.splitlines()[0]
+    assert list(json.loads(raw)["item"]) == want  # the file itself keeps the order
+    header = next(csv.reader(io.StringIO(c.get("/api/export/download?format=csv").text)))
+    assert [h[5:] for h in header if h.startswith("item.")] == want
+    per_label = c.get("/api/export/download?format=jsonl&rows=labels").text.splitlines()[0]
+    assert list(json.loads(per_label)["item"]) == want
 
 
 def test_formats_have_plain_titles(tmp_path: Path) -> None:

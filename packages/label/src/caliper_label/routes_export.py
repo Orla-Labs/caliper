@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 import tempfile
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -80,10 +80,8 @@ class ExportIn(BaseModel):
 
 
 def _stamp() -> str:
-    """Local time for file names, with the UTC offset so nobody has to guess (#20)."""
-    now = datetime.now().astimezone()
-    off = now.strftime("%z")  # +hhmm / -hhmm
-    return now.strftime("%Y%m%d-%H%M%S") + (off if off and off != "+0000" else "Z")
+    """UTC, marked ``Z``: the same clock as ``labelled_at`` inside the file (usability r3)."""
+    return datetime.now(UTC).strftime("%Y%m%d-%H%M%SZ")
 
 
 def _slug(text: str) -> str:
@@ -205,7 +203,8 @@ def download(
             )
         import json
 
-        text = "".join(json.dumps(r, ensure_ascii=False, sort_keys=True) + "\n" for r in data)
+        keep = format is ExportFormat.JSONL  # the label table keeps card order
+        text = "".join(json.dumps(r, ensure_ascii=False, sort_keys=not keep) + "\n" for r in data)
         return Response(text, media_type=MEDIA["jsonl"], headers=headers)
     except ExportError as exc:
         raise ApiError(400, str(exc), exc.hint) from None

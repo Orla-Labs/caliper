@@ -102,7 +102,7 @@ body[data-route="label"] { padding-bottom: var(--keybar-h, 52px); }
 .img-why { color: var(--c-bad); font-weight: var(--fw-medium); max-width: 46ch; }
 .img-hint { color: var(--c-ink-2); max-width: 52ch; line-height: 1.4; }
 .img-ref { font-family: var(--font-mono); }
-.media figcaption { font-size: var(--fs-xs); color: var(--c-ink-2); margin-top: var(--sp-1); }
+.media figcaption { margin: 0 0 2px; }
 .fields { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
 .chips { display: flex; flex-wrap: wrap; gap: var(--sp-3) var(--sp-5); }
 .field-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--c-ink-2); margin-bottom: 2px; font-weight: var(--fw-medium); }
@@ -166,7 +166,7 @@ span.f-badge.tone-option {
 .opt:focus-visible, .opt.mine:focus-visible { box-shadow: inset 0 -3px 0 var(--opt), var(--focus-ring); }
 .opt[aria-pressed="true"] { background: var(--c-accent-soft); border-color: var(--c-accent); color: var(--c-ink); }
 .opt[aria-pressed="true"] .opt-label::before { content: "✓ "; color: var(--c-accent); }
-.opt-note { color: var(--c-ink-2); font-weight: normal; }
+.opt-note { color: var(--c-ink-2); font-weight: normal; font-size: var(--fs-sm); }
 .decisions-score .opt { flex: 1 1 56px; }
 .score-scale { display: flex; justify-content: space-between; font-size: var(--fs-xs); margin-top: var(--sp-1); }
 .decide-multi { display: flex; flex-direction: column; gap: var(--sp-2); }
