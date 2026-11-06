@@ -286,9 +286,55 @@ def step_compile(graders: ModuleType) -> None:
     call_reward_funcs(out, json.loads(first), graders)
 
 
+_REWARD_PROBE = """
+import json, sys
+sys.path.insert(0, ".")
+from reward_funcs import reward_funcs
+kwargs = json.load(sys.stdin)
+print(json.dumps([f.__name__ for f in reward_funcs]))
+print(json.dumps([f(**kwargs) for f in reward_funcs]))
+"""
+
+
 def call_reward_funcs(out: Path, first_row: dict, graders: ModuleType) -> None:
-    """Load the emitted reward module standalone and score two completions."""
-    raise NotImplementedError("wired up once dev1's reward_funcs.py shape is known")
+    """Score two completions with the emitted reward module, outside caliper.
+
+    Runs in an isolated interpreter (-I -S: no site-packages, so neither
+    caliper nor pydantic is importable) to show the file is self-contained.
+    """
+    gold = first_row["gold"]
+    completions = {
+        "good": f"The TOTAL DUE line is the answer.\n<total>{gold}</total>",
+        "hack": f"<total>0.00 or {gold}</total>",
+    }
+    n = len(completions)
+    kwargs = {
+        "prompts": [first_row["prompt"]] * n,
+        "completions": [[{"role": "assistant", "content": c}] for c in completions.values()],
+        "gold": [gold] * n,
+        "caliper_metadata": [first_row.get("caliper_metadata")] * n,
+    }
+    proc = subprocess.run(  # noqa: S603 - fixed argv, local interpreter
+        [sys.executable, "-I", "-S", "-c", _REWARD_PROBE],
+        cwd=out,
+        input=json.dumps(kwargs),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        say(scrub(proc.stderr))
+        sys.exit(proc.returncode)
+    names, scores = (json.loads(line) for line in proc.stdout.splitlines()[:2])
+
+    say()
+    say("reward_funcs.py in a bare interpreter (python -I -S: no caliper, no deps):")
+    say(f"  reward_funcs = [{', '.join(names)}]   # GRPOTrainer(reward_funcs=...)")
+    say()
+    say(f"  {'completion':<40} {'fixed':>6} {'naive':>6}")
+    for (kind, text), score in zip(completions.items(), scores[0], strict=True):
+        naive = graders.naive_grader({"prompt": "", "response": text, "gold": gold}).score
+        say(f"  {kind}: {clip(text, 34):<34} {score:>6.2f} {naive:>6.2f}")
 
 
 # --------------------------------------------------------------------------- main
