@@ -42,7 +42,7 @@ function render(d) {
   const tiles = el("div", { class: "tiles" },
     tile(`${t.complete} / ${t.items}`, "items complete", fmtPct(t.items ? t.complete / t.items : null)),
     tile(String(t.labels), "labels", `${t.labellers} labeller${t.labellers === 1 ? "" : "s"}`),
-    tile(fmtKappa(o), d.agreement.method === "fleiss" ? "Fleiss' κ" : "Cohen's κ",
+    tile(fmtKappa(o), !o.n_items ? "κ (agreement)" : d.agreement.method === "fleiss" ? "Fleiss' κ" : "Cohen's κ",
       o.n_items ? `${o.n_items} items with 2+ labels` : (d.double_label > 1 ? "no overlap yet" : "single labelling")),
     tile(String(t.open_disagreements), "to adjudicate", `${t.adjudicated} adjudicated`, t.open_disagreements ? "tile-warn" : ""));
 
