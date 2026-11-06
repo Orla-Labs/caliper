@@ -213,3 +213,22 @@ def test_suggested_values_come_back_in_severity_order(setup_client) -> None:
     # pasted lists keep the order the user typed
     r = setup_client.post("/api/setup/templates/categories", json={"categories": "medium\nlow"})
     assert [o["value"] for o in r.json()["labels"]["options"]] == ["medium", "low"]
+
+
+def test_new_colours_are_aa_on_white() -> None:
+    from caliper_label.project_setup import CATEGORY_PALETTE, SEVERITY_RAMP
+
+    def lum(hex_: str) -> float:
+        rgb = [int(hex_[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+        lin = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+        return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+    for c in [*CATEGORY_PALETTE, *SEVERITY_RAMP]:
+        assert 1.05 / (lum(c) + 0.05) >= 4.5, c
+
+
+def test_suggested_sentiment_values_come_back_positive_first() -> None:
+    from caliper_label.project_setup import template_labels
+
+    opts = template_labels("categories", "neutral\npositive\nnegative", natural_order=True).options
+    assert [o.value for o in opts] == ["positive", "neutral", "negative"]
