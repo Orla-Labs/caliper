@@ -126,7 +126,9 @@ def _rate(times: list[datetime]) -> float | None:
     times = sorted(times)
     active = sum((min(b - a, ACTIVE_GAP) for a, b in pairwise(times)), timedelta())
     secs = active.total_seconds()
-    return round((len(times) - 1) * 3600 / secs, 1) if secs > 0 else None
+    if secs < 60:  # under a minute of work: too little to call it a rate
+        return None
+    return round((len(times) - 1) * 3600 / secs, 1)
 
 
 def dashboard(session: Session, now: datetime | None = None) -> dict[str, Any]:
