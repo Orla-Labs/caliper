@@ -10,6 +10,12 @@
 * Comparison is constant-time (``secrets.compare_digest``).
 * Protected: every ``/api`` route except ``/api/status`` (which only says whether
   a token is needed). The static UI is public: it holds no data.
+* Setup is for the person running the server. In team mode the routes that reach
+  beyond the open project's snapshot (any ``SourceConfig`` in a body, file browsing,
+  opening/creating projects, saving settings, refresh from source, writing an export
+  to the server's disk / S3 / a database) answer only requests from the server
+  machine itself (loopback). Labellers on the network get 403 with a hint. Behind a
+  reverse proxy every request looks local: keep the proxy off or block those paths.
 * The token is never logged: uvicorn's access log is off, and
   :class:`RedactTokenFilter` scrubs ``token=...`` from any uvicorn log line anyway.
 """
@@ -85,6 +91,8 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 body(detail, HINT), status_code=401, headers={"WWW-Authenticate": "Bearer"}
             )
+        if is_admin_route(request.method, path) and not is_local(request):
+            return JSONResponse(body("only available on the server machine", ADMIN_HINT), 403)
         response = await call_next(request)
         if (
             ok
@@ -100,6 +108,26 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
                 path="/",
             )
         return response
+
+
+ADMIN_PREFIXES = ("/api/source/", "/api/setup/", "/api/projects")
+LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+ADMIN_HINT = (
+    "in team mode, setup and server-side exports only work on the machine running "
+    "`caliper label`; open the UI there, or download the export instead"
+)
+
+
+def is_admin_route(method: str, path: str) -> bool:
+    if path.startswith(ADMIN_PREFIXES):
+        return True
+    if path.startswith("/api/settings") and method not in ("GET", "HEAD"):
+        return True
+    return path == "/api/export" and method == "POST"
+
+
+def is_local(request: Request) -> bool:
+    return bool(request.client and request.client.host in LOOPBACK)
 
 
 _TOKEN_RE = re.compile(r"(token=)[^&\s\"']+", re.IGNORECASE)

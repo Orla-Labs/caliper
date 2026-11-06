@@ -251,10 +251,8 @@ def post_export(session: S, request: Request, body: ExportIn) -> dict[str, Any]:
             n = write_local(data, body.format, path)
             where = str(path)
         else:
-            fmt = "parquet" if body.format is ExportFormat.PARQUET else body.format.value
-            if kind in ("postgres", "mysql", "sqlite"):
-                fmt = "table"
-            n = write_via_sinks(data, dest, fmt)
+            fmt = "table" if kind in DB_KINDS else body.format.value
+            n = write_via_sinks(data, dest, fmt, project_dir=_root(request))
             where = dest.get("table") or dest.get("path") or kind
     except ExportError as exc:
         raise ApiError(400, str(exc), exc.hint) from None

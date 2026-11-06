@@ -585,21 +585,33 @@ def write_local(rows: Iterable[dict[str, Any]], fmt: ExportFormat, out_path: str
     return write_jsonl(rows, p)
 
 
-def write_via_sinks(rows: Iterable[dict[str, Any]], target: Any, fmt: str) -> int:
-    """S3 upload, DB write-back and Parquet: delegated to ``caliper_label.sinks`` (dev 1)."""
-    try:
-        from . import sinks  # type: ignore[attr-defined]
-        from .project import SourceConfig
-    except ImportError:
-        raise ExportError(
-            f"{fmt} export needs the data connectors (caliper_label.sinks), not in this build",
-            "export csv or jsonl, or update caliper-label",
-        ) from None
+def write_via_sinks(
+    rows: Iterable[dict[str, Any]],
+    target: Any,
+    fmt: str,
+    *,
+    project_dir: str | Path | None = None,
+    overwrite: bool = False,
+) -> int:
+    """Parquet files, S3 upload and DB write-back go through ``caliper_label.sinks`` (dev 1).
+
+    golden / rollouts / records / jsonl are JSON lines; csv, parquet and tables store
+    nested values as JSON text. An existing S3 object is replaced only with ``overwrite``;
+    a table is created if missing, otherwise appended to.
+    """
+    from . import sinks
+    from .project import SourceConfig
+
     tgt = target if isinstance(target, SourceConfig) else SourceConfig.model_validate(target)
-    if fmt != "parquet":
-        rows = ({k: _flat(v) for k, v in r.items()} for r in rows)
-    res = sinks.write(rows, tgt, fmt)
-    return int(res) if isinstance(res, int) else int(getattr(res, "rows", 0) or 0)
+    file_fmt = {"golden": "jsonl", "rollouts": "jsonl", "records": "jsonl"}.get(fmt, fmt)
+    res = sinks.write(
+        rows,
+        tgt,
+        None if fmt == "table" else file_fmt,
+        project_dir=project_dir,
+        overwrite=overwrite,
+    )
+    return int(res.rows)
 
 
 def is_remote(dest: str) -> bool:

@@ -183,3 +183,35 @@ def test_cli_export_needs_destination(tmp_path: Path, capsys) -> None:
         == 2
     )
     assert "needs a project folder" in capsys.readouterr().err
+
+
+def test_team_mode_keeps_setup_on_the_server_machine(tmp_path: Path) -> None:
+    from caliper_label.app import create_app
+    from fastapi.testclient import TestClient
+
+    app = create_app(ctx=make_ctx(tmp_path), auth_token=TOKEN)
+    h = {"Authorization": f"Bearer {TOKEN}"}
+    remote = TestClient(app, client=("10.0.0.7", 50000))
+    src = {"source": {"kind": "http", "path": "https://example.invalid/x.csv"}}
+    for method, path, body in [
+        ("post", "/api/source/test", src),
+        ("post", "/api/source/preview", src),
+        ("get", "/api/source/preview", None),
+        ("get", "/api/setup/browse", None),
+        ("get", "/api/projects", None),
+        ("put", "/api/settings", {}),
+        ("post", "/api/export", {"format": "csv"}),
+    ]:
+        r = getattr(remote, method)(path, headers=h, **({"json": body} if body is not None else {}))
+        assert r.status_code == 403, (path, r.status_code)
+        assert r.json()["detail"] == "only available on the server machine" and r.json()["hint"]
+    # labelling, team views and downloads stay open to labellers
+    assert remote.get("/api/next?labeller=ana", headers=h).status_code == 200
+    assert remote.get("/api/dashboard", headers=h).status_code == 200
+    assert remote.get("/api/export/download?format=csv", headers=h).status_code == 200
+    local = TestClient(app, client=("127.0.0.1", 50001))
+    r = local.post("/api/export", headers=h, json={"format": "csv"})
+    assert r.status_code == 200
+    # without team mode nothing changes (local-first, single user)
+    open_app = TestClient(create_app(ctx=make_ctx(tmp_path)), client=("10.0.0.7", 1))
+    assert open_app.post("/api/export", json={"format": "csv"}).status_code == 200

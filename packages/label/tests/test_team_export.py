@@ -244,3 +244,18 @@ def test_throughput_counts_active_time_only() -> None:
     ]
     assert 80 < _rate(with_break) < 90  # the 2-hour lunch counts as 5 minutes, not 2 hours
     assert _rate(steady[:2]) is None
+
+
+def test_export_writes_back_to_a_sqlite_table(tmp_path: Path) -> None:
+    import sqlite3
+
+    _, c = double(tmp_path)
+    dest = {"kind": "sqlite", "path": "out.db", "table": "triage_labels"}
+    r = c.post("/api/export", json={"format": "table", "destination": dest})
+    assert r.status_code == 200, r.text
+    assert r.json()["written"] == 2 and r.json()["destination"] == "triage_labels"
+    con = sqlite3.connect(tmp_path / "out.db")
+    rows = con.execute(
+        "SELECT item_id, label, labeller, project_version FROM triage_labels"
+    ).fetchall()
+    assert sorted(rows) == [("t0", "correct", "ana;ben", 3), ("t2", "wrong", "ana;ben", 3)]
