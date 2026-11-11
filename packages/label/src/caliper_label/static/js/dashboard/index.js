@@ -32,7 +32,9 @@ function kappaCell(s) {
 }
 
 function section(title, ...body) {
-  return el("section", { class: "panel dash-section", "aria-labelledby": `h-${title.replace(/\W+/g, "-")}` },
+  // Sections scroll sideways when a table is wider than the panel (overflow-x: auto);
+  // tabindex lets keyboard users focus and scroll them (axe scrollable-region-focusable).
+  return el("section", { class: "panel dash-section", tabindex: "0", "aria-labelledby": `h-${title.replace(/\W+/g, "-")}` },
     el("h2", { id: `h-${title.replace(/\W+/g, "-")}`, text: title }), ...body);
 }
 

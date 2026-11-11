@@ -49,7 +49,8 @@ test("CSV wizard end to end: upload → card → labels → workflow → review 
   // reorder by drag: amount to the top
   const rows = onCard.getByRole("listitem");
   const amountRow = rows.filter({ has: page.getByRole("textbox", { name: "Label for amount" }) });
-  await amountRow.dragTo(rows.first());
+  // drag by the handle: the row's centre can land on its text input, which does not start a drag
+  await amountRow.locator(".wz-handle").dragTo(rows.first());
   await expect.poll(order).toEqual(expect.arrayContaining(["amount"]));
   expect((await order())[0], "drag moved amount to the top").toBe("amount");
   // ... and by button: move subject down one
