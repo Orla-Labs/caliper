@@ -3,7 +3,7 @@
 `caliper-compile` turns a Caliper `@grader` and an EvalRow dataset into the files a training stack consumes. The same grader you debugged in the editor becomes the reward function at train time.
 
 ```bash
-uv run caliper-compile --target {trl,bedrock,openai} \
+caliper-compile --target {trl,bedrock,openai} \
     --grader path/to/graders.py:ATTR \
     --dataset path/to/rows.jsonl \
     --out DIR \

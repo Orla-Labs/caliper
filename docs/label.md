@@ -11,8 +11,9 @@ Team mode is the same server on a shared host, behind an access token.
 ![caliper label on the catalog_cleanup example](label.png)
 
 ```bash
-uv run caliper label                 # start screen: new project / open project / try the demo
-uv run caliper label ./my-project    # straight into a project
+pip install 'orlalabs-caliper[label]'
+caliper label                 # start screen: new project / open project / try the demo
+caliper label ./my-project    # straight into a project
 ```
 
 - Setting up a project (the wizard, `caliper.label.yaml`, settings): [label-setup.md](label-setup.md)
@@ -135,7 +136,7 @@ people are not shown the same item when it needs only one more label.
 ## Team mode
 
 ```bash
-uv run caliper label ./my-project --host 0.0.0.0 --auth token
+caliper label ./my-project --host 0.0.0.0 --auth token
 # team mode: share this link (it carries the access token): http://127.0.0.1:8765/?token=...
 ```
 
@@ -368,8 +369,8 @@ The original file-based mode still works, unchanged. It uses the same UI and API
 `/api/config`, `/api/image/{id}/{n}`) for existing scripts.
 
 ```bash
-uv run caliper label serve examples/catalog_cleanup/golden.jsonl \
-    --config examples/catalog_cleanup/label.yaml
+caliper example catalog_cleanup   # copies the example to ./catalog_cleanup
+caliper label serve catalog_cleanup/golden.jsonl --config catalog_cleanup/label.yaml
 ```
 
 Labels go to `build/labels/golden.labels.jsonl` unless you pass `--store`.
@@ -507,8 +508,8 @@ The default store is a JSONL file of `LabelRecord`s
 ### Legacy export
 
 ```bash
-uv run caliper label export --data examples/catalog_cleanup/golden.jsonl \
-    --config examples/catalog_cleanup/label.yaml --out build/golden.labelled.jsonl
+caliper label export --data catalog_cleanup/golden.jsonl \
+    --config catalog_cleanup/label.yaml --out build/golden.labelled.jsonl
 ```
 
 **Consensus.** Each item resolves from its active labels:
