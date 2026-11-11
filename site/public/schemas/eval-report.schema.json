@@ -1,0 +1,1466 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://caliper.orlalabs.com/schemas/eval-report.schema.json",
+  "$comment": "OUT/report.json: Everything `caliper eval` prints, and more, as JSON. Parse this instead of stdout. The gate verdict itself is not in it: use the exit code of `--ci`, or `--summary-md`.",
+  "$defs": {
+    "CI": {
+      "additionalProperties": false,
+      "description": "Percentile bootstrap confidence interval around a point estimate.",
+      "properties": {
+        "estimate": {
+          "title": "Estimate",
+          "type": "number",
+          "description": "point estimate"
+        },
+        "low": {
+          "title": "Low",
+          "type": "number",
+          "description": "lower bound of the bootstrap interval"
+        },
+        "high": {
+          "title": "High",
+          "type": "number",
+          "description": "upper bound of the bootstrap interval"
+        },
+        "confidence": {
+          "default": 0.95,
+          "title": "Confidence",
+          "type": "number",
+          "description": "interval level, e.g. 0.95"
+        },
+        "n_boot": {
+          "default": 1000,
+          "title": "N Boot",
+          "type": "integer",
+          "description": "bootstrap resamples"
+        }
+      },
+      "required": [
+        "estimate",
+        "low",
+        "high"
+      ],
+      "title": "CI",
+      "type": "object"
+    },
+    "Calibration": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate": {
+          "title": "Candidate",
+          "type": "string"
+        },
+        "basis": {
+          "title": "Basis",
+          "type": "string",
+          "description": "kind of the labels the sweep reads (see provenance.basis_kind)"
+        },
+        "metric": {
+          "title": "Metric",
+          "type": "string",
+          "description": "\"precision\" for human truth, else e.g. \"teacher agreement\""
+        },
+        "basis_sources": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Basis Sources",
+          "type": "array"
+        },
+        "selection_split": {
+          "default": "all",
+          "title": "Selection Split",
+          "type": "string",
+          "description": "\"val\" when the golden set is split"
+        },
+        "report_split": {
+          "default": "all",
+          "title": "Report Split",
+          "type": "string",
+          "description": "\"test\" when the golden set is split"
+        },
+        "n_rows": {
+          "title": "N Rows",
+          "type": "integer",
+          "description": "selection rows (labelled, usable score, in basis)"
+        },
+        "n_approved": {
+          "title": "N Approved",
+          "type": "integer"
+        },
+        "n_unlabeled": {
+          "title": "N Unlabeled",
+          "type": "integer"
+        },
+        "n_no_score": {
+          "title": "N No Score",
+          "type": "integer",
+          "description": "labeled, but no decision or no score (errored / unscored)"
+        },
+        "n_out_of_range": {
+          "title": "N Out Of Range",
+          "type": "integer",
+          "description": "score outside [0, 1]; excluded, never clamped"
+        },
+        "sweep": {
+          "items": {
+            "$ref": "#/$defs/ThresholdPoint"
+          },
+          "title": "Sweep",
+          "type": "array"
+        },
+        "reliability": {
+          "items": {
+            "$ref": "#/$defs/ReliabilityBin"
+          },
+          "title": "Reliability",
+          "type": "array"
+        },
+        "ece": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ece"
+        },
+        "target_precision": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Precision"
+        },
+        "recommended_threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recommended Threshold"
+        },
+        "on_report": {
+          "items": {
+            "$ref": "#/$defs/SourceMetrics"
+          },
+          "title": "On Report",
+          "type": "array",
+          "description": "per source, at recommended"
+        },
+        "sweep_by_source": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/ThresholdPoint"
+            },
+            "type": "array"
+          },
+          "title": "Sweep By Source",
+          "type": "object",
+          "description": "The sweep on the selection rows of each label source separately (JSON only)."
+        }
+      },
+      "required": [
+        "candidate",
+        "basis",
+        "metric",
+        "n_rows",
+        "n_approved",
+        "n_unlabeled",
+        "n_no_score",
+        "n_out_of_range"
+      ],
+      "title": "Calibration",
+      "type": "object"
+    },
+    "CandidateReport": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string",
+          "description": "candidate name"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string",
+          "description": "provider kind"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string",
+          "description": "requested model id"
+        },
+        "thinking": {
+          "title": "Thinking",
+          "type": "string",
+          "description": "thinking mode"
+        },
+        "output_mode": {
+          "title": "Output Mode",
+          "type": "string",
+          "description": "output mode"
+        },
+        "is_reference": {
+          "title": "Is Reference",
+          "type": "boolean",
+          "description": "true for the reference candidate"
+        },
+        "rows": {
+          "title": "Rows",
+          "type": "integer",
+          "description": "distinct golden rows with a result"
+        },
+        "results": {
+          "title": "Results",
+          "type": "integer",
+          "description": "(row, replica) executions"
+        },
+        "replies": {
+          "title": "Replies",
+          "type": "integer"
+        },
+        "provider_errors": {
+          "title": "Provider Errors",
+          "type": "integer",
+          "description": "replies with an error"
+        },
+        "decide_errors": {
+          "title": "Decide Errors",
+          "type": "integer",
+          "description": "results with no decision"
+        },
+        "error_rate": {
+          "title": "Error Rate",
+          "type": "number",
+          "description": "decide_errors / results"
+        },
+        "tokens": {
+          "$ref": "#/$defs/Tokens",
+          "description": "summed token counts"
+        },
+        "latency_p50_ms": {
+          "title": "Latency P50 Ms",
+          "type": "number",
+          "description": "median reply latency"
+        },
+        "latency_p95_ms": {
+          "title": "Latency P95 Ms",
+          "type": "number",
+          "description": "95th percentile reply latency"
+        },
+        "dollars": {
+          "title": "Dollars",
+          "type": "number",
+          "description": "total spend for this candidate in this report"
+        },
+        "cost_per_row": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Per Row",
+          "description": "dollars / results"
+        },
+        "cost_vs_reference": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Vs Reference",
+          "description": "cost_per_row / reference cost_per_row"
+        },
+        "unpriced_replies": {
+          "default": 0,
+          "title": "Unpriced Replies",
+          "type": "integer",
+          "description": "non-error replies that used tokens but cost $0"
+        },
+        "monthly_cost_usd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Monthly Cost Usd",
+          "description": "with [cost_projection]"
+        },
+        "monthly_delta_usd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Monthly Delta Usd",
+          "description": "vs the reference, with [cost_projection]"
+        },
+        "served_models": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Served Models",
+          "type": "array",
+          "description": "\"provider:model\", sorted"
+        },
+        "served_mismatches": {
+          "default": 0,
+          "title": "Served Mismatches",
+          "type": "integer",
+          "description": "replies with matches_request=False"
+        },
+        "served_unknown": {
+          "default": 0,
+          "title": "Served Unknown",
+          "type": "integer",
+          "description": "non-error replies with no served_by"
+        },
+        "stale_results": {
+          "default": 0,
+          "title": "Stale Results",
+          "type": "integer",
+          "description": "recorded for a different request or candidate settings than now"
+        },
+        "transitions": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Transitions"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "outcome changes vs the reference"
+        },
+        "paired_excess": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PairedExcess"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "regression - replay noise, paired per row"
+        },
+        "calibration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Calibration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "precision/coverage by score threshold"
+        },
+        "matched_operating_point": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MatchedOperatingPoint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "slices": {
+          "items": {
+            "$ref": "#/$defs/SliceResult"
+          },
+          "title": "Slices",
+          "type": "array",
+          "description": "per-slice pass/fail"
+        }
+      },
+      "required": [
+        "name",
+        "provider",
+        "model",
+        "thinking",
+        "output_mode",
+        "is_reference",
+        "rows",
+        "results",
+        "replies",
+        "provider_errors",
+        "decide_errors",
+        "error_rate",
+        "tokens",
+        "latency_p50_ms",
+        "latency_p95_ms",
+        "dollars"
+      ],
+      "title": "CandidateReport",
+      "type": "object"
+    },
+    "FlippedRow": {
+      "additionalProperties": false,
+      "properties": {
+        "row_id": {
+          "title": "Row Id",
+          "type": "string"
+        },
+        "src": {
+          "title": "Src",
+          "type": "string"
+        },
+        "dst": {
+          "title": "Dst",
+          "type": "string"
+        },
+        "cost": {
+          "title": "Cost",
+          "type": "number"
+        }
+      },
+      "required": [
+        "row_id",
+        "src",
+        "dst",
+        "cost"
+      ],
+      "title": "FlippedRow",
+      "type": "object"
+    },
+    "MatchedOperatingPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate": {
+          "title": "Candidate",
+          "type": "string"
+        },
+        "reference": {
+          "title": "Reference",
+          "type": "string"
+        },
+        "auto_outcomes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Auto Outcomes",
+          "type": "array"
+        },
+        "selection_split": {
+          "title": "Selection Split",
+          "type": "string"
+        },
+        "report_split": {
+          "title": "Report Split",
+          "type": "string"
+        },
+        "n_selection": {
+          "title": "N Selection",
+          "type": "integer",
+          "description": "selection rows with both sides decided"
+        },
+        "reference_coverage": {
+          "title": "Reference Coverage",
+          "type": "number",
+          "description": "on selection rows"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Threshold",
+          "description": "candidate score threshold; None = its own outcomes"
+        },
+        "candidate_coverage": {
+          "title": "Candidate Coverage",
+          "type": "number",
+          "description": "on selection rows, at threshold"
+        },
+        "n_report": {
+          "title": "N Report",
+          "type": "integer",
+          "description": "labelled report rows with both sides decided"
+        },
+        "n_excluded": {
+          "title": "N Excluded",
+          "type": "integer",
+          "description": "report rows dropped: a side has no decision"
+        },
+        "reference_coverage_report": {
+          "title": "Reference Coverage Report",
+          "type": "number"
+        },
+        "candidate_coverage_report": {
+          "title": "Candidate Coverage Report",
+          "type": "number"
+        },
+        "by_source": {
+          "items": {
+            "$ref": "#/$defs/SourceLosses"
+          },
+          "title": "By Source",
+          "type": "array"
+        }
+      },
+      "required": [
+        "candidate",
+        "reference",
+        "auto_outcomes",
+        "selection_split",
+        "report_split",
+        "n_selection",
+        "reference_coverage",
+        "threshold",
+        "candidate_coverage",
+        "n_report",
+        "n_excluded",
+        "reference_coverage_report",
+        "candidate_coverage_report"
+      ],
+      "title": "MatchedOperatingPoint",
+      "type": "object"
+    },
+    "NoiseFloor": {
+      "additionalProperties": false,
+      "properties": {
+        "reference": {
+          "title": "Reference",
+          "type": "string",
+          "description": "reference candidate name"
+        },
+        "n_replicas": {
+          "title": "N Replicas",
+          "type": "integer",
+          "description": "times the reference was replayed"
+        },
+        "n_rows": {
+          "title": "N Rows",
+          "type": "integer",
+          "description": "rows with every replica decided (denominator)"
+        },
+        "n_errored_rows": {
+          "title": "N Errored Rows",
+          "type": "integer",
+          "description": "rows where a replica has no decision"
+        },
+        "n_incomplete_rows": {
+          "title": "N Incomplete Rows",
+          "type": "integer",
+          "description": "fewer replicas than n_replicas recorded"
+        },
+        "n_flipped_rows": {
+          "title": "N Flipped Rows",
+          "type": "integer",
+          "description": "rows whose outcome differs between the reference's own replays"
+        },
+        "flip_rate": {
+          "$ref": "#/$defs/CI",
+          "description": "share of rows that flipped between replays"
+        },
+        "cost_weighted_flip_rate": {
+          "$ref": "#/$defs/CI",
+          "description": "the same, weighted by [costs]: the noise the gate subtracts"
+        },
+        "flipped_rows": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Flipped Rows",
+          "type": "array",
+          "description": "ids of flipped rows"
+        },
+        "errored_rows": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Errored Rows",
+          "type": "array",
+          "description": "ids of errored rows"
+        }
+      },
+      "required": [
+        "reference",
+        "n_replicas",
+        "n_rows",
+        "n_errored_rows",
+        "n_incomplete_rows",
+        "n_flipped_rows",
+        "flip_rate",
+        "cost_weighted_flip_rate"
+      ],
+      "title": "NoiseFloor",
+      "type": "object"
+    },
+    "PairedExcess": {
+      "additionalProperties": false,
+      "description": "Candidate regression minus reference replay noise, paired per row.\n\nFor every compared row ``i``: ``d_i = cost(ref replica 0 -> candidate) - n_i``\nwhere ``n_i`` is the reference's own symmetrized replay cost on that row\n(0 when the row has no complete noise replays). ``delta`` is the paired\nbootstrap CI of ``mean(d)``: one row resample per draw, both terms\ncomputed on the same rows.",
+      "properties": {
+        "n_rows": {
+          "title": "N Rows",
+          "type": "integer",
+          "description": "compared rows"
+        },
+        "n_without_noise": {
+          "title": "N Without Noise",
+          "type": "integer",
+          "description": "compared rows with no complete reference replays (n_i = 0)"
+        },
+        "regression": {
+          "title": "Regression",
+          "type": "number",
+          "description": "mean candidate cost on these rows"
+        },
+        "noise": {
+          "title": "Noise",
+          "type": "number",
+          "description": "mean reference replay cost on these rows"
+        },
+        "delta": {
+          "$ref": "#/$defs/CI",
+          "description": "paired: regression - noise"
+        }
+      },
+      "required": [
+        "n_rows",
+        "n_without_noise",
+        "regression",
+        "noise",
+        "delta"
+      ],
+      "title": "PairedExcess",
+      "type": "object"
+    },
+    "ProvenanceSummary": {
+      "additionalProperties": false,
+      "description": "Where the golden set's labels come from, and how it is split.",
+      "properties": {
+        "n_labelled": {
+          "title": "N Labelled",
+          "type": "integer",
+          "description": "rows with label_approved"
+        },
+        "by_source": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "By Source",
+          "type": "object",
+          "description": "labelled rows per source key"
+        },
+        "by_split": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "By Split",
+          "type": "object",
+          "description": "all rows per split (\"none\")"
+        },
+        "n_human_truth": {
+          "default": 0,
+          "title": "N Human Truth",
+          "type": "integer"
+        },
+        "has_human_truth": {
+          "default": false,
+          "title": "Has Human Truth",
+          "type": "boolean"
+        },
+        "has_splits": {
+          "default": false,
+          "title": "Has Splits",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "n_labelled"
+      ],
+      "title": "ProvenanceSummary",
+      "type": "object"
+    },
+    "ReliabilityBin": {
+      "additionalProperties": false,
+      "properties": {
+        "low": {
+          "title": "Low",
+          "type": "number"
+        },
+        "high": {
+          "title": "High",
+          "type": "number"
+        },
+        "n": {
+          "title": "N",
+          "type": "integer"
+        },
+        "mean_score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Mean Score"
+        },
+        "approved_rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Approved Rate"
+        }
+      },
+      "required": [
+        "low",
+        "high",
+        "n",
+        "mean_score",
+        "approved_rate"
+      ],
+      "title": "ReliabilityBin",
+      "type": "object"
+    },
+    "SideLosses": {
+      "additionalProperties": false,
+      "properties": {
+        "n_auto": {
+          "title": "N Auto",
+          "type": "integer"
+        },
+        "missed": {
+          "title": "Missed",
+          "type": "integer",
+          "description": "approved, not auto-handled"
+        },
+        "bad_auto": {
+          "title": "Bad Auto",
+          "type": "integer",
+          "description": "not approved, auto-handled"
+        }
+      },
+      "required": [
+        "n_auto",
+        "missed",
+        "bad_auto"
+      ],
+      "title": "SideLosses",
+      "type": "object"
+    },
+    "SliceDef": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "rule": {
+          "title": "Rule",
+          "type": "string"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Threshold"
+        },
+        "n_rows": {
+          "title": "N Rows",
+          "type": "integer",
+          "description": "golden rows in the slice"
+        },
+        "n_report_rows": {
+          "title": "N Report Rows",
+          "type": "integer",
+          "description": "of those, on the report split"
+        }
+      },
+      "required": [
+        "name",
+        "rule",
+        "threshold",
+        "n_rows",
+        "n_report_rows"
+      ],
+      "title": "SliceDef",
+      "type": "object"
+    },
+    "SliceResult": {
+      "additionalProperties": false,
+      "properties": {
+        "slice": {
+          "title": "Slice",
+          "type": "string"
+        },
+        "rule": {
+          "title": "Rule",
+          "type": "string"
+        },
+        "candidate": {
+          "title": "Candidate",
+          "type": "string"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Threshold"
+        },
+        "n_rows": {
+          "title": "N Rows",
+          "type": "integer",
+          "description": "rows the rule read"
+        },
+        "metric": {
+          "title": "Metric",
+          "type": "string",
+          "description": "what ``value`` is"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "detail": {
+          "title": "Detail",
+          "type": "string",
+          "description": "one line, for the report and the gate"
+        },
+        "rows": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Rows",
+          "type": "array",
+          "description": "offending rows (lost, flipped, ...)"
+        },
+        "paired": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PairedExcess"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reference_lost": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Lost",
+          "description": "must_not_lose: slice rows each side gets wrong"
+        },
+        "candidate_lost": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Lost"
+        }
+      },
+      "required": [
+        "slice",
+        "rule",
+        "candidate",
+        "threshold",
+        "n_rows",
+        "metric",
+        "value",
+        "passed",
+        "detail"
+      ],
+      "title": "SliceResult",
+      "type": "object"
+    },
+    "SourceLosses": {
+      "additionalProperties": false,
+      "description": "Losses on the report rows of one label source.",
+      "properties": {
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string",
+          "description": "human_truth for human sources; agreement kinds otherwise"
+        },
+        "metric": {
+          "title": "Metric",
+          "type": "string",
+          "description": "\"precision\" (truth) or e.g. \"teacher agreement\": names what a loss is"
+        },
+        "n_rows": {
+          "title": "N Rows",
+          "type": "integer"
+        },
+        "reference": {
+          "$ref": "#/$defs/SideLosses"
+        },
+        "candidate": {
+          "$ref": "#/$defs/SideLosses"
+        },
+        "candidate_lost": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Candidate Lost",
+          "type": "array",
+          "description": "every row the candidate loses"
+        },
+        "reference_lost": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reference Lost",
+          "type": "array",
+          "description": "every row the reference loses"
+        },
+        "candidate_only": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Candidate Only",
+          "type": "array",
+          "description": "ref right, candidate wrong"
+        },
+        "reference_only": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reference Only",
+          "type": "array",
+          "description": "candidate right, ref wrong"
+        },
+        "delta": {
+          "$ref": "#/$defs/CI",
+          "description": "paired: mean(candidate lost) - mean(reference lost) per row"
+        }
+      },
+      "required": [
+        "source",
+        "kind",
+        "metric",
+        "n_rows",
+        "reference",
+        "candidate",
+        "delta"
+      ],
+      "title": "SourceLosses",
+      "type": "object"
+    },
+    "SourceMetrics": {
+      "additionalProperties": false,
+      "description": "One label source's view of a threshold on the report rows.",
+      "properties": {
+        "source": {
+          "title": "Source",
+          "type": "string",
+          "description": "LabelSource value or \"unknown\""
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string",
+          "description": "human_truth | teacher_agreement | heuristic_agreement | unknown_source"
+        },
+        "metric": {
+          "title": "Metric",
+          "type": "string",
+          "description": "what auto_approved_rate is called for this source"
+        },
+        "n_rows": {
+          "title": "N Rows",
+          "type": "integer",
+          "description": "labelled report rows from this source with a usable score"
+        },
+        "n_approved": {
+          "title": "N Approved",
+          "type": "integer"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Threshold"
+        },
+        "n_auto": {
+          "default": 0,
+          "title": "N Auto",
+          "type": "integer"
+        },
+        "coverage": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Coverage"
+        },
+        "auto_approved_rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Auto Approved Rate"
+        },
+        "approved_to_review": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approved To Review"
+        },
+        "kappa": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kappa"
+        },
+        "ece": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ece"
+        }
+      },
+      "required": [
+        "source",
+        "kind",
+        "metric",
+        "n_rows",
+        "n_approved",
+        "threshold"
+      ],
+      "title": "SourceMetrics",
+      "type": "object"
+    },
+    "ThresholdPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "threshold": {
+          "title": "Threshold",
+          "type": "number"
+        },
+        "n_auto": {
+          "title": "N Auto",
+          "type": "integer"
+        },
+        "coverage": {
+          "title": "Coverage",
+          "type": "number"
+        },
+        "auto_approved_rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Auto Approved Rate",
+          "description": "named by Calibration.metric (precision only for humans)"
+        },
+        "approved_to_review": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Approved To Review"
+        },
+        "kappa": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Kappa"
+        }
+      },
+      "required": [
+        "threshold",
+        "n_auto",
+        "coverage",
+        "auto_approved_rate",
+        "approved_to_review",
+        "kappa"
+      ],
+      "title": "ThresholdPoint",
+      "type": "object"
+    },
+    "Tokens": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "default": 0,
+          "title": "Input",
+          "type": "integer"
+        },
+        "output": {
+          "default": 0,
+          "title": "Output",
+          "type": "integer"
+        },
+        "cache_read": {
+          "default": 0,
+          "title": "Cache Read",
+          "type": "integer"
+        },
+        "cache_write": {
+          "default": 0,
+          "title": "Cache Write",
+          "type": "integer"
+        }
+      },
+      "title": "Tokens",
+      "type": "object"
+    },
+    "TransitionCount": {
+      "additionalProperties": false,
+      "properties": {
+        "src": {
+          "title": "Src",
+          "type": "string"
+        },
+        "dst": {
+          "title": "Dst",
+          "type": "string"
+        },
+        "count": {
+          "title": "Count",
+          "type": "integer"
+        },
+        "unit_cost": {
+          "title": "Unit Cost",
+          "type": "number"
+        }
+      },
+      "required": [
+        "src",
+        "dst",
+        "count",
+        "unit_cost"
+      ],
+      "title": "TransitionCount",
+      "type": "object"
+    },
+    "Transitions": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate": {
+          "title": "Candidate",
+          "type": "string",
+          "description": "candidate name"
+        },
+        "reference": {
+          "title": "Reference",
+          "type": "string",
+          "description": "reference name"
+        },
+        "n_rows": {
+          "title": "N Rows",
+          "type": "integer",
+          "description": "compared rows (both sides decided)"
+        },
+        "n_errored": {
+          "title": "N Errored",
+          "type": "integer",
+          "description": "either side has no decision"
+        },
+        "n_missing": {
+          "title": "N Missing",
+          "type": "integer",
+          "description": "row present on one side only"
+        },
+        "matrix": {
+          "items": {
+            "$ref": "#/$defs/TransitionCount"
+          },
+          "title": "Matrix",
+          "type": "array",
+          "description": "reference -> candidate counts"
+        },
+        "flipped": {
+          "items": {
+            "$ref": "#/$defs/FlippedRow"
+          },
+          "title": "Flipped",
+          "type": "array",
+          "description": "rows whose outcome changed"
+        },
+        "errored_rows": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Errored Rows",
+          "type": "array",
+          "description": "ids with no decision on a side"
+        },
+        "flip_rate": {
+          "$ref": "#/$defs/CI",
+          "description": "share of compared rows that changed outcome"
+        },
+        "regression": {
+          "$ref": "#/$defs/CI",
+          "description": "cost-weighted"
+        }
+      },
+      "required": [
+        "candidate",
+        "reference",
+        "n_rows",
+        "n_errored",
+        "n_missing",
+        "flip_rate",
+        "regression"
+      ],
+      "title": "Transitions",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "reference": {
+      "title": "Reference",
+      "type": "string",
+      "description": "reference candidate name"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer",
+      "description": "[seed] from the config"
+    },
+    "n_boot": {
+      "title": "N Boot",
+      "type": "integer",
+      "description": "bootstrap resamples behind every CI"
+    },
+    "n_golden": {
+      "title": "N Golden",
+      "type": "integer",
+      "description": "rows in the golden set"
+    },
+    "noise_replays": {
+      "title": "Noise Replays",
+      "type": "integer",
+      "description": "times the reference was replayed"
+    },
+    "max_regression": {
+      "title": "Max Regression",
+      "type": "number",
+      "description": "[ci] max_regression"
+    },
+    "require": {
+      "default": "non_inferiority",
+      "title": "Require",
+      "type": "string",
+      "description": "[ci] require"
+    },
+    "max_cost_ratio": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Max Cost Ratio",
+      "description": "[ci] max_cost_ratio"
+    },
+    "calls_per_day": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Calls Per Day",
+      "description": "[cost_projection] calls_per_day"
+    },
+    "days_per_month": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Days Per Month",
+      "description": "[cost_projection] days_per_month"
+    },
+    "noise_floor": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NoiseFloor"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "the reference's own replay-to-replay variation"
+    },
+    "provenance": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProvenanceSummary"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "label sources and splits in the golden set"
+    },
+    "slices": {
+      "items": {
+        "$ref": "#/$defs/SliceDef"
+      },
+      "title": "Slices",
+      "type": "array",
+      "description": "[[slices]] and their row counts"
+    },
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/CandidateReport"
+      },
+      "title": "Candidates",
+      "type": "array",
+      "description": "one per candidate, the reference included"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array",
+      "description": "e.g. approximate or missing prices"
+    }
+  },
+  "required": [
+    "reference",
+    "seed",
+    "n_boot",
+    "n_golden",
+    "noise_replays",
+    "max_regression",
+    "noise_floor",
+    "candidates"
+  ],
+  "title": "EvalReport",
+  "type": "object"
+}

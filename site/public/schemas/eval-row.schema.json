@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://caliper.orlalabs.com/schemas/eval-row.schema.json",
+  "$comment": "rollouts JSONL: Graded rollouts for `caliper-compile --dataset` and `caliper kappa --rollouts` (`rollout.metadata.human_label` holds the human label for kappa).",
+  "$defs": {
+    "Rollout": {
+      "additionalProperties": false,
+      "description": "A single model rollout to be graded.\n\n`gold` is optional because some graders are reference-free (LLM-as-judge,\nrubric-based). `trace` carries tool-call records for agent grading.",
+      "properties": {
+        "prompt": {
+          "title": "Prompt",
+          "type": "string",
+          "description": "what the model was asked"
+        },
+        "response": {
+          "title": "Response",
+          "type": "string",
+          "description": "what it answered"
+        },
+        "gold": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gold",
+          "description": "reference answer, for graders that use one"
+        },
+        "trace": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Trace",
+          "type": "array",
+          "description": "tool-call records"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object",
+          "description": "free-form; human_label for kappa"
+        }
+      },
+      "required": [
+        "prompt",
+        "response"
+      ],
+      "title": "Rollout",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A row in an eval set: a Rollout plus an identifier.",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string",
+      "description": "unique row id"
+    },
+    "rollout": {
+      "$ref": "#/$defs/Rollout",
+      "description": "the rollout to grade"
+    }
+  },
+  "required": [
+    "id",
+    "rollout"
+  ],
+  "title": "EvalRow",
+  "type": "object"
+}

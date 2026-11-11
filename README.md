@@ -15,6 +15,8 @@
 
 Caliper is for teams shipping an LLM feature on a frontier API: classification, extraction, judging, scoring. These teams change prompts and models often. Before each change, `caliper eval` replays a golden set of real requests through the candidates. It applies your feature's own decision logic and tells you what the feature would do differently, what it would cost per call and per month, and whether the difference is larger than the noise you already live with. In CI it posts the verdict on the pull request and fails the build when a change regresses.
 
+**Docs:** [caliper.orlalabs.com](https://caliper.orlalabs.com). **Using a coding agent?** Point it at [caliper.orlalabs.com/agents](https://caliper.orlalabs.com/agents/) or [llms.txt](https://caliper.orlalabs.com/llms.txt), or drop the [`AGENTS.md` section](docs/agents/AGENTS.md) or [Claude Code skill](docs/agents/SKILL.md) into your repo.
+
 ## Why it works this way
 
 - **Grade the system outcome, not single replies.** Features wrap the model in vote loops, thresholds and fallbacks. You give Caliper your feature's `decide(replies) -> outcome`, and `assert_parity` proves that mirror matches the production rule over every reply sequence from a representative alphabet.
@@ -210,6 +212,13 @@ scripts/demo_eval.sh --check      # examples/catalog_cleanup/expected_output.txt
 
 # The grader demo: dataset -> mutation tests -> kappa -> compile to TRL
 scripts/demo.sh --check           # demo/expected_output.txt
+```
+
+After changing a CLI flag, an exit code or a config/report model, regenerate the agent reference
+(`site/src/content/docs/agents/cli.md`, `files.md` and `site/public/schemas/`); CI fails when it is stale:
+
+```bash
+uv run python scripts/gen_agent_docs.py
 ```
 
 ## Layout

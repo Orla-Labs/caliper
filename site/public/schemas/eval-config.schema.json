@@ -1,0 +1,558 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://caliper.orlalabs.com/schemas/eval-config.schema.json",
+  "$comment": "caliper.toml: The eval config, TOML, passed to `caliper eval --config` (any file name). Relative paths (`golden`, `decide`, `fake_script`) resolve against the config file's folder.",
+  "$defs": {
+    "CIConfig": {
+      "additionalProperties": true,
+      "properties": {
+        "max_regression": {
+          "default": 0.0,
+          "title": "Max Regression",
+          "type": "number",
+          "description": "allowed cost-weighted regression per row beyond replay noise"
+        },
+        "require": {
+          "$ref": "#/$defs/GateRequirement",
+          "default": "non_inferiority",
+          "description": "which CI bound the gate reads"
+        },
+        "max_error_rate": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Error Rate",
+          "description": "Share of results allowed to end with no decision; --max-error-rate overrides it."
+        },
+        "max_cost_ratio": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Cost Ratio",
+          "description": "Fail a candidate whose mean cost per execution is above this multiple of the reference's (1.0 = \"no more expensive\"). A candidate or reference with replies priced at $0 fails too: an unknown price must not read as free."
+        }
+      },
+      "title": "CIConfig",
+      "type": "object"
+    },
+    "CalibrationConfig": {
+      "additionalProperties": true,
+      "properties": {
+        "thresholds": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thresholds",
+          "description": "score thresholds to report precision/coverage at"
+        },
+        "target_precision": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Precision",
+          "description": "Recommend the lowest threshold reaching this precision; --target-precision overrides it."
+        }
+      },
+      "title": "CalibrationConfig",
+      "type": "object"
+    },
+    "Candidate": {
+      "additionalProperties": false,
+      "description": "What is being evaluated. The identity is the whole tuple, not the model.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string",
+          "description": "unique within a run, e.g. \"baseline\", \"haiku-nothink\""
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderKind",
+          "description": "fake is offline and free; the others call (and bill) a provider"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string",
+          "description": "the provider's model id, e.g. a Bedrock inference profile id"
+        },
+        "thinking": {
+          "$ref": "#/$defs/ThinkingMode",
+          "default": "off",
+          "description": "extended/adaptive thinking on or off"
+        },
+        "thinking_budget_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thinking Budget Tokens",
+          "description": "thinking budget, where the provider takes one"
+        },
+        "output_mode": {
+          "$ref": "#/$defs/OutputMode",
+          "default": "text",
+          "description": "text, provider-native JSON schema, or a tool call"
+        },
+        "output_schema": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Schema",
+          "description": "JSON Schema for json_schema / tool output"
+        },
+        "replies_per_row": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Replies Per Row",
+          "type": "integer",
+          "description": ">1 for vote loops"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object",
+          "description": "Extra request params (temperature etc.); openai_compat reads its key from the env var named by params.api_key_env (default OPENAI_API_KEY)."
+        },
+        "base_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Url",
+          "description": "openai_compat endpoint, or an Anthropic API base URL"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Region",
+          "description": "AWS region for bedrock / bedrock_converse"
+        },
+        "fake_script": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fake Script",
+          "description": "fake provider: \"path/to/file.py:func\" producing replies"
+        }
+      },
+      "required": [
+        "name",
+        "provider",
+        "model"
+      ],
+      "title": "Candidate",
+      "type": "object"
+    },
+    "CostProjectionConfig": {
+      "additionalProperties": false,
+      "description": "Production volume, to turn cost per row into dollars per month (``[cost_projection]``).\n\n``calls_per_day`` counts feature calls, i.e. golden-row equivalents (a vote\nloop's 3 replies are one call).",
+      "properties": {
+        "calls_per_day": {
+          "exclusiveMinimum": 0,
+          "title": "Calls Per Day",
+          "type": "number",
+          "description": "production feature calls per day"
+        },
+        "days_per_month": {
+          "default": 30.0,
+          "exclusiveMinimum": 0,
+          "title": "Days Per Month",
+          "type": "number"
+        }
+      },
+      "required": [
+        "calls_per_day"
+      ],
+      "title": "CostProjectionConfig",
+      "type": "object"
+    },
+    "GateRequirement": {
+      "description": "What the regression gate must be able to say about a candidate.\n\nBoth read the paired bootstrap CI of ``excess = regression - replay noise``\n(see ``caliper_eval.transitions.compute_paired_excess``):\n\n* ``non_inferiority`` (default): pass only when the CI's **upper** bound is\n  within ``max_regression``. A pass means \"no worse than the reference\n  beyond replay noise + max_regression, at 95%\".\n* ``no_evidence_of_regression``: fail only when the CI's **lower** bound is\n  above ``max_regression``. A pass then only means \"no detectable\n  regression\"; small golden sets pass easily. Use knowingly.",
+      "enum": [
+        "non_inferiority",
+        "no_evidence_of_regression"
+      ],
+      "title": "GateRequirement",
+      "type": "string"
+    },
+    "LabelSource": {
+      "description": "Who produced a label. Agreement with LLM_TEACHER is 'teacher agreement', never accuracy.",
+      "enum": [
+        "human_end_user",
+        "internal_reviewer",
+        "llm_teacher",
+        "heuristic",
+        "adjudicated"
+      ],
+      "title": "LabelSource",
+      "type": "string"
+    },
+    "OperatingPointConfig": {
+      "additionalProperties": false,
+      "description": "Matched-operating-point comparison (``[operating_point]``).\n\n``auto_outcomes`` are the outcomes that count as \"handled automatically\"\n(auto-published, expensive call skipped, ...). The reference's share of\nthose on val is the coverage the candidate's score threshold is matched to.",
+      "properties": {
+        "auto_outcomes": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Auto Outcomes",
+          "type": "array",
+          "description": "outcomes that mean \"handled automatically\""
+        }
+      },
+      "required": [
+        "auto_outcomes"
+      ],
+      "title": "OperatingPointConfig",
+      "type": "object"
+    },
+    "OutputMode": {
+      "enum": [
+        "text",
+        "json_schema",
+        "tool"
+      ],
+      "title": "OutputMode",
+      "type": "string"
+    },
+    "Price": {
+      "additionalProperties": false,
+      "description": "USD per million tokens. Cache-aware.",
+      "properties": {
+        "input": {
+          "title": "Input",
+          "type": "number",
+          "description": "USD per million input tokens"
+        },
+        "output": {
+          "title": "Output",
+          "type": "number",
+          "description": "USD per million output tokens (reasoning tokens bill as output)"
+        },
+        "cache_read": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache Read",
+          "description": "defaults to input if None"
+        },
+        "cache_write": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache Write",
+          "description": "defaults to input if None"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source",
+          "description": "URL + date checked"
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "title": "Price",
+      "type": "object"
+    },
+    "ProviderKind": {
+      "enum": [
+        "fake",
+        "anthropic",
+        "bedrock",
+        "bedrock_converse",
+        "openai_compat"
+      ],
+      "title": "ProviderKind",
+      "type": "string"
+    },
+    "SliceConfig": {
+      "additionalProperties": false,
+      "description": "A named hard slice with its own pass rule (``[[slices]]``).\n\nA row belongs to the slice when ``name`` is in ``GoldenRow.slices`` or when\nit matches ``where`` (``{\"stratum\": \"x\"}`` / ``{\"metadata.key\": value}``;\na list value means \"any of\"). ``label_sources`` restricts which label\nsources a label-based rule reads (default: ``min_precision`` reads human\nsources only, ``must_not_lose`` reads every labelled row).",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string",
+          "description": "also matches rows whose `slices` list holds this name"
+        },
+        "rule": {
+          "$ref": "#/$defs/SliceRule",
+          "description": "max_regression, must_not_lose or min_precision"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold",
+          "description": "required except for must_not_lose"
+        },
+        "where": {
+          "additionalProperties": true,
+          "title": "Where",
+          "type": "object",
+          "description": "{\"stratum\": ...} / {\"metadata.k\": ...}"
+        },
+        "label_sources": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/LabelSource"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label Sources",
+          "description": "label sources a label-based rule reads"
+        }
+      },
+      "required": [
+        "name",
+        "rule"
+      ],
+      "title": "SliceConfig",
+      "type": "object"
+    },
+    "SliceRule": {
+      "enum": [
+        "max_regression",
+        "must_not_lose",
+        "min_precision"
+      ],
+      "title": "SliceRule",
+      "type": "string"
+    },
+    "ThinkingMode": {
+      "enum": [
+        "off",
+        "on"
+      ],
+      "title": "ThinkingMode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": true,
+  "properties": {
+    "golden": {
+      "title": "Golden",
+      "type": "string",
+      "description": "golden JSONL, relative to the config file"
+    },
+    "decide": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Decide",
+      "description": "\"file.py:func\" turning a row's replies into a Decision"
+    },
+    "reference": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reference",
+      "description": "defaults to the first candidate"
+    },
+    "noise_replays": {
+      "default": 2,
+      "minimum": 1,
+      "title": "Noise Replays",
+      "type": "integer",
+      "description": "times the reference is replayed (noise floor)"
+    },
+    "budget_usd": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Budget Usd",
+      "description": "stop before spending more than this"
+    },
+    "seed": {
+      "default": 0,
+      "title": "Seed",
+      "type": "integer",
+      "description": "bootstrap and sampling seed"
+    },
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/Candidate"
+      },
+      "minItems": 1,
+      "title": "Candidates",
+      "type": "array",
+      "description": "[[candidates]]; the first one is the reference unless `reference` says otherwise."
+    },
+    "pricing": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Price"
+      },
+      "title": "Pricing",
+      "type": "object",
+      "description": "model id -> price override"
+    },
+    "costs": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Costs",
+      "type": "object",
+      "description": "\"from->to\" -> cost of that change"
+    },
+    "ci": {
+      "$ref": "#/$defs/CIConfig",
+      "description": "[ci] gate settings"
+    },
+    "calibration": {
+      "$ref": "#/$defs/CalibrationConfig",
+      "description": "[calibration]"
+    },
+    "operating_point": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OperatingPointConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "[operating_point]"
+    },
+    "cost_projection": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CostProjectionConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "[cost_projection], for $/month"
+    },
+    "slices": {
+      "items": {
+        "$ref": "#/$defs/SliceConfig"
+      },
+      "title": "Slices",
+      "type": "array",
+      "description": "[[slices]] with their own rules"
+    }
+  },
+  "required": [
+    "golden",
+    "candidates"
+  ],
+  "title": "EvalConfig",
+  "type": "object"
+}

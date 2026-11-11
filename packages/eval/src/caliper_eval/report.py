@@ -62,22 +62,22 @@ class Tokens(BaseModel):
 class CandidateReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str
-    provider: str
-    model: str
-    thinking: str
-    output_mode: str
-    is_reference: bool
+    name: str  # candidate name
+    provider: str  # provider kind
+    model: str  # requested model id
+    thinking: str  # thinking mode
+    output_mode: str  # output mode
+    is_reference: bool  # true for the reference candidate
     rows: int  # distinct golden rows with a result
     results: int  # (row, replica) executions
     replies: int
     provider_errors: int  # replies with an error
     decide_errors: int  # results with no decision
     error_rate: float  # decide_errors / results
-    tokens: Tokens
-    latency_p50_ms: float
-    latency_p95_ms: float
-    dollars: float
+    tokens: Tokens  # summed token counts
+    latency_p50_ms: float  # median reply latency
+    latency_p95_ms: float  # 95th percentile reply latency
+    dollars: float  # total spend for this candidate in this report
     cost_per_row: float | None = None  # dollars / results
     cost_vs_reference: float | None = None  # cost_per_row / reference cost_per_row
     unpriced_replies: int = 0  # non-error replies that used tokens but cost $0
@@ -87,31 +87,31 @@ class CandidateReport(BaseModel):
     served_mismatches: int = 0  # replies with matches_request=False
     served_unknown: int = 0  # non-error replies with no served_by
     stale_results: int = 0  # recorded for a different request or candidate settings than now
-    transitions: Transitions | None = None
+    transitions: Transitions | None = None  # outcome changes vs the reference
     paired_excess: PairedExcess | None = None  # regression - replay noise, paired per row
-    calibration: Calibration | None = None
+    calibration: Calibration | None = None  # precision/coverage by score threshold
     matched_operating_point: MatchedOperatingPoint | None = None
-    slices: list[SliceResult] = Field(default_factory=list)
+    slices: list[SliceResult] = Field(default_factory=list)  # per-slice pass/fail
 
 
 class EvalReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    reference: str
-    seed: int
-    n_boot: int
-    n_golden: int
-    noise_replays: int
-    max_regression: float
-    require: str = GateRequirement.NON_INFERIORITY.value
-    max_cost_ratio: float | None = None
-    calls_per_day: float | None = None
-    days_per_month: float | None = None
-    noise_floor: NoiseFloor | None
-    provenance: ProvenanceSummary | None = None
-    slices: list[SliceDef] = Field(default_factory=list)
-    candidates: list[CandidateReport]
-    warnings: list[str] = Field(default_factory=list)
+    reference: str  # reference candidate name
+    seed: int  # [seed] from the config
+    n_boot: int  # bootstrap resamples behind every CI
+    n_golden: int  # rows in the golden set
+    noise_replays: int  # times the reference was replayed
+    max_regression: float  # [ci] max_regression
+    require: str = GateRequirement.NON_INFERIORITY.value  # [ci] require
+    max_cost_ratio: float | None = None  # [ci] max_cost_ratio
+    calls_per_day: float | None = None  # [cost_projection] calls_per_day
+    days_per_month: float | None = None  # [cost_projection] days_per_month
+    noise_floor: NoiseFloor | None  # the reference's own replay-to-replay variation
+    provenance: ProvenanceSummary | None = None  # label sources and splits in the golden set
+    slices: list[SliceDef] = Field(default_factory=list)  # [[slices]] and their row counts
+    candidates: list[CandidateReport]  # one per candidate, the reference included
+    warnings: list[str] = Field(default_factory=list)  # e.g. approximate or missing prices
 
     def candidate(self, name: str) -> CandidateReport:
         for c in self.candidates:

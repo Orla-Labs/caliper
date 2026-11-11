@@ -267,7 +267,11 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--budget-usd", type=float, default=None, help="override budget_usd")
     e.add_argument("--no-resume", action="store_true", help="start the results file fresh")
     e.add_argument("--retry-errors", action="store_true", help="re-run rows that errored")
-    e.add_argument("--skip-preflight", action="store_true")
+    e.add_argument(
+        "--skip-preflight",
+        action="store_true",
+        help="skip the one-request-per-candidate shape check before the golden set",
+    )
     e.add_argument("--ci", action="store_true", help="exit 1 when the gate fails")
     e.add_argument("--summary-md", default=None, help="write a PR-comment markdown summary")
     e.add_argument("--candidates", default=None, help="comma-separated subset to run")
@@ -306,8 +310,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--request-field", default="request", help="dotted path to the request")
     s.add_argument("--id-field", default=None, help="dotted path to a row id")
     s.add_argument("--reference-field", default=None, help="dotted path -> reference_outcome")
-    s.add_argument("--cap-per-stratum", type=int, default=None)
-    s.add_argument("--seed", type=int, default=0)
+    s.add_argument("--cap-per-stratum", type=int, default=None, help="max rows per stratum")
+    s.add_argument("--seed", type=int, default=0, help="sampling seed (default 0)")
     s.set_defaults(func=cmd_sample)
 
     x = sub.add_parser("example", help="copy a bundled example project to try caliper")

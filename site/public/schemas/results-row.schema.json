@@ -1,0 +1,275 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://caliper.orlalabs.com/schemas/results-row.schema.json",
+  "$comment": "OUT/results.jsonl: One line per (candidate, golden row, replica), appended while `caliper eval` runs. Re-running the same command resumes from it; `--no-resume` starts it fresh.",
+  "$defs": {
+    "Decision": {
+      "additionalProperties": false,
+      "description": "The system outcome for one row, as the real feature would have decided.",
+      "properties": {
+        "outcome": {
+          "title": "Outcome",
+          "type": "string",
+          "description": "categorical outcome; transitions are computed on this"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score",
+          "description": "confidence score in [0, 1] for calibration, if any"
+        },
+        "detail": {
+          "additionalProperties": true,
+          "title": "Detail",
+          "type": "object",
+          "description": "free-form, from decide()"
+        }
+      },
+      "required": [
+        "outcome"
+      ],
+      "title": "Decision",
+      "type": "object"
+    },
+    "ProviderKind": {
+      "enum": [
+        "fake",
+        "anthropic",
+        "bedrock",
+        "bedrock_converse",
+        "openai_compat"
+      ],
+      "title": "ProviderKind",
+      "type": "string"
+    },
+    "Reply": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text",
+          "description": "the reply text, when there is one"
+        },
+        "parsed": {
+          "default": null,
+          "title": "Parsed",
+          "description": "structured output, when output_mode != text"
+        },
+        "served_by": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ServedBy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "who answered, from the response"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage",
+          "description": "token counts from the response"
+        },
+        "latency_ms": {
+          "default": 0.0,
+          "title": "Latency Ms",
+          "type": "number",
+          "description": "wall time of the request"
+        },
+        "cost_usd": {
+          "default": 0.0,
+          "title": "Cost Usd",
+          "type": "number",
+          "description": "usage x price; 0.0 when no price was found (see report warnings)"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error",
+          "description": "provider/transport/parse error; text/parsed may be None"
+        }
+      },
+      "title": "Reply",
+      "type": "object"
+    },
+    "ServedBy": {
+      "additionalProperties": false,
+      "description": "Who actually answered. Never inferred from the request.",
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/ProviderKind",
+          "description": "provider that answered"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string",
+          "description": "as reported by the response, not as requested"
+        },
+        "endpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Endpoint",
+          "description": "base URL / region / \"fake\""
+        },
+        "matches_request": {
+          "title": "Matches Request",
+          "type": "boolean",
+          "description": "False => fallback/substitution happened; surfaced in reports"
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "matches_request"
+      ],
+      "title": "ServedBy",
+      "type": "object"
+    },
+    "Usage": {
+      "additionalProperties": false,
+      "properties": {
+        "input_tokens": {
+          "default": 0,
+          "title": "Input Tokens",
+          "type": "integer",
+          "description": "uncached input tokens"
+        },
+        "output_tokens": {
+          "default": 0,
+          "title": "Output Tokens",
+          "type": "integer",
+          "description": "output tokens, reasoning included"
+        },
+        "cache_read_tokens": {
+          "default": 0,
+          "title": "Cache Read Tokens",
+          "type": "integer",
+          "description": "input tokens read from the prompt cache"
+        },
+        "cache_write_tokens": {
+          "default": 0,
+          "title": "Cache Write Tokens",
+          "type": "integer",
+          "description": "input tokens written to the prompt cache"
+        }
+      },
+      "title": "Usage",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One line of the resumable results JSONL. Key: (candidate, row_id, replica).",
+  "properties": {
+    "run_id": {
+      "title": "Run Id",
+      "type": "string",
+      "description": "the invocation that wrote this line"
+    },
+    "candidate": {
+      "title": "Candidate",
+      "type": "string",
+      "description": "candidate name from the config"
+    },
+    "row_id": {
+      "title": "Row Id",
+      "type": "string",
+      "description": "GoldenRow.id"
+    },
+    "replica": {
+      "default": 0,
+      "title": "Replica",
+      "type": "integer",
+      "description": "replay index; the reference is replayed >= 2x for the noise floor"
+    },
+    "request_sha256": {
+      "title": "Request Sha256",
+      "type": "string",
+      "description": "hash of GoldenRow.request (pre-overlay)"
+    },
+    "candidate_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Candidate Sha256",
+      "description": "hash of the Candidate settings (stale-resume check)"
+    },
+    "replies": {
+      "items": {
+        "$ref": "#/$defs/Reply"
+      },
+      "title": "Replies",
+      "type": "array",
+      "description": "replies_per_row replies, in order"
+    },
+    "decision": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Decision"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "None if decide() raised"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error",
+      "description": "decide() error or row-level failure"
+    }
+  },
+  "required": [
+    "run_id",
+    "candidate",
+    "row_id",
+    "request_sha256",
+    "replies"
+  ],
+  "title": "RowResult",
+  "type": "object"
+}

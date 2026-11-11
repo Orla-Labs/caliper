@@ -7,3 +7,5 @@ src/content/docs/label/
 src/content/docs/graders/
 src/content/docs/examples/
 public/images/
+public/agents/
+src/content/docs/agents/instructions.md

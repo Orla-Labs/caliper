@@ -40,8 +40,10 @@ class GateRequirement(StrEnum):
 class CIConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    max_regression: float = 0.0
-    require: GateRequirement = GateRequirement.NON_INFERIORITY
+    max_regression: float = 0.0  # allowed cost-weighted regression per row beyond replay noise
+    require: GateRequirement = GateRequirement.NON_INFERIORITY  # which CI bound the gate reads
+    # Share of results allowed to end with no decision; --max-error-rate overrides it.
+    max_error_rate: float | None = Field(default=None, ge=0, le=1)
     # Fail a candidate whose mean cost per execution is above this multiple of the
     # reference's (1.0 = "no more expensive"). A candidate or reference with replies
     # priced at $0 fails too: an unknown price must not read as free.
@@ -57,7 +59,7 @@ class CostProjectionConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    calls_per_day: float = Field(gt=0)
+    calls_per_day: float = Field(gt=0)  # production feature calls per day
     days_per_month: float = Field(default=30.0, gt=0)
 
 
@@ -71,7 +73,7 @@ class OperatingPointConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    auto_outcomes: list[str] = Field(min_length=1)
+    auto_outcomes: list[str] = Field(min_length=1)  # outcomes that mean "handled automatically"
 
 
 class SliceRule(StrEnum):
@@ -92,11 +94,11 @@ class SliceConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str
-    rule: SliceRule
-    threshold: float | None = None
-    where: dict[str, Any] = Field(default_factory=dict)
-    label_sources: list[LabelSource] | None = None
+    name: str  # also matches rows whose `slices` list holds this name
+    rule: SliceRule  # max_regression, must_not_lose or min_precision
+    threshold: float | None = None  # required except for must_not_lose
+    where: dict[str, Any] = Field(default_factory=dict)  # {"stratum": ...} / {"metadata.k": ...}
+    label_sources: list[LabelSource] | None = None  # label sources a label-based rule reads
 
     @model_validator(mode="after")
     def _check(self) -> SliceConfig:
@@ -118,7 +120,9 @@ class SliceConfig(BaseModel):
 class CalibrationConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    thresholds: list[float] | None = None
+    thresholds: list[float] | None = None  # score thresholds to report precision/coverage at
+    # Recommend the lowest threshold reaching this precision; --target-precision overrides it.
+    target_precision: float | None = Field(default=None, ge=0, le=1)
 
 
 class EvalConfig(BaseModel):
@@ -126,20 +130,21 @@ class EvalConfig(BaseModel):
     # sections without a schema change here.
     model_config = ConfigDict(extra="allow")
 
-    golden: str
-    decide: str | None = None
+    golden: str  # golden JSONL, relative to the config file
+    decide: str | None = None  # "file.py:func" turning a row's replies into a Decision
     reference: str | None = None  # defaults to the first candidate
-    noise_replays: int = Field(default=2, ge=1)
-    budget_usd: float | None = Field(default=None, ge=0)
-    seed: int = 0
+    noise_replays: int = Field(default=2, ge=1)  # times the reference is replayed (noise floor)
+    budget_usd: float | None = Field(default=None, ge=0)  # stop before spending more than this
+    seed: int = 0  # bootstrap and sampling seed
+    # [[candidates]]; the first one is the reference unless `reference` says otherwise.
     candidates: list[Candidate] = Field(min_length=1)
-    pricing: dict[str, Price] = Field(default_factory=dict)
-    costs: dict[str, float] = Field(default_factory=dict)
-    ci: CIConfig = Field(default_factory=CIConfig)
-    calibration: CalibrationConfig = Field(default_factory=CalibrationConfig)
-    operating_point: OperatingPointConfig | None = None
-    cost_projection: CostProjectionConfig | None = None
-    slices: list[SliceConfig] = Field(default_factory=list)
+    pricing: dict[str, Price] = Field(default_factory=dict)  # model id -> price override
+    costs: dict[str, float] = Field(default_factory=dict)  # "from->to" -> cost of that change
+    ci: CIConfig = Field(default_factory=CIConfig)  # [ci] gate settings
+    calibration: CalibrationConfig = Field(default_factory=CalibrationConfig)  # [calibration]
+    operating_point: OperatingPointConfig | None = None  # [operating_point]
+    cost_projection: CostProjectionConfig | None = None  # [cost_projection], for $/month
+    slices: list[SliceConfig] = Field(default_factory=list)  # [[slices]] with their own rules
     config_dir: Path = Field(default=Path("."), exclude=True)
 
     @model_validator(mode="after")

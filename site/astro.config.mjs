@@ -1,5 +1,6 @@
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
+import { sidebar } from "./src/sidebar.mjs";
 
 export default defineConfig({
 	site: "https://caliper.orlalabs.com",
@@ -23,38 +24,7 @@ export default defineConfig({
 					attrs: { name: "twitter:image", content: "https://caliper.orlalabs.com/og-image.png" },
 				},
 			],
-			sidebar: [
-				{
-					label: "Getting Started",
-					items: [
-						{ label: "Introduction", slug: "getting-started/introduction" },
-						{ label: "Installation", slug: "getting-started/installation" },
-						{ label: "Quick Start", slug: "getting-started/quick-start" },
-					],
-				},
-				{
-					label: "Evaluate model changes",
-					items: [
-						{ label: "caliper eval", slug: "eval/guide" },
-						{ label: "Worked example", slug: "examples/catalog-cleanup" },
-					],
-				},
-				{
-					label: "Label data",
-					items: [
-						{ label: "caliper label", slug: "label/overview" },
-						{ label: "Project setup", slug: "label/setup" },
-						{ label: "Data sources", slug: "label/connectors" },
-					],
-				},
-				{
-					label: "Graders for RL fine-tuning",
-					items: [
-						{ label: "Compile targets", slug: "graders/compile-targets" },
-						{ label: "Grader example", slug: "graders/example" },
-					],
-				},
-			],
+			sidebar,
 		}),
 	],
 });
