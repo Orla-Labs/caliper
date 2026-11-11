@@ -7,7 +7,8 @@ through each candidate, applies your feature's own decision logic, and compares
 the outcomes to a reference run, with costs and a CI gate attached.
 
 The worked example is [`examples/catalog_cleanup`](../examples/catalog_cleanup/README.md).
-`scripts/demo_eval.sh` runs it offline in about a second.
+`caliper example catalog_cleanup` copies it to `./catalog_cleanup`, and
+`caliper eval --config catalog_cleanup/caliper.toml` runs it offline in about a second.
 
 - [Concepts](#concepts)
 - [Golden set format](#golden-set-format)
@@ -461,7 +462,7 @@ from a log where the rare class is 3% of traffic tests it on about three rows.
 `caliper sample` keeps the strata you name **whole** and samples the rest:
 
 ```bash
-uv run caliper sample --in logs.jsonl --out golden.jsonl \
+caliper sample --in logs.jsonl --out golden.jsonl \
     --stratum-field outcome --keep needs_review,fallback --negatives 40 \
     --id-field id --reference-field outcome
 ```

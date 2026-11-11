@@ -3,6 +3,7 @@
     caliper eval   --config eval.toml [--out caliper-out] [--ci] [--summary-md PATH] ...
     caliper sample --in logs.jsonl --out golden.jsonl --stratum-field outcome \\
                    --keep positive,unsure --negatives 200
+    caliper example [catalog_cleanup|invoice_totals] [DIR]
 
 Exit codes: 0 ok, 1 CI gate failed (``--ci``), 2 usage/config error,
 3 preflight failed, 4 budget exceeded (results kept; re-run to resume).
@@ -227,6 +228,29 @@ def cmd_sample(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+# --------------------------------------------------------------------------- example
+
+
+def cmd_example(args: argparse.Namespace) -> int:
+    from caliper_eval.examples import EXAMPLES, NEXT_STEPS, copy_example
+
+    if args.name is None:
+        print("bundled examples (caliper example NAME [DIR]):")
+        for name, about in EXAMPLES.items():
+            print(f"  {name:<16} {about}")
+        return EXIT_OK
+    dest = args.dir or args.name
+    try:
+        target = copy_example(args.name, dest)
+    except (ValueError, FileExistsError, FileNotFoundError) as exc:
+        _err(f"caliper example: {exc}")
+        return EXIT_USAGE
+    print(f"copied example {args.name} to {target}/ (see {target}/README.md). Try:")
+    for step in NEXT_STEPS[args.name]:
+        print("  " + step.format(dir=dest))
+    return EXIT_OK
+
+
 # --------------------------------------------------------------------------- parser
 
 
@@ -285,6 +309,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--cap-per-stratum", type=int, default=None)
     s.add_argument("--seed", type=int, default=0)
     s.set_defaults(func=cmd_sample)
+
+    x = sub.add_parser("example", help="copy a bundled example project to try caliper")
+    x.add_argument("name", nargs="?", default=None, help="example name (omit to list them)")
+    x.add_argument("dir", nargs="?", default=None, help="destination (default: NAME)")
+    x.set_defaults(func=cmd_example)
 
     from caliper_eval import cli_kappa
 

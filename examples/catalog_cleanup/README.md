@@ -79,7 +79,18 @@ reported on test.
 
 ## Run it
 
-From the repo root:
+After `pip install orlalabs-caliper` and `caliper example catalog_cleanup`, from the folder
+that holds the copy:
+
+```bash
+caliper sample --in catalog_cleanup/logs.jsonl --out catalog_cleanup/out/sampled.jsonl \
+    --stratum-field outcome --keep needs_review,fallback --negatives 40 \
+    --id-field id --reference-field outcome
+caliper eval --config catalog_cleanup/caliper.toml --out catalog_cleanup/out \
+    --ci --summary-md catalog_cleanup/out/summary.md
+```
+
+From a clone of the repo, at its root:
 
 ```bash
 scripts/demo_eval.sh            # the whole story, about a second

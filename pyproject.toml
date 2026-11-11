@@ -3,7 +3,7 @@
 # The workspace members' own pyproject files are for local development only.
 [project]
 name = "orlalabs-caliper"
-version = "0.1.0"
+version = "0.1.1"
 description = "Know when a model or prompt change breaks your AI feature, before your users do: replay a golden set, measure against replay noise, gate CI on regression and cost."
 requires-python = ">=3.12"
 license = "Apache-2.0"
@@ -80,9 +80,30 @@ packages = [
     "packages/server/src/caliper_server",
 ]
 
+# Example projects for `caliper example` (tests, generators and the demo transcript stay out).
+[tool.hatch.build.targets.wheel.force-include]
+"examples/catalog_cleanup/README.md" = "caliper_eval/_examples/catalog_cleanup/README.md"
+"examples/catalog_cleanup/caliper.preflight.toml" = "caliper_eval/_examples/catalog_cleanup/caliper.preflight.toml"
+"examples/catalog_cleanup/caliper.real.toml" = "caliper_eval/_examples/catalog_cleanup/caliper.real.toml"
+"examples/catalog_cleanup/caliper.toml" = "caliper_eval/_examples/catalog_cleanup/caliper.toml"
+"examples/catalog_cleanup/decide.py" = "caliper_eval/_examples/catalog_cleanup/decide.py"
+"examples/catalog_cleanup/fake_models.py" = "caliper_eval/_examples/catalog_cleanup/fake_models.py"
+"examples/catalog_cleanup/feature_rule.py" = "caliper_eval/_examples/catalog_cleanup/feature_rule.py"
+"examples/catalog_cleanup/golden.jsonl" = "caliper_eval/_examples/catalog_cleanup/golden.jsonl"
+"examples/catalog_cleanup/label.yaml" = "caliper_eval/_examples/catalog_cleanup/label.yaml"
+"examples/catalog_cleanup/logs.jsonl" = "caliper_eval/_examples/catalog_cleanup/logs.jsonl"
+"examples/invoice_totals/README.md" = "caliper_eval/_examples/invoice_totals/README.md"
+"examples/invoice_totals/check.py" = "caliper_eval/_examples/invoice_totals/check.py"
+"examples/invoice_totals/graders.py" = "caliper_eval/_examples/invoice_totals/graders.py"
+"examples/invoice_totals/labeled_rollouts.jsonl" = "caliper_eval/_examples/invoice_totals/labeled_rollouts.jsonl"
+"examples/invoice_totals/prompts.jsonl" = "caliper_eval/_examples/invoice_totals/prompts.jsonl"
+"examples/catalog_cleanup/cards" = "caliper_eval/_examples/catalog_cleanup/cards"
+
 [tool.hatch.build.targets.sdist]
 include = [
     "packages/*/src/**",
+    "examples/catalog_cleanup/**",
+    "examples/invoice_totals/**",
     "README.md",
     "LICENSE",
     "pyproject.toml",

@@ -71,21 +71,26 @@ not a perfect 1.0:
 
 ## Run it
 
-The end-to-end demo (mutations, kappa, compile targets) is `scripts/demo.sh`
-from the repo root. To check just this example:
+After `pip install orlalabs-caliper` and `caliper example invoice_totals`, from the folder
+that holds the copy:
 
 ```bash
-uv run python examples/invoice_totals/generate.py   # regenerate the JSONL (optional)
-uv run python examples/invoice_totals/check.py      # mutations + kappa + assertions
+python invoice_totals/check.py      # mutations + kappa + assertions
+caliper kappa --rollouts invoice_totals/labeled_rollouts.jsonl \
+  --grader invoice_totals/graders.py:fixed_grader
 ```
 
 To compile the strict grader into a training target:
 
 ```bash
-uv run caliper-compile --target trl \
-  --grader examples/invoice_totals/graders.py:fixed_grader \
-  --dataset examples/invoice_totals/prompts.jsonl --out out/trl
+caliper-compile --target trl \
+  --grader invoice_totals/graders.py:fixed_grader \
+  --dataset invoice_totals/prompts.jsonl --out invoice_totals/trl
 ```
+
+From a clone of the repo, `scripts/demo.sh` runs the end-to-end demo (mutations, kappa,
+compile targets), and `uv run python examples/invoice_totals/generate.py` regenerates the
+JSONL.
 
 (`--target bedrock` and `--target openai` take the same arguments.)
 

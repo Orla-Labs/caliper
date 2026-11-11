@@ -45,26 +45,26 @@ This gives you the `caliper` command (`eval`, `sample`, `kappa`, `label`) and `c
 
 Requires Python 3.12 or newer. Import names are unchanged (`caliper_eval`, `caliper_label`, ...).
 
-## Quickstart (from a clone)
+## Quickstart
 
-Needs [uv](https://docs.astral.sh/uv/) ≥ 0.11.
+The whole story on a synthetic example, offline, no API keys: golden set, noise floor, slices, matched operating point, calibration and the CI verdict.
 
 ```bash
-uv sync
+pip install orlalabs-caliper
 
-# The whole story on a synthetic example, offline, no API keys, byte-for-byte deterministic:
-# golden set -> preflight -> noise floor -> slices -> matched operating point -> calibration -> CI verdict.
-scripts/demo_eval.sh
-scripts/demo_eval.sh --check      # diff against examples/catalog_cleanup/expected_output.txt
+# Copy the bundled example project into ./catalog_cleanup
+caliper example catalog_cleanup
 
-# Run the eval yourself
-uv run caliper eval --config examples/catalog_cleanup/caliper.toml \
-    --out build/catalog-eval --ci --summary-md build/catalog-eval/summary.md
+# Run the eval. --ci exits 1 here on purpose: two candidates fail the gate.
+caliper eval --config catalog_cleanup/caliper.toml --out catalog_cleanup/out \
+    --ci --summary-md catalog_cleanup/out/summary.md
 
 # Build a golden set from production logs, keeping rare outcomes whole
-uv run caliper sample --in examples/catalog_cleanup/logs.jsonl --out build/golden.jsonl \
+caliper sample --in catalog_cleanup/logs.jsonl --out catalog_cleanup/out/sampled.jsonl \
     --stratum-field outcome --keep needs_review,fallback --negatives 40 --id-field id
 ```
+
+With uv, `uvx --from orlalabs-caliper caliper example catalog_cleanup` runs the same commands without installing anything. `caliper example` with no name lists the bundled examples.
 
 The example ([`examples/catalog_cleanup`](examples/catalog_cleanup/README.md)) is a fictional marketplace feature. An LLM fills product-catalog records (description, specs, a tax-category code) with a confidence score, and low scores go to a person. On the fake provider, the demo shows these synthetic results:
 
@@ -130,13 +130,14 @@ steps:
 `caliper label serve golden.jsonl --config label.yaml` opens a local, keyboard-first labelling UI with no accounts and no build step. It shows one item at a time as a card with text, badges, numbers, links and images (`Z` for full size), takes a single key per decision, and offers skip, undo and notes. A sidebar splits the set into named queues with progress. Several people can label at once, and every label records who and when in an append-only log. With `double_label: 2` each item needs two labellers, and the agreement view shows inter-annotator kappa overall and by category. `caliper label export` writes golden rows with `label` / `label_approved` filled in for `caliper eval` calibration, or labeled rollouts ready for `caliper_kappa`. Disagreements are left out and listed, never silently resolved.
 
 ```bash
-# Try it on the example (80 fictional catalog cards)
-uv run caliper label serve examples/catalog_cleanup/golden.jsonl \
-    --config examples/catalog_cleanup/label.yaml
+pip install 'orlalabs-caliper[label]'
+
+# Try it on the example from the Quickstart (80 fictional catalog cards)
+caliper label serve catalog_cleanup/golden.jsonl --config catalog_cleanup/label.yaml
 
 # Inter-rater agreement from the label log, overall and by category. This needs items
 # labelled by two or more people: set `double_label: 2` in label.yaml first.
-uv run caliper kappa --labels build/labels/golden.labels.jsonl --by category
+caliper kappa --labels build/labels/golden.labels.jsonl --by category   # where serve writes the log
 ```
 
 `caliper kappa --labels` uses Cohen's kappa when exactly two people labelled the overlap items and Fleiss' kappa when three or more did. Undone and skipped labels are dropped, and an LLM teacher's labels are left out unless you pass `--source all`. Categories where kappa is undefined (for example, everyone chose the same label) are flagged, not shown as a number. See [docs/label.md](docs/label.md).
@@ -152,18 +153,20 @@ If you go further and fine-tune with reinforcement learning (RFT), the grader *i
 
 ![Caliper RFT demo: write a grader, dry-run it, mutation-test it, measure kappa, compile to TRL](docs/demo.gif)
 
-On the bundled example (`examples/invoice_totals`, 46 human-labeled answers), the naive grader lets 2 mutations survive and has kappa 0.389. The fixed grader kills every applicable mutation and reaches kappa 0.868. `scripts/demo.sh` reproduces those numbers byte for byte.
+On the bundled example (`examples/invoice_totals`, 46 human-labeled answers), the naive grader lets 2 mutations survive and has kappa 0.389. The fixed grader kills every applicable mutation and reaches kappa 0.868. From a clone, `scripts/demo.sh` reproduces those numbers byte for byte.
 
 ```bash
-# dataset -> mutation tests -> kappa -> compile to TRL; offline, deterministic
-scripts/demo.sh
-scripts/demo.sh --check        # diff against demo/expected_output.txt
+caliper example invoice_totals
+
+# Agreement of the fixed grader with the human labels
+caliper kappa --rollouts invoice_totals/labeled_rollouts.jsonl \
+    --grader invoice_totals/graders.py:fixed_grader
 
 # Compile a grader for your trainer
-uv run caliper-compile --target trl \
-    --grader examples/invoice_totals/graders.py:fixed_grader \
-    --dataset examples/invoice_totals/prompts.jsonl \
-    --out build/trl
+caliper-compile --target trl \
+    --grader invoice_totals/graders.py:fixed_grader \
+    --dataset invoice_totals/prompts.jsonl \
+    --out invoice_totals/trl
 ```
 
 ### Supported targets
@@ -192,6 +195,22 @@ Open the editor, edit the sample grader, click **Dry run**: see the histogram, t
 ## Built by
 
 Caliper is built by [Orla Labs](https://orlalabs.com).
+
+## Develop Caliper (from a clone)
+
+Needs [uv](https://docs.astral.sh/uv/) ≥ 0.11.
+
+```bash
+git clone https://github.com/Orla-Labs/caliper && cd caliper
+uv sync
+
+# The eval demo, byte-for-byte deterministic; --check diffs it against the committed transcript
+scripts/demo_eval.sh
+scripts/demo_eval.sh --check      # examples/catalog_cleanup/expected_output.txt
+
+# The grader demo: dataset -> mutation tests -> kappa -> compile to TRL
+scripts/demo.sh --check           # demo/expected_output.txt
+```
 
 ## Layout
 

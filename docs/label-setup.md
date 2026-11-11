@@ -1,6 +1,6 @@
 # Setting up a `caliper label` project
 
-`uv run caliper label` opens the start screen: **New project**, **Open project** or **Try the
+`caliper label` opens the start screen: **New project**, **Open project** or **Try the
 demo**. A project is a folder holding `caliper.label.yaml` (commit it) and `.caliper-label/`
 (labels and snapshots; ignored by git). Everything the wizard and Project settings do is saved
 to that file, and hand edits to it are kept, comments and order included.
