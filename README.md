@@ -6,7 +6,7 @@
 [![Python >=3.12](https://img.shields.io/badge/python-%3E%3D3.12-blue.svg)](./pyproject.toml)
 [![tests: 561 passing](https://img.shields.io/badge/tests-561%20passing-brightgreen.svg)](#run-the-tests)
 
-Caliper is for teams shipping an LLM feature on a frontier API: classification, extraction, judging, scoring. These teams change prompts and models often. Before each change, `caliper eval` replays a golden set of real requests through the candidates. It applies your feature's own decision logic and tells you what the feature would do differently, how much that costs, and whether the difference is larger than the noise you already live with. In CI it posts the verdict on the pull request and fails the build when a change regresses.
+Caliper is for teams shipping an LLM feature on a frontier API: classification, extraction, judging, scoring. These teams change prompts and models often. Before each change, `caliper eval` replays a golden set of real requests through the candidates. It applies your feature's own decision logic and tells you what the feature would do differently, what it would cost per call and per month, and whether the difference is larger than the noise you already live with. In CI it posts the verdict on the pull request and fails the build when a change regresses.
 
 ## Why it works this way
 
@@ -16,7 +16,8 @@ Caliper is for teams shipping an LLM feature on a frontier API: classification, 
 - **A candidate is model + thinking + output mode.** A preflight fails fast when a provider rejects a request shape. Every result records which model actually answered, so a silent fallback fails the gate instead of passing it.
 - **Calibration against human approvals.** If your feature emits a confidence score and people review some outputs, Caliper sweeps the auto-accept threshold on `val`. It recommends the lowest one that reaches your target precision and reports it on `test`.
 - **Know who labelled what.** Every label carries its source. Agreement with an LLM teacher is reported as teacher agreement, never as accuracy. Hard cases get named slice gates of their own.
-- **Practical plumbing.** It replays the request exactly as stored, enforces a budget guard, keeps results resumable, uses a cache-aware pricing table, and has a stratified sampler that builds golden sets from production logs without losing the rare cases.
+- **Cost is part of the verdict.** Every reply is priced from the provider's own published prices where one exists (live AWS Price List for Bedrock, by region and inference tier). The report shows cost per row against the incumbent and, given your traffic, dollars per month. `[ci] max_cost_ratio` fails a change that costs too much, and a reply with no known price fails it too instead of reading as free.
+- **Practical plumbing.** It replays the request exactly as stored, enforces a budget guard, keeps results resumable, and has a stratified sampler that builds golden sets from production logs without losing the rare cases.
 
 ## Quickstart
 
@@ -43,7 +44,7 @@ The example ([`examples/catalog_cleanup`](examples/catalog_cleanup/README.md)) i
 
 - The baseline's noise floor is 1 flip in 80 rows.
 - A cheaper model sends 19 auto-published records to review, mostly rare product families. Its cost-weighted regression is 0.300, which is 0.263 [0.163, 0.362] above the baseline's own noise (paired), so the gate fails.
-- The same cheap model with thinking on is non-inferior overall (paired excess 0.013 [-0.087, 0.087]) at about half the baseline's cost. CI still blocks it, because on test it loses one record in the `rare_code` must-not-lose slice that the current model handles.
+- The same cheap model with thinking on is non-inferior overall (paired excess 0.013 [-0.087, 0.087]), but it is not cheaper: its thinking tokens bring it to 1.04x the baseline's cost per row (+$87/month at 20,000 calls a day). CI still blocks it, because on test it loses one record in the `rare_code` must-not-lose slice that the current model handles.
 - Calibration picks the auto-publish threshold on the validation split: 0.70, at 95.2% precision on 28 reviewer-labelled rows. On test the same threshold gives 85.7% precision on reviewer labels, plus 75.0% *teacher agreement* on the LLM-labelled rows, reported separately.
 
 Every number comes from the simulation, not from a real system. [`caliper.real.toml`](examples/catalog_cleanup/caliper.real.toml) runs the same golden set on Claude models and an OpenAI-compatible endpoint when you have keys.
@@ -94,7 +95,7 @@ steps:
       GH_TOKEN: ${{ github.token }}
 ```
 
-`--ci` exits 1 when any candidate's paired excess over the noise floor can exceed `[ci].max_regression` (upper bound of its 95% CI, by default), fails a named slice, errors more than `[ci].max_error_rate`, was answered by a different model than requested, or touches the test split again without `--allow-test-retouch`. `budget_usd` caps what one run can spend. A stopped run resumes from `results.jsonl`.
+`--ci` exits 1 when any candidate's paired excess over the noise floor can exceed `[ci].max_regression` (upper bound of its 95% CI, by default), fails a named slice, costs more than `[ci].max_cost_ratio` times the reference per row (or has no known price), errors more than `[ci].max_error_rate`, was answered by a different model than requested, or touches the test split again without `--allow-test-retouch`. `budget_usd` caps what one run can spend. A stopped run resumes from `results.jsonl`.
 
 ## Label your data: `caliper label`
 

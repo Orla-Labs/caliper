@@ -128,7 +128,7 @@ class FakeProvider(Provider):
             served_by=self._served(candidate, served_model),
             usage=usage,
             latency_ms=latency,
-            cost_usd=self.cost(usage, served_model),
+            cost_usd=self.cost(usage, candidate, served_model),
             error=error,
         )
 

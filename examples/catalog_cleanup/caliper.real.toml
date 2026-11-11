@@ -11,9 +11,9 @@
 # (for example a thinking setting a model does not accept) fails in seconds,
 # before the golden set is spent.
 #
-# Model IDs checked 2026-11-06. Prices change: re-check before trusting the
-# dollar column. Bedrock is priced approximately (first-party list price, with
-# a warning in the report).
+# Model IDs checked 2026-11-06. Bedrock candidates are priced live from the AWS
+# Price List for their region and tier; Anthropic-direct ones from Caliper's
+# dated list-price table (Anthropic has no pricing API), with a warning.
 
 golden = "golden.jsonl"
 decide = "decide.py:decide"
@@ -65,19 +65,31 @@ params = { api_key_env = "OPENAI_COMPAT_API_KEY" }
 replies_per_row = 3
 
 # Anthropic models on Amazon Bedrock (uncomment; uses your AWS credentials).
+# The global. prefix is global cross-region inference, priced at AWS's global
+# rate; us. / bare IDs get the regional rate (+10%).
 # [[candidates]]
 # name = "baseline-bedrock"
 # provider = "bedrock"
 # region = "us-east-1"
-# model = "anthropic.claude-sonnet-5-5"
+# model = "global.anthropic.claude-sonnet-5-5"
 # thinking = "on"
 # params = { effort = "low", max_tokens = 4000 }
 # replies_per_row = 3
 
-# Anthropic models are priced from Caliper's built-in, cache-aware table
-# (copied from https://platform.claude.com/docs/en/about-claude/pricing on
-# 2026-11-06). Override any model with a [pricing."<model>"] table like the one
-# below. Models with no known price cost $0 and the report flags them.
+# Any Bedrock model through the Converse API, e.g. Amazon Nova 2 Lite with
+# reasoning (needs caliper-eval[bedrock-converse]). Reasoning is the model's own
+# field; its tokens are billed as output.
+# [[candidates]]
+# name = "nova-lite-reasoning"
+# provider = "bedrock_converse"
+# region = "us-east-1"
+# model = "global.amazon.nova-2-lite-v1:0"
+# params = { max_tokens = 4000, additionalModelRequestFields = { reasoningConfig = { type = "enabled", maxReasoningEffort = "low" } } }
+# replies_per_row = 3
+
+# Override any price with a [pricing."<model>"] table like the one below. A
+# model with no known price (or a zero price) shows as "unpriced" and fails the
+# gate under [ci] max_cost_ratio.
 
 [pricing."your-open-weight-model"]   # your own hosting cost, if you want a dollar column
 input = 0.0
@@ -93,6 +105,7 @@ source = "self-hosted placeholder"
 
 [ci]
 max_regression = 0.10    # paired excess upper bound; see caliper.toml for why 0.10 on 80 rows
+# max_cost_ratio = 1.25  # fail a candidate above 1.25x the baseline's cost per row
 
 [operating_point]
 auto_outcomes = ["auto_publish"]

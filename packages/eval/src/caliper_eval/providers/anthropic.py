@@ -249,7 +249,7 @@ class AnthropicProvider(Provider):
         except Exception as exc:
             return Reply(error=error_text(exc))
         reply = parse_response(_to_dict(message), candidate, self.kind, endpoint)
-        served = reply.served_by.model if reply.served_by else candidate.model
+        served = reply.served_by.model if reply.served_by else None
         return reply.model_copy(
-            update={"latency_ms": latency, "cost_usd": self.cost(reply.usage, served or "")}
+            update={"latency_ms": latency, "cost_usd": self.cost(reply.usage, candidate, served)}
         )

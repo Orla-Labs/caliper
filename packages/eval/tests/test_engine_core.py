@@ -9,7 +9,7 @@ from caliper_eval.config import load_config
 from caliper_eval.loader import load_callable, load_golden
 from caliper_eval.preflight import PreflightError, require_preflight, run_preflight
 from caliper_eval.pricing import (
-    PRICES,
+    ANTHROPIC_LIST_PRICES,
     cost_usd,
     lookup_price,
     price_for,
@@ -191,8 +191,8 @@ def test_budget():
 
 
 def test_pricing_table_is_sourced():
-    assert PRICES["claude-opus-5-5"].input == 4.0
-    for price in PRICES.values():
+    assert ANTHROPIC_LIST_PRICES["claude-opus-5-5"].input == 4.0
+    for price in ANTHROPIC_LIST_PRICES.values():
         assert price.source and "platform.claude.com" in price.source
         assert price.cache_read is not None and price.cache_write is not None
 
@@ -215,8 +215,9 @@ def test_price_lookup_overrides_bedrock_and_unknown():
     override = {"claude-opus-5-5": Price(input=1.0, output=1.0)}
     assert price_for("claude-opus-5-5", override).input == 1.0
     assert price_for("claude-opus-5-5").input == 4.0
+    # no region and no live AWS price: falls back to the list price, flagged
     bedrock = lookup_price("anthropic.claude-opus-5-5", provider=ProviderKind.BEDROCK)
-    assert bedrock.price.input == 4.0 and "Bedrock" in bedrock.warning
+    assert bedrock.price.input == 4.0 and "Bedrock may differ" in bedrock.warning
     assert lookup_price("us.anthropic.claude-sonnet-5-5").price.input == 2.0
     unknown = lookup_price("gpt-something")
     assert unknown.price is None and "$0" in unknown.warning
@@ -224,7 +225,9 @@ def test_price_lookup_overrides_bedrock_and_unknown():
         Candidate(name="a", provider="anthropic", model="claude-opus-5-5"),
         Candidate(name="b", provider="openai_compat", model="vendor-model"),
     ]
-    assert set(pricing_warnings(cands)) == {"b"}
+    warnings = pricing_warnings(cands)
+    assert set(warnings) == {"a", "b"}
+    assert "no pricing API" in warnings["a"] and "$0" in warnings["b"]
 
 
 # --------------------------------------------------------------------------- fake provider

@@ -190,5 +190,5 @@ class OpenAICompatProvider(Provider):
         reply = parse_response(data, candidate, base_url)
         served = (reply.served_by.model if reply.served_by else "") or candidate.model
         return reply.model_copy(
-            update={"latency_ms": latency, "cost_usd": self.cost(reply.usage, served)}
+            update={"latency_ms": latency, "cost_usd": self.cost(reply.usage, candidate, served)}
         )

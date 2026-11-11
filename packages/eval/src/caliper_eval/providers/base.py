@@ -1,4 +1,5 @@
-"""Provider interface shared by fake, Anthropic (direct + Bedrock) and OpenAI-compatible.
+"""Provider interface shared by fake, Anthropic (direct + Bedrock), Bedrock Converse and
+OpenAI-compatible.
 
 Rules every provider follows:
 
@@ -117,8 +118,12 @@ class Provider(ABC):
 
     # helpers ---------------------------------------------------------------
 
-    def cost(self, usage: Usage, model: str) -> float:
-        return cost_usd(usage, lookup_price(model, self.pricing, provider=self.kind).price)
+    def cost(self, usage: Usage, candidate: Candidate, served: str | None = None) -> float:
+        """Dollars for one reply. Priced as the requested model (whose ID carries the
+        Bedrock tier) unless the response names a different model."""
+        model = candidate.model if not served or models_match(candidate.model, served) else served
+        found = lookup_price(model, self.pricing, provider=self.kind, region=candidate.region)
+        return cost_usd(usage, found.price)
 
 
 def preflight_from_response(candidate: Candidate, reply: Reply) -> PreflightResult:

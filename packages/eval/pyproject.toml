@@ -15,6 +15,8 @@ dependencies = [
 # AnthropicBedrockMantle verified present in anthropic 2.6.0 (2026-11-06).
 anthropic = ["anthropic>=2.6,<3"]
 bedrock = ["anthropic[bedrock]>=2.6,<3"]
+# Converse API: any Bedrock model (Nova, Llama, ...). Shapes checked against botocore 1.44.0.
+bedrock-converse = ["boto3>=1.40"]
 
 [project.scripts]
 caliper = "caliper_eval.cli:main"

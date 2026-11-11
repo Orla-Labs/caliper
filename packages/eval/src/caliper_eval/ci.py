@@ -26,7 +26,10 @@ A candidate fails when any of these holds:
 6. **slices**: any ``[[slices]]`` rule fails for it (one reason per slice);
 7. **test re-touch**: under ``--ci`` the test split was already reported for
    these candidate settings and this test set (see :mod:`caliper_eval.ledger`),
-   unless ``--allow-test-retouch``.
+   unless ``--allow-test-retouch``;
+8. **cost** (only with ``[ci] max_cost_ratio``): its cost per execution is
+   above ``max_cost_ratio`` x the reference's, or either side has replies
+   priced at $0 (an unknown price must not pass as free).
 
 Rules 2-5 also apply to the reference. Exit code 0 = pass, 1 = fail.
 """
@@ -38,7 +41,7 @@ from collections.abc import Mapping
 from pydantic import BaseModel, ConfigDict, Field
 
 from .config import GateRequirement
-from .report import EvalReport
+from .report import CandidateReport, EvalReport
 
 EXIT_PASS = 0
 EXIT_FAIL = 1
@@ -60,6 +63,7 @@ class GateResult(BaseModel):
     max_regression: float
     max_error_rate: float
     require: str
+    max_cost_ratio: float | None = None
     candidates: list[CandidateGate] = Field(default_factory=list)
 
     @property
@@ -115,6 +119,8 @@ def evaluate_gate(
         for r in c.slices:
             if not r.passed:
                 reasons.append(f"slice {r.slice} ({r.rule}): {r.detail}")
+        if report.max_cost_ratio is not None and not c.is_reference:
+            reasons += _cost_reasons(report, c, report.max_cost_ratio)
         if retouched and c.name in retouched:
             n = retouched[c.name]
             reasons.append(
@@ -129,8 +135,34 @@ def evaluate_gate(
         max_regression=max_reg,
         max_error_rate=max_error_rate,
         require=require.value,
+        max_cost_ratio=report.max_cost_ratio,
         candidates=gates,
     )
+
+
+def _cost_reasons(report: EvalReport, c: CandidateReport, limit: float) -> list[str]:
+    """Why ``c`` fails ``[ci] max_cost_ratio``, or nothing when it passes."""
+    ref = report.candidate(report.reference)
+    if c.unpriced_replies:
+        return [
+            f"cost unknown: {c.unpriced_replies} replies priced at $0 for {c.model} "
+            "(no price found); add [pricing] or fix the price source"
+        ]
+    if ref.unpriced_replies or not ref.cost_per_row:
+        return [
+            f"cost ratio unknown: the reference {ref.name} ({ref.model}) has no price; "
+            "add [pricing] or fix the price source"
+        ]
+    if c.cost_vs_reference is None or c.cost_vs_reference <= limit:
+        return []
+    assert c.cost_per_row is not None
+    monthly = ""
+    if c.monthly_delta_usd is not None:
+        monthly = f"; {'+' if c.monthly_delta_usd >= 0 else '-'}${abs(c.monthly_delta_usd):,.2f}/mo"
+    return [
+        f"cost {c.cost_vs_reference:.2f}x the reference > allowed {limit:g}x "
+        f"(${c.cost_per_row:.6f} vs ${ref.cost_per_row:.6f} per row{monthly})"
+    ]
 
 
 __all__ = ["EXIT_FAIL", "EXIT_PASS", "CandidateGate", "GateResult", "evaluate_gate"]

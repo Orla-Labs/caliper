@@ -65,6 +65,14 @@ source = "fictional price for the fake provider"
 # extra review per ten records). A tighter allowance needs a bigger golden set.
 max_regression = 0.10
 require = "non_inferiority"
+# Cost per row (per execution, so the baseline's noise replays are not counted
+# twice) may be at most 1.25x the baseline's. A candidate with replies priced
+# at $0 fails too: an unknown price must not pass as free.
+max_cost_ratio = 1.25
+
+# Production volume, to show what each candidate would cost per month.
+[cost_projection]
+calls_per_day = 20000
 
 # Matched operating point: what counts as "handled without a person". The
 # candidate's score threshold is set on val so it auto-publishes the same share

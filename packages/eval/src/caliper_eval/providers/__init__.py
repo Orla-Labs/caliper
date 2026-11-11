@@ -32,6 +32,10 @@ def get_provider(
         from caliper_eval.providers.anthropic import AnthropicProvider
 
         return AnthropicProvider(kind=kind, base_dir=base_dir, pricing=pricing)
+    if kind == ProviderKind.BEDROCK_CONVERSE:
+        from caliper_eval.providers.bedrock_converse import BedrockConverseProvider
+
+        return BedrockConverseProvider(base_dir=base_dir, pricing=pricing)
     if kind == ProviderKind.OPENAI_COMPAT:
         from caliper_eval.providers.openai_compat import OpenAICompatProvider
 

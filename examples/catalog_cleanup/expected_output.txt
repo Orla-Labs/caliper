@@ -33,11 +33,13 @@ labels (80 rows): internal_reviewer 63 (human truth), llm_teacher 13 (teacher ag
 splits: test 40, val 40; thresholds picked on val, reported on test
 noise floor (baseline x2, 80 rows): flip 1.2%, cost-weighted 0.037 [0.000, 0.113]
 
-candidate       rows  errors  tokens in/out/cache  p50/p95 ms  cost $  who answered  flips  regression [95% CI]   excess vs noise (paired)  gate
---------------  ----  ------  -------------------  ----------  ------  ------------  -----  --------------------  ------------------------  ----
-baseline (ref)  80    0p/0d   118944/16663/0       501/944     0.6068  fake-large    -      -                     -                         PASS
-small           80    0p/0d   59472/8070/0         485/940     0.0799  fake-small    20/80  0.300 [0.175, 0.463]  0.263 [0.163, 0.362]      FAIL
-small-thinking  80    0p/0d   59472/66844/0        485/940     0.3150  fake-small    4/80   0.050 [0.013, 0.113]  0.013 [-0.087, 0.087]     FAIL
+candidate       rows  errors  tokens in/out/cache  p50/p95 ms  cost $  $/row (x ref)     who answered  flips  regression [95% CI]   excess vs noise (paired)  gate
+--------------  ----  ------  -------------------  ----------  ------  ----------------  ------------  -----  --------------------  ------------------------  ----
+baseline (ref)  80    0p/0d   118944/16663/0       501/944     0.6068  0.003792 (ref)    fake-large    -      -                     -                         PASS
+small           80    0p/0d   59472/8070/0         485/940     0.0799  0.000998 (0.26x)  fake-small    20/80  0.300 [0.175, 0.463]  0.263 [0.163, 0.362]      FAIL
+small-thinking  80    0p/0d   59472/66844/0        485/940     0.3150  0.003937 (1.04x)  fake-small    4/80   0.050 [0.013, 0.113]  0.013 [-0.087, 0.087]     FAIL
+
+cost projection (20,000 calls/day x 30 days): baseline $2,275.41/mo; small $598.93/mo (-$1,676.48 vs ref); small-thinking $2,362.15/mo (+$86.74 vs ref)
 
 transitions baseline -> small:
   auto_publish -> auto_publish    45
@@ -93,7 +95,7 @@ calibration small-thinking (sweep on val: 28 rows labelled by internal_reviewer;
                    llm_teacher (4): teacher agreement 100.0%, coverage 75.0%, approved->review 0.0%, kappa 1.000
                    unknown (1): agreement (unknown source) 100.0%, coverage 100.0%, approved->review 0.0%, kappa -
 
-CI gate: FAIL (pass when paired excess upper bound <= 0.1)
+CI gate: FAIL (pass when paired excess upper bound <= 0.1 and cost <= 1.25x the reference)
   small: paired excess regression 0.263 [0.163, 0.362]: upper bound 0.362 > allowed 0.100 (regression 0.300 - noise 0.037; 20 rows flipped)
   small: slice rare_code (must_not_lose): 7 human-labelled rows on test: baseline loses 0, small loses 4; 4 lost vs baseline: lst-0032, lst-0053, lst-0132, lst-0240
   small: slice lookalike (max_regression): paired excess 0.500 [0.125, 0.875], upper bound 0.875 > 0.500; flipped lst-0013, lst-0035, lst-0193, lst-0227
@@ -114,11 +116,13 @@ summary: build/catalog-eval/summary.md
 
 labels (80 rows): internal_reviewer 63 (human truth), llm_teacher 13 (teacher agreement only), unknown 4 (source not recorded); splits: test 40, val 40; thresholds picked on val, reported on test
 
-| candidate | rows | errors | cost $ | p95 ms | who answered | flips | regression [95% CI] | excess vs noise (paired) | gate |
-|---|---:|---:|---:|---:|---|---:|---|---|---|
-| `baseline` (ref) | 80 | 0p/0d | 0.6068 | 944 | fake-large | - | - | - | PASS |
-| `small` | 80 | 0p/0d | 0.0799 | 940 | fake-small | 20/80 | 0.300 [0.175, 0.463] | 0.263 [0.163, 0.362] | FAIL |
-| `small-thinking` | 80 | 0p/0d | 0.3150 | 940 | fake-small | 4/80 | 0.050 [0.013, 0.113] | 0.013 [-0.087, 0.087] | FAIL |
+| candidate | rows | errors | cost $ | $/row (x ref) | p95 ms | who answered | flips | regression [95% CI] | excess vs noise (paired) | gate |
+|---|---:|---:|---:|---:|---:|---|---:|---|---|---|
+| `baseline` (ref) | 80 | 0p/0d | 0.6068 | 0.003792 (ref) | 944 | fake-large | - | - | - | PASS |
+| `small` | 80 | 0p/0d | 0.0799 | 0.000998 (0.26x) | 940 | fake-small | 20/80 | 0.300 [0.175, 0.463] | 0.263 [0.163, 0.362] | FAIL |
+| `small-thinking` | 80 | 0p/0d | 0.3150 | 0.003937 (1.04x) | 940 | fake-small | 4/80 | 0.050 [0.013, 0.113] | 0.013 [-0.087, 0.087] | FAIL |
+
+Cost projection (20,000 calls/day x 30 days): baseline $2,275.41/mo; small $598.93/mo (-$1,676.48 vs ref); small-thinking $2,362.15/mo (+$86.74 vs ref).
 
 **Changed outcomes vs reference**
 
@@ -141,7 +145,7 @@ labels (80 rows): internal_reviewer 63 (human truth), llm_teacher 13 (teacher ag
 - `small`: 28 rows on val (precision), ECE 0.184; picked 0.70; on test: precision 78.3% (internal_reviewer, 35), teacher agreement 66.7% (llm_teacher, 4), agreement (unknown source) 100.0% (unknown, 1)
 - `small-thinking`: 28 rows on val (precision), ECE 0.136; picked 0.75; on test: precision 88.0% (internal_reviewer, 35), teacher agreement 100.0% (llm_teacher, 4), agreement (unknown source) 100.0% (unknown, 1)
 
-**Gate failures** (pass when paired excess upper bound <= 0.1)
+**Gate failures** (pass when paired excess upper bound <= 0.1 and cost <= 1.25x the reference)
 
 - `small`: paired excess regression 0.263 [0.163, 0.362]: upper bound 0.362 > allowed 0.100 (regression 0.300 - noise 0.037; 20 rows flipped)
 - `small`: slice rare_code (must_not_lose): 7 human-labelled rows on test: baseline loses 0, small loses 4; 4 lost vs baseline: lst-0032, lst-0053, lst-0132, lst-0240

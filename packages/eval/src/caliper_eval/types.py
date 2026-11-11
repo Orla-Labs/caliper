@@ -123,7 +123,8 @@ class LabelRecord(BaseModel):
 class ProviderKind(StrEnum):
     FAKE = "fake"
     ANTHROPIC = "anthropic"  # Anthropic API direct
-    BEDROCK = "bedrock"  # Anthropic models on Amazon Bedrock
+    BEDROCK = "bedrock"  # Anthropic models on Amazon Bedrock (Messages API, Mantle)
+    BEDROCK_CONVERSE = "bedrock_converse"  # any Bedrock model via the Converse API (Nova, ...)
     OPENAI_COMPAT = "openai_compat"  # any OpenAI-compatible chat-completions endpoint
 
 
@@ -153,7 +154,7 @@ class Candidate(BaseModel):
     replies_per_row: int = Field(default=1, ge=1)  # >1 for vote loops
     params: dict[str, Any] = Field(default_factory=dict)  # temperature etc.
     base_url: str | None = None  # openai_compat
-    region: str | None = None  # bedrock
+    region: str | None = None  # bedrock, bedrock_converse
     fake_script: str | None = None  # fake: "path/to/file.py:func"
 
 

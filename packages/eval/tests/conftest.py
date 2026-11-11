@@ -112,6 +112,20 @@ def golden_rows(n: int = 6) -> list[dict]:
     return rows
 
 
+@pytest.fixture(autouse=True)
+def _no_live_pricing(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch):
+    """Tests never reach AWS: no region, offline pricing, an empty cache, no memo."""
+    from caliper_eval import pricing
+
+    monkeypatch.setenv("CALIPER_PRICING_OFFLINE", "1")
+    monkeypatch.setenv("CALIPER_CACHE_DIR", str(tmp_path_factory.mktemp("caliper-cache")))
+    monkeypatch.delenv("AWS_REGION", raising=False)
+    monkeypatch.delenv("AWS_DEFAULT_REGION", raising=False)
+    pricing._bedrock_cache.clear()
+    yield
+    pricing._bedrock_cache.clear()
+
+
 @pytest.fixture
 def project(tmp_path: Path) -> Path:
     (tmp_path / "fake_models.py").write_text(FAKE_MODELS)

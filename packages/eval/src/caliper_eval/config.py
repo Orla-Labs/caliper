@@ -42,6 +42,23 @@ class CIConfig(BaseModel):
 
     max_regression: float = 0.0
     require: GateRequirement = GateRequirement.NON_INFERIORITY
+    # Fail a candidate whose mean cost per execution is above this multiple of the
+    # reference's (1.0 = "no more expensive"). A candidate or reference with replies
+    # priced at $0 fails too: an unknown price must not read as free.
+    max_cost_ratio: float | None = Field(default=None, gt=0)
+
+
+class CostProjectionConfig(BaseModel):
+    """Production volume, to turn cost per row into dollars per month (``[cost_projection]``).
+
+    ``calls_per_day`` counts feature calls, i.e. golden-row equivalents (a vote
+    loop's 3 replies are one call).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    calls_per_day: float = Field(gt=0)
+    days_per_month: float = Field(default=30.0, gt=0)
 
 
 class OperatingPointConfig(BaseModel):
@@ -121,6 +138,7 @@ class EvalConfig(BaseModel):
     ci: CIConfig = Field(default_factory=CIConfig)
     calibration: CalibrationConfig = Field(default_factory=CalibrationConfig)
     operating_point: OperatingPointConfig | None = None
+    cost_projection: CostProjectionConfig | None = None
     slices: list[SliceConfig] = Field(default_factory=list)
     config_dir: Path = Field(default=Path("."), exclude=True)
 

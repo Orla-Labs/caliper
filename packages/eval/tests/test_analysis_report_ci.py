@@ -182,14 +182,15 @@ elow are agreement, not precision. Label a human-truth slice (label_source inter
 er / human_end_user).; splits: none; thresholds picked and reported on the same rows (opti\
 mistic)
 
-| candidate | rows | errors | cost $ | p95 ms | who answered | flips | regression [95% CI]\
- | excess vs noise (paired) | gate |
-|---|---:|---:|---:|---:|---|---:|---|---|---|
-| `baseline` (ref) | 30 | 0p/0d | 0.0120 | 148 | fake-large | - | - | - | PASS |
-| `small` | 30 | 0p/0d | 0.0060 | 148 | fake-small | 10/30 | 0.667 [0.333, 1.000] | 0.617 \
-[0.300, 0.901] | FAIL |
-| `swapped` | 30 | 1p/1d | 0.0060 | 148 | fake-medium,fake-other (MISMATCH x2) | 0/29 | 0.\
-000 [0.000, 0.000] | -0.052 [-0.155, 0.000] | FAIL |
+| candidate | rows | errors | cost $ | $/row (x ref) | p95 ms | who answered | flips | reg\
+ression [95% CI] | excess vs noise (paired) | gate |
+|---|---:|---:|---:|---:|---:|---|---:|---|---|---|
+| `baseline` (ref) | 30 | 0p/0d | 0.0120 | 0.000200 (ref) | 148 | fake-large | - | - | - |\
+ PASS |
+| `small` | 30 | 0p/0d | 0.0060 | 0.000200 (1.00x) | 148 | fake-small | 10/30 | 0.667 [0.3\
+33, 1.000] | 0.617 [0.300, 0.901] | FAIL |
+| `swapped` | 30 | 1p/1d | 0.0060 | 0.000200 (1.00x) | 148 | fake-medium,fake-other (MISMA\
+TCH x2) | 0/29 | 0.000 [0.000, 0.000] | -0.052 [-0.155, 0.000] | FAIL |
 
 **Changed outcomes vs reference**
 
@@ -229,16 +230,21 @@ ruth slice (label_source internal_reviewer / human_end_user).
 splits: none; thresholds picked and reported on the same rows (optimistic)
 noise floor (baseline x2, 30 rows): flip 3.3%, cost-weighted 0.050 [0.000, 0.150]
 
-candidate       rows  errors  tokens in/out/cache  p50/p95 ms  cost $  who answered       \
-                   flips  regression [95% CI]   excess vs noise (paired)  gate
---------------  ----  ------  -------------------  ----------  ------  -------------------\
------------------  -----  --------------------  ------------------------  ----
-baseline (ref)  30    0p/0d   6000/600/3000        125/148     0.0120  fake-large         \
-                   -      -                     -                         PASS
-small           30    0p/0d   3000/300/1500        125/148     0.0060  fake-small         \
-                   10/30  0.667 [0.333, 1.000]  0.617 [0.300, 0.901]      FAIL
-swapped         30    1p/1d   3000/300/1500        125/148     0.0060  fake-medium,fake-ot\
-her (MISMATCH x2)  0/29   0.000 [0.000, 0.000]  -0.052 [-0.155, 0.000]    FAIL
+candidate       rows  errors  tokens in/out/cache  p50/p95 ms  cost $  $/row (x ref)     w\
+ho answered                          flips  regression [95% CI]   excess vs noise (paired)\
+  gate
+--------------  ----  ------  -------------------  ----------  ------  ----------------  -\
+-----------------------------------  -----  --------------------  ------------------------\
+  ----
+baseline (ref)  30    0p/0d   6000/600/3000        125/148     0.0120  0.000200 (ref)    f\
+ake-large                            -      -                     -                       \
+  PASS
+small           30    0p/0d   3000/300/1500        125/148     0.0060  0.000200 (1.00x)  f\
+ake-small                            10/30  0.667 [0.333, 1.000]  0.617 [0.300, 0.901]    \
+  FAIL
+swapped         30    1p/1d   3000/300/1500        125/148     0.0060  0.000200 (1.00x)  f\
+ake-medium,fake-other (MISMATCH x2)  0/29   0.000 [0.000, 0.000]  -0.052 [-0.155, 0.000]  \
+  FAIL
 
 transitions baseline -> small:
           high -> high            10

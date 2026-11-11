@@ -121,7 +121,7 @@ A candidate is the whole request shape, not just a model name:
 
 | field | meaning |
 | --- | --- |
-| `provider` | `fake`, `anthropic` (direct), `bedrock` (Anthropic models on Amazon Bedrock), `openai_compat` (any chat-completions endpoint) |
+| `provider` | `fake`, `anthropic` (direct), `bedrock` (Anthropic models on Amazon Bedrock, Messages API), `bedrock_converse` (any Bedrock model through the Converse API: Nova, Llama, Claude, ...), `openai_compat` (any chat-completions endpoint) |
 | `model` | model ID as the provider names it |
 | `thinking` | `off` (default) or `on` |
 | `output_mode` | `text` (default), `json_schema` (provider-native structured output against `output_schema`), `tool` (one forced tool call whose input is the output) |
@@ -147,6 +147,27 @@ On `openai_compat`, `thinking = "on"` is rejected locally. Put the vendor's own
 knob (`reasoning_effort`, ...) in `params`. The API key comes from the
 environment variable named by `params.api_key_env` (default `OPENAI_API_KEY`).
 No server-side fallback is ever enabled.
+
+On `bedrock_converse` (install `caliper-eval[bedrock-converse]`; AWS credentials
+from the usual boto3 chain):
+
+- `model` is a base model ID or an inference profile ID
+  (`global.amazon.nova-2-lite-v1:0`). The prefix also picks the price tier.
+- `max_tokens`, `temperature`, `top_p` and `stop_sequences` (from the golden
+  request or `params`) go to `inferenceConfig`. Other `params` keys must be
+  Converse body fields (`additionalModelRequestFields`, `inferenceConfig`,
+  `outputConfig`, `serviceTier`, ...) and are merged in as given. Anything else
+  is an error.
+- Thinking has no portable Converse switch, so `thinking = "on"` is rejected
+  locally. Put the model's own field under `additionalModelRequestFields`.
+  Nova 2 Lite with reasoning:
+  `params = { additionalModelRequestFields = { reasoningConfig = { type = "enabled", maxReasoningEffort = "low" } } }`.
+  Reasoning tokens are billed as output tokens.
+- `json_schema` maps to `outputConfig.textFormat`; `tool` to a forced
+  `toolConfig.toolChoice`.
+- The Converse response does not say which model served it, so "who answered"
+  shows `unknown` for these candidates and preflight cannot catch a
+  substitution. It still catches a rejected shape.
 
 ### Preflight and who answered
 
@@ -185,19 +206,59 @@ the CI gate.
   and CI edits keep the same run ID. There are no timestamps
   anywhere, so fake-provider output is byte-identical across runs and machines.
 
-### Pricing caveats
+### Where prices come from
 
-Costs come from a cache-aware table in USD per million tokens. Input, output,
-cache read and cache write are priced separately.
+Every reply is priced in USD per million tokens, with input, output, cache read
+and cache write priced separately. Caliper takes the price from the provider
+whenever the provider publishes one, in this order:
 
-- Anthropic first-party models are built in, copied from the
-  [pricing page](https://platform.claude.com/docs/en/about-claude/pricing) on
-  2026-11-06. Prices change, so check before trusting the dollar column.
-- `[pricing."<model>"]` in the config overrides or adds a model.
-- Bedrock model IDs are priced at the first-party list price as an approximation,
-  with a warning. Bedrock sets its own prices.
-- No OpenAI-compatible prices are built in. Add your own. For those endpoints,
-  cached prompt tokens are subtracted from input and billed as cache reads.
+1. `[pricing."<model>"]` in the config always wins.
+2. **Amazon Bedrock** (`bedrock`, `bedrock_converse`): the live
+   [AWS Price List](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/price-changes.html)
+   offer files (`AmazonBedrock` and `AmazonBedrockFoundationModels`), which
+   are public and need no credentials. The price is for the candidate's
+   `region` (or `AWS_REGION`) and the tier its model ID implies: `global.`
+   gets the global price, `us.`/`eu.`/... and bare IDs the regional one
+   (+10%). Batch, flex, priority and 1-hour cache-write rates are not used.
+   The price list names models by display name, which Caliper reads from
+   Bedrock's `GetFoundationModel` (so it needs `bedrock:GetFoundationModel`).
+   A model it cannot match exactly gets no price, never a nearest match.
+   Files are cached for 24 hours under `~/.cache/caliper` (or
+   `$CALIPER_CACHE_DIR`); `CALIPER_PRICING_OFFLINE=1` reads only the cache.
+   Models with higher long-context rates (Claude Haiku 5.5 above its prompt
+   threshold) get a warning: replies with very large prompts cost more than
+   reported.
+3. **Anthropic API direct** (`anthropic`): Anthropic publishes no pricing API
+   (the Models API returns capabilities, not prices). These are priced from a
+   built-in table copied from the
+   [pricing page](https://platform.claude.com/docs/en/about-claude/pricing) on
+   2026-11-06, and every report that uses it says so in a warning. A Bedrock
+   Claude candidate whose live lookup fails falls back to the same table, with
+   a warning.
+4. **Anything else** (`openai_compat`, `fake`): no price source. Add
+   `[pricing]`. For OpenAI-compatible endpoints, cached prompt tokens are
+   subtracted from input and billed as cache reads.
+
+An unknown price costs $0 in the dollar column and is flagged in the report,
+the `$/row` column shows `unpriced`, and under `[ci] max_cost_ratio` it fails
+the gate.
+
+### Cost per row, the cost gate, and the monthly projection
+
+The report's **`$/row (x ref)`** column is each candidate's dollars divided by
+its (row, replica) executions, next to its ratio to the reference. The
+reference is replayed `noise_replays` times, so its raw dollar total is
+inflated by those replays; cost per row divides them out. A vote loop's extra
+replies stay in, because production pays for them.
+
+- `[ci] max_cost_ratio = 1.25` fails any candidate whose cost per row is above
+  1.25x the reference's. A candidate or reference with replies that used
+  tokens but cost $0 fails too, with "cost unknown".
+- `[cost_projection] calls_per_day = 20000` (and optional
+  `days_per_month = 30`) adds a line with each candidate's projected monthly
+  cost and its difference from the reference, in the terminal output and the
+  PR summary. `calls_per_day` counts feature calls (golden-row equivalents), not
+  replies.
 - A model with no known price costs $0 and is flagged in the report.
 
 Dollars and tokens include every replica, so the reference's noise replays are
@@ -364,6 +425,8 @@ With `--ci`, the run exits 1 when any candidate fails. A candidate fails when:
   `regression.estimate > noise.high + max_regression`, which compared one
   candidate number with the upper end of a separate noise interval.
 - **slices**: any `[[slices]]` rule fails for it (one reason per slice);
+- **cost** (with `[ci].max_cost_ratio`): its cost per row is above that
+  multiple of the reference's, or either side has replies with no known price;
 - **test re-touch**: its test split was already reported with the same
   settings (see [the test ledger](#selection-hygiene-pick-on-val-report-on-test-touch-test-once)),
   unless `--allow-test-retouch`;
@@ -454,7 +517,7 @@ seed = 0                          # bootstrap seeds derive from this
 
 [[candidates]]                    # one or more
 name = "baseline"                 # unique
-provider = "fake"                 # fake | anthropic | bedrock | openai_compat
+provider = "fake"                 # fake | anthropic | bedrock | bedrock_converse | openai_compat
 model = "fake-large"
 thinking = "off"                  # off | on
 # thinking_budget_tokens = 2048   # older Anthropic models only
@@ -463,10 +526,10 @@ output_mode = "text"              # text | json_schema | tool
 replies_per_row = 3
 params = {}                       # e.g. { effort = "low", max_tokens = 4000 }
 # base_url = "..."                # openai_compat (and anthropic, to point at a proxy)
-# region = "us-east-1"            # bedrock
+# region = "us-east-1"            # bedrock, bedrock_converse (also picks the AWS price list)
 fake_script = "fake_models.py:respond"   # fake only
 
-[pricing."fake-large"]            # USD per million tokens; overrides the built-in table
+[pricing."fake-large"]            # USD per million tokens; overrides any provider price
 input = 3.0
 output = 15.0
 # cache_read = 0.3                # default: input
@@ -480,6 +543,11 @@ output = 15.0
 max_regression = 0.10             # allowed paired excess (regression - replay noise)
 require = "non_inferiority"       # or "no_evidence_of_regression" (see CI gate)
 max_error_rate = 0.0
+# max_cost_ratio = 1.25           # optional: fail above 1.25x the reference's cost per row
+
+# [cost_projection]               # optional: monthly cost per candidate in the report
+# calls_per_day = 20000           # feature calls a day (golden-row equivalents)
+# days_per_month = 30
 
 [calibration]
 thresholds = [0.5, 0.6, 0.7, 0.8, 0.9]

@@ -114,15 +114,20 @@ gate subtracts the baseline's own replay cost from the candidate's cost and
 bootstraps the difference. It passes a candidate only when the upper end of that
 95% interval is within `max_regression = 0.10`.
 
-| candidate | flips | regression [95% CI] | excess vs noise (paired) | cost $ (fake prices) | gate |
+| candidate | flips | regression [95% CI] | excess vs noise (paired) | $/row (x ref, fake prices) | gate |
 | --- | ---: | --- | --- | ---: | --- |
-| `baseline` (ref) | - | - | - | 0.6068 | PASS |
-| `small` | 20/80 | 0.300 [0.175, 0.463] | 0.263 [0.163, 0.362] | 0.0799 | **FAIL** |
-| `small-thinking` | 4/80 | 0.050 [0.013, 0.113] | 0.013 [-0.087, 0.087] | 0.3150 | **FAIL** (slice) |
+| `baseline` (ref) | - | - | - | 0.003792 | PASS |
+| `small` | 20/80 | 0.300 [0.175, 0.463] | 0.263 [0.163, 0.362] | 0.000998 (0.26x) | **FAIL** |
+| `small-thinking` | 4/80 | 0.050 [0.013, 0.113] | 0.013 [-0.087, 0.087] | 0.003937 (1.04x) | **FAIL** (slice) |
 
 `small` changes 20 outcomes, 19 of which are records that used to publish
 automatically and now need a person. `small-thinking` is non-inferior overall:
-its upper bound, 0.087, is within 0.10, at about half the baseline's cost. The
+its upper bound, 0.087, is within 0.10. It is not cheaper, though: the cheaper
+model's thinking tokens bring it to 1.04x the baseline's cost per row, about
++$87 a month at the 20,000 calls a day in `[cost_projection]`. (The run's raw
+dollars, 0.3150 vs 0.6068, look like half, but the baseline was replayed twice
+for the noise floor; cost per row divides that out.) `[ci] max_cost_ratio = 1.25`
+lets it through on cost. The
 allowance is 0.10 rather than 0.02 because on 80 rows the paired interval is
 about ±0.09 wide. A tighter allowance needs a bigger golden set.
 

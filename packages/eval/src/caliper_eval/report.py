@@ -11,7 +11,11 @@ Conventions (documented because the CI gate and the demo diff depend on them):
 * latency is **per reply** (a vote loop's 3 replies are 3 samples), p50/p95 by
   nearest rank;
 * dollars and tokens include every replica (the reference's replays cost
-  money too);
+  money too); ``cost_per_row`` is dollars per (row, replica) execution, so a
+  replayed reference is not counted twice, and a vote loop's replies all count;
+  ``cost_vs_reference`` divides it by the reference's. A non-error reply that
+  used tokens but cost $0 is ``unpriced`` (no price, or a zero price): the ratio is then
+  unknown and ``[ci] max_cost_ratio`` fails it;
 * ``paired_excess`` is the paired bootstrap CI of ``regression - replay
   noise`` per row (``caliper_eval.transitions.compute_paired_excess``); the
   CI gate reads its upper bound (``[ci].require = "non_inferiority"``) or its
@@ -74,6 +78,11 @@ class CandidateReport(BaseModel):
     latency_p50_ms: float
     latency_p95_ms: float
     dollars: float
+    cost_per_row: float | None = None  # dollars / results
+    cost_vs_reference: float | None = None  # cost_per_row / reference cost_per_row
+    unpriced_replies: int = 0  # non-error replies that used tokens but cost $0
+    monthly_cost_usd: float | None = None  # with [cost_projection]
+    monthly_delta_usd: float | None = None  # vs the reference, with [cost_projection]
     served_models: list[str] = Field(default_factory=list)  # "provider:model", sorted
     served_mismatches: int = 0  # replies with matches_request=False
     served_unknown: int = 0  # non-error replies with no served_by
@@ -95,6 +104,9 @@ class EvalReport(BaseModel):
     noise_replays: int
     max_regression: float
     require: str = GateRequirement.NON_INFERIORITY.value
+    max_cost_ratio: float | None = None
+    calls_per_day: float | None = None
+    days_per_month: float | None = None
     noise_floor: NoiseFloor | None
     provenance: ProvenanceSummary | None = None
     slices: list[SliceDef] = Field(default_factory=list)
@@ -131,10 +143,13 @@ def _candidate_report(
     latencies: list[float] = []
     dollars = 0.0
     served: set[str] = set()
-    mismatches = unknown = provider_errors = n_replies = 0
+    mismatches = unknown = provider_errors = n_replies = unpriced = 0
     for res in results:
         for rep in res.replies:
             n_replies += 1
+            used = rep.usage.input_tokens + rep.usage.output_tokens
+            if rep.error is None and rep.cost_usd == 0 and used > 0:
+                unpriced += 1
             tokens.input += rep.usage.input_tokens
             tokens.output += rep.usage.output_tokens
             tokens.cache_read += rep.usage.cache_read_tokens
@@ -168,6 +183,8 @@ def _candidate_report(
         latency_p50_ms=nearest_rank(latencies, 50),
         latency_p95_ms=nearest_rank(latencies, 95),
         dollars=dollars,
+        cost_per_row=dollars / len(results) if results else None,
+        unpriced_replies=unpriced,
         served_models=sorted(served),
         served_mismatches=mismatches,
         served_unknown=unknown,
@@ -280,6 +297,10 @@ def build_report(
             target_precision=target_precision,
         )
         reports.append(rep)
+    projection = _get(config, "cost_projection")
+    calls_per_day = _get(projection, "calls_per_day")
+    days = _get(projection, "days_per_month", default=30.0)
+    _cost_comparison(reports, calls_per_day, days)
     known = {c.name for c in config.candidates}
     for name in sorted(set(by_cand) - known):
         warnings.append(f"results for unknown candidate '{name}' ignored")
@@ -296,12 +317,35 @@ def build_report(
         noise_replays=int(_get(config, "noise_replays", default=0)),
         max_regression=max_regression,
         require=require.value,
+        max_cost_ratio=_get(config, "ci", "max_cost_ratio"),
+        calls_per_day=None if calls_per_day is None else float(calls_per_day),
+        days_per_month=None if calls_per_day is None else float(days),
         noise_floor=noise,
         provenance=prov,
         slices=slice_defs,
         candidates=reports,
         warnings=warnings,
     )
+
+
+def _cost_comparison(
+    reports: list[CandidateReport], calls_per_day: float | None, days: float
+) -> None:
+    """Fill each candidate's cost ratio and monthly projection against the reference."""
+    ref = next((r for r in reports if r.is_reference), None)
+    ref_cost = None
+    if ref is not None and not ref.unpriced_replies and ref.cost_per_row:
+        ref_cost = ref.cost_per_row
+    for r in reports:
+        priced = r.cost_per_row is not None and not r.unpriced_replies
+        if priced and ref_cost:
+            assert r.cost_per_row is not None
+            r.cost_vs_reference = r.cost_per_row / ref_cost
+        if calls_per_day is not None and priced:
+            assert r.cost_per_row is not None
+            r.monthly_cost_usd = r.cost_per_row * calls_per_day * days
+            if ref_cost:
+                r.monthly_delta_usd = r.monthly_cost_usd - ref_cost * calls_per_day * days
 
 
 # --------------------------------------------------------------------------- rendering
@@ -336,6 +380,41 @@ def _who(c: CandidateReport) -> str:
     if c.served_unknown:
         flags.append(f"unknown x{c.served_unknown}")
     return models + (f" ({'; '.join(flags)})" if flags else "")
+
+
+def _per_row(c: CandidateReport) -> str:
+    """``$/row (x ref)`` cell."""
+    if c.cost_per_row is None:
+        return "-"
+    if c.unpriced_replies:
+        return f"unpriced x{c.unpriced_replies}"
+    if c.is_reference:
+        return f"{c.cost_per_row:.6f} (ref)"
+    ratio = "?" if c.cost_vs_reference is None else f"{c.cost_vs_reference:.2f}x"
+    return f"{c.cost_per_row:.6f} ({ratio})"
+
+
+def _usd(x: float) -> str:
+    return f"${x:,.2f}"
+
+
+def _projection_line(report: EvalReport) -> str | None:
+    if report.calls_per_day is None:
+        return None
+    parts = []
+    for c in report.candidates:
+        if c.monthly_cost_usd is None:
+            parts.append(f"{c.name} unpriced")
+            continue
+        part = f"{c.name} {_usd(c.monthly_cost_usd)}/mo"
+        if not c.is_reference and c.monthly_delta_usd is not None:
+            sign = "+" if c.monthly_delta_usd >= 0 else "-"
+            part += f" ({sign}{_usd(abs(c.monthly_delta_usd))} vs ref)"
+        parts.append(part)
+    return (
+        f"cost projection ({report.calls_per_day:,.0f} calls/day x "
+        f"{report.days_per_month:g} days): " + "; ".join(parts)
+    )
 
 
 def _tok(t: Tokens) -> str:
@@ -489,6 +568,7 @@ def render_text(report: EvalReport, gate: Any = None) -> str:
         "tokens in/out/cache",
         "p50/p95 ms",
         "cost $",
+        "$/row (x ref)",
         "who answered",
         "flips",
         "regression [95% CI]",
@@ -506,6 +586,7 @@ def render_text(report: EvalReport, gate: Any = None) -> str:
             _tok(c.tokens),
             f"{c.latency_p50_ms:.0f}/{c.latency_p95_ms:.0f}",
             f"{c.dollars:.4f}",
+            _per_row(c),
             _who(c),
             "-" if t is None else f"{len(t.flipped)}/{t.n_rows}",
             "-" if t is None else _ci(t.regression),
@@ -515,6 +596,9 @@ def render_text(report: EvalReport, gate: Any = None) -> str:
             row.append(_gate_status(gate, c.name) or "-")
         rows.append(row)
     lines += _table(headers, rows)
+    projection = _projection_line(report)
+    if projection:
+        lines += ["", projection]
 
     for c in report.candidates:
         t = c.transitions
@@ -604,8 +688,12 @@ def render_text(report: EvalReport, gate: Any = None) -> str:
 
 def _gate_rule(report: EvalReport) -> str:
     if report.require == GateRequirement.NO_EVIDENCE_OF_REGRESSION.value:
-        return f"fail when paired excess lower bound > {report.max_regression:g}"
-    return f"pass when paired excess upper bound <= {report.max_regression:g}"
+        rule = f"fail when paired excess lower bound > {report.max_regression:g}"
+    else:
+        rule = f"pass when paired excess upper bound <= {report.max_regression:g}"
+    if report.max_cost_ratio is not None:
+        rule += f" and cost <= {report.max_cost_ratio:g}x the reference"
+    return rule
 
 
 def _cal_summary(cal: Calibration) -> str:
@@ -643,10 +731,10 @@ def render_markdown(report: EvalReport, gate: Any = None) -> str:
         lines += ["", "; ".join(ln.strip() for ln in prov)]
     lines += [
         "",
-        "| candidate | rows | errors | cost $ | p95 ms | who answered "
+        "| candidate | rows | errors | cost $ | $/row (x ref) | p95 ms | who answered "
         "| flips | regression [95% CI] | excess vs noise (paired) |"
         + (" gate |" if gate is not None else ""),
-        "|---|---:|---:|---:|---:|---|---:|---|---|" + ("---|" if gate is not None else ""),
+        "|---|---:|---:|---:|---:|---:|---|---:|---|---|" + ("---|" if gate is not None else ""),
     ]
     for c in report.candidates:
         t = c.transitions
@@ -655,6 +743,7 @@ def render_markdown(report: EvalReport, gate: Any = None) -> str:
             str(c.rows),
             f"{c.provider_errors}p/{c.decide_errors}d",
             f"{c.dollars:.4f}",
+            _per_row(c),
             f"{c.latency_p95_ms:.0f}",
             _who(c),
             "-" if t is None else f"{len(t.flipped)}/{t.n_rows}",
@@ -664,6 +753,9 @@ def render_markdown(report: EvalReport, gate: Any = None) -> str:
         if gate is not None:
             cells.append(_gate_status(gate, c.name) or "-")
         lines.append("| " + " | ".join(cells) + " |")
+    projection = _projection_line(report)
+    if projection:
+        lines += ["", projection[0].upper() + projection[1:] + "."]
 
     trans = [c for c in report.candidates if c.transitions is not None]
     if trans:
