@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/caliper-hero-dark.png">
+    <img src="docs/brand/caliper-hero-light.png" width="100%" alt="Caliper: know when a model or prompt change breaks your AI feature, before your users do.">
+  </picture>
+</p>
+
 # Caliper
 
 **Know when a model or prompt change breaks your AI feature, before your users do.**

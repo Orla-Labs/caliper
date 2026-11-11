@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#ffffff"/>
+  <rect x="1.5" y="1.5" width="509" height="509" rx="110.5" fill="none" stroke="#d1d9e0" stroke-width="3"/>
+  
+<g transform="translate(0 -20) scale(1)">
+  <!-- beam -->
+  <rect x="72" y="150" width="368" height="56" rx="12" fill="#1f2328"/>
+  <rect x="162" y="166" width="4" height="22" rx="1" fill="#ffffff"/><rect x="176" y="166" width="4" height="13" rx="1" fill="#ffffff"/><rect x="190" y="166" width="4" height="13" rx="1" fill="#ffffff"/><rect x="204" y="166" width="4" height="13" rx="1" fill="#ffffff"/><rect x="218" y="166" width="4" height="13" rx="1" fill="#ffffff"/><rect x="232" y="166" width="4" height="22" rx="1" fill="#ffffff"/><rect x="246" y="166" width="4" height="13" rx="1" fill="#ffffff"/><rect x="260" y="166" width="4" height="13" rx="1" fill="#ffffff"/><rect x="274" y="166" width="4" height="13" rx="1" fill="#ffffff"/>
+  <!-- fixed jaw -->
+  <path d="M72 194 H150 V400 L118 368 L72 300 Z" fill="#1f2328"/>
+  <!-- sliding jaw -->
+  <rect x="300" y="132" width="88" height="92" rx="14" fill="#2c55c9"/>
+  <rect x="318" y="166" width="52" height="24" rx="5" fill="#ffffff" opacity="0.9"/>
+  <path d="M300 214 H362 V300 L332 368 L300 400 Z" fill="#2c55c9"/>
+  <!-- the measured gap -->
+  <path d="M170 318 H280" stroke="#1a7f37" stroke-width="12" stroke-linecap="round"/>
+  <path d="M186 300 L166 318 L186 336 M264 300 L284 318 L264 336" fill="none"
+        stroke="#1a7f37" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</svg>
