@@ -58,7 +58,7 @@ caliper-server = "caliper_server.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Orla-Labs/caliper"
-Documentation = "https://github.com/Orla-Labs/caliper/blob/main/docs/eval.md"
+Documentation = "https://caliper.orlalabs.com"
 Source = "https://github.com/Orla-Labs/caliper"
 Issues = "https://github.com/Orla-Labs/caliper/issues"
 
