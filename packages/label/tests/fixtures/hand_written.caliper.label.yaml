@@ -1,0 +1,52 @@
+# Hand-written project config (fictional data) used by the round-trip tests.
+# Every comment, the key order and the quoting below must survive a UI save.
+
+version: 1
+name: Moonwick support triage   # shown in the top bar
+description: >-
+  Weekly review of how the triage model routed fictional support tickets.
+
+# ---------------------------------------------------------------- where the data lives
+source:
+  kind: postgres
+  table: triage_sample        # a view refreshed nightly
+  id_column: ticket_id
+  credentials:
+    env: DATABASE_URL         # whole DSN; never the value here
+  options: {schema: support, sslmode: "require"}
+
+# ---------------------------------------------------------------- what a card shows
+card:
+  fields:
+    - {column: subject, type: text, label: Subject}     # first line of the ticket
+    - {column: body, type: long_text}
+    - {column: predicted_queue, type: badge, label: Model said}
+    - column: attachments.0.url   # block style on purpose
+      type: image
+      label: Screenshot
+
+# ---------------------------------------------------------------- decisions
+labels:
+  type: single
+  options:
+    # keep "correct" first: muscle memory
+    - {value: correct, label: Correct, hotkey: 1, color: "#2e7d32", approved: true}
+    - {value: wrong, label: Wrong queue, hotkey: 2, color: '#c62828'}   # most common
+    - {value: unsure, label: Unsure, hotkey: 3, requires_note: true}
+  keys: {skip: s, undo: backspace, note: n}
+  category_column: predicted_queue
+
+workflow:
+  queues:
+    by: priority              # p1 / p2 / p3
+  double_label: 2
+  assignment: round_robin
+  instructions: |
+    Is the **queue** the model picked right for this ticket?
+
+    - Judge the routing, not the reply.
+    - Use *Unsure* when two queues fit, and say why in the note.
+  source: internal_reviewer
+  stage: triage_review
+
+# trailing comment at the end of the file

@@ -1,0 +1,16 @@
+{
+  "name": "caliper-label-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Playwright end-to-end suite for caliper label (wizard, labelling loop, team mode). Never imported by the Python package.",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "screenshots": "E2E_SCREENSHOTS=1 playwright test screenshots"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.64.1",
+    "@types/node": "22.10.2"
+  }
+}

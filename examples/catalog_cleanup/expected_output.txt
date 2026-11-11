@@ -1,0 +1,153 @@
+Caliper eval demo: is it safe to switch the catalog-cleanup feature to a cheaper model?
+(synthetic data, fake provider; every number below is from this demo, not a real system)
+
+========================================================================
+ [1/4] Build a golden set from production logs (rare classes kept whole)
+========================================================================
+$ caliper sample --in examples/catalog_cleanup/logs.jsonl --stratum-field outcome --keep needs_review,fallback --negatives 40
+sampled 56 of 300 log lines (seed 0; kept whole: needs_review, fallback)
+  auto_publish         40 / 284
+  needs_review         16 / 16
+wrote build/catalog-eval/sampled.jsonl
+
+Then a person labels the sample. The labeled result ships as examples/catalog_cleanup/golden.jsonl:
+  80 rows: common 30, lookalike 8, mixed 20, rare_code 14, unlisted 8
+  labelled by: internal_reviewer 63 (56 approved), llm_teacher 13 (10 approved), unknown 4 (4 approved)
+  split: test 40, val 40; slices: lookalike 8, rare_code 14
+
+========================================================================
+ [2/4] Preflight: a candidate shape the provider rejects fails fast
+========================================================================
+$ caliper eval --config examples/catalog_cleanup/caliper.preflight.toml
+preflight failed for small-thinking-schema: fake rejected the request shape (model=fake-small, thinking=on, output_mode=json_schema): fake-small rejects json_schema structured output with thinking on (400: output_mode=json_schema is not supported with thinking for this model)
+caliper eval: preflight failed; fix the candidate or pass --skip-preflight
+(exit 3: nothing was spent on the golden set)
+
+========================================================================
+ [3/4] Evaluate: noise floor, slices, matched operating point, calibration, CI gate
+========================================================================
+decide.py replays the feature: 3 replies, majority tax code, auto_publish at score >= 0.75.
+$ caliper eval --config examples/catalog_cleanup/caliper.toml --out build/catalog-eval --no-resume --ci --summary-md build/catalog-eval/summary.md
+caliper eval: 3 candidates, 80 golden rows, reference=baseline, seed=0, bootstrap n=1000
+labels (80 rows): internal_reviewer 63 (human truth), llm_teacher 13 (teacher agreement only), unknown 4 (source not recorded)
+splits: test 40, val 40; thresholds picked on val, reported on test
+noise floor (baseline x2, 80 rows): flip 1.2%, cost-weighted 0.037 [0.000, 0.113]
+
+candidate       rows  errors  tokens in/out/cache  p50/p95 ms  cost $  $/row (x ref)     who answered  flips  regression [95% CI]   excess vs noise (paired)  gate
+--------------  ----  ------  -------------------  ----------  ------  ----------------  ------------  -----  --------------------  ------------------------  ----
+baseline (ref)  80    0p/0d   118944/16663/0       501/944     0.6068  0.003792 (ref)    fake-large    -      -                     -                         PASS
+small           80    0p/0d   59472/8070/0         485/940     0.0799  0.000998 (0.26x)  fake-small    20/80  0.300 [0.175, 0.463]  0.263 [0.163, 0.362]      FAIL
+small-thinking  80    0p/0d   59472/66844/0        485/940     0.3150  0.003937 (1.04x)  fake-small    4/80   0.050 [0.013, 0.113]  0.013 [-0.087, 0.087]     FAIL
+
+cost projection (20,000 calls/day x 30 days): baseline $2,275.41/mo; small $598.93/mo (-$1,676.48 vs ref); small-thinking $2,362.15/mo (+$86.74 vs ref)
+
+transitions baseline -> small:
+  auto_publish -> auto_publish    45
+  auto_publish -> needs_review    19  (cost 1 each)
+  needs_review -> auto_publish     1  (cost 5 each)
+  needs_review -> needs_review    15
+  flipped: lst-0008 (auto_publish->needs_review), lst-0013 (auto_publish->needs_review), lst-0032 (auto_publish->needs_review), lst-0035 (auto_publish->needs_review), lst-0043 (auto_publish->needs_review), lst-0053 (auto_publish->needs_review), lst-0115 (auto_publish->needs_review), lst-0118 (needs_review->auto_publish) +12 more
+
+transitions baseline -> small-thinking:
+  auto_publish -> auto_publish    60
+  auto_publish -> needs_review     4  (cost 1 each)
+  needs_review -> needs_review    16
+  flipped: lst-0033 (auto_publish->needs_review), lst-0053 (auto_publish->needs_review), lst-0096 (auto_publish->needs_review), lst-0161 (auto_publish->needs_review)
+
+slices:
+  rare_code (must_not_lose; 14 rows, 7 on test)
+    small           FAIL  7 human-labelled rows on test: baseline loses 0, small loses 4; 4 lost vs baseline: lst-0032, lst-0053, lst-0132, lst-0240
+    small-thinking  FAIL  7 human-labelled rows on test: baseline loses 0, small-thinking loses 1; 1 lost vs baseline: lst-0053
+  lookalike (max_regression <= 0.5; 8 rows, 4 on test)
+    small           FAIL  paired excess 0.500 [0.125, 0.875], upper bound 0.875 > 0.500; flipped lst-0013, lst-0035, lst-0193, lst-0227
+    small-thinking  PASS  paired excess 0.000 [0.000, 0.000], upper bound 0.000 <= 0.500
+
+matched operating point (auto = auto_publish; coverage matched on val, losses on test; delta = candidate - reference lost rows per row, paired 95% CI):
+  small: baseline auto-handles 77.5% of 40 val rows; small matches at score >= 0.620 (80.0%)
+    internal_reviewer (35 on test): baseline loses 10 (missed 6, bad auto 4), small loses 13 (missed 8, bad auto 5); small only: lst-0004, lst-0032, lst-0053, lst-0132 +1 more; delta +0.086 [-0.057, +0.257]
+    llm_teacher (4 on test): teacher agreement: baseline disagrees on 1, small on 2; small only: lst-0035; delta +0.250 [+0.000, +0.750]
+    unknown (1 on test): agreement (unknown source): baseline disagrees on 0, small on 0; delta +0.000 [+0.000, +0.000]
+  small-thinking: baseline auto-handles 77.5% of 40 val rows; small-thinking matches at score >= 0.807 (77.5%)
+    internal_reviewer (35 on test): baseline loses 10 (missed 6, bad auto 4), small-thinking loses 11 (missed 8, bad auto 3); small-thinking only: lst-0053, lst-0161; delta +0.029 [-0.057, +0.114]
+    llm_teacher (4 on test): teacher agreement: baseline disagrees on 1, small-thinking on 0; delta -0.250 [-0.750, +0.000]
+    unknown (1 on test): agreement (unknown source): baseline disagrees on 0, small-thinking on 0; delta +0.000 [+0.000, +0.000]
+
+calibration baseline (sweep on val: 28 rows labelled by internal_reviewer; ECE 0.125): picked 0.70 (lowest with precision >= 95.0%)
+  score >=  auto  coverage  precision  approved->review  kappa
+  --------  ----  --------  ---------  ----------------  ------
+  0.60      24    85.7%     91.7%      15.4%             -0.105
+  0.70      21    75.0%     95.2%      23.1%             0.125
+  0.75      21    75.0%     95.2%      23.1%             0.125
+  0.80      21    75.0%     95.2%      23.1%             0.125
+  0.85      19    67.9%     100.0%     26.9%             0.279
+  0.90      17    60.7%     100.0%     34.6%             0.212
+  on test at 0.70: internal_reviewer (35): precision 85.7%, coverage 80.0%, approved->review 20.0%, kappa 0.000
+                   llm_teacher (4): teacher agreement 75.0%, coverage 100.0%, approved->review 0.0%, kappa 0.000
+                   unknown (1): agreement (unknown source) 100.0%, coverage 100.0%, approved->review 0.0%, kappa -
+
+calibration small (sweep on val: 28 rows labelled by internal_reviewer; ECE 0.184): picked 0.70 (lowest with precision >= 95.0%)
+  on test at 0.70: internal_reviewer (35): precision 78.3%, coverage 65.7%, approved->review 40.0%, kappa -0.253
+                   llm_teacher (4): teacher agreement 66.7%, coverage 75.0%, approved->review 33.3%, kappa -0.333
+                   unknown (1): agreement (unknown source) 100.0%, coverage 100.0%, approved->review 0.0%, kappa -
+
+calibration small-thinking (sweep on val: 28 rows labelled by internal_reviewer; ECE 0.136): picked 0.75 (lowest with precision >= 95.0%)
+  on test at 0.75: internal_reviewer (35): precision 88.0%, coverage 71.4%, approved->review 26.7%, kappa 0.094
+                   llm_teacher (4): teacher agreement 100.0%, coverage 75.0%, approved->review 0.0%, kappa 1.000
+                   unknown (1): agreement (unknown source) 100.0%, coverage 100.0%, approved->review 0.0%, kappa -
+
+CI gate: FAIL (pass when paired excess upper bound <= 0.1 and cost <= 1.25x the reference)
+  small: paired excess regression 0.263 [0.163, 0.362]: upper bound 0.362 > allowed 0.100 (regression 0.300 - noise 0.037; 20 rows flipped)
+  small: slice rare_code (must_not_lose): 7 human-labelled rows on test: baseline loses 0, small loses 4; 4 lost vs baseline: lst-0032, lst-0053, lst-0132, lst-0240
+  small: slice lookalike (max_regression): paired excess 0.500 [0.125, 0.875], upper bound 0.875 > 0.500; flipped lst-0013, lst-0035, lst-0193, lst-0227
+  small-thinking: slice rare_code (must_not_lose): 7 human-labelled rows on test: baseline loses 0, small-thinking loses 1; 1 lost vs baseline: lst-0053
+results: build/catalog-eval/results.jsonl
+summary: build/catalog-eval/summary.md
+
+>>> caliper eval --ci exited 1: the gate FAILED, so this change would be blocked in CI.
+>>> (Expected here: 'small' regresses on rare product families; 'small-thinking' is
+>>>  non-inferior overall but loses one must-not-lose rare-code record on test.)
+
+========================================================================
+ [4/4] The PR comment (build/catalog-eval/summary.md)
+========================================================================
+## Caliper eval: FAIL
+
+80 golden rows, reference `baseline`. noise floor (baseline x2, 80 rows): flip 1.2%, cost-weighted 0.037 [0.000, 0.113].
+
+labels (80 rows): internal_reviewer 63 (human truth), llm_teacher 13 (teacher agreement only), unknown 4 (source not recorded); splits: test 40, val 40; thresholds picked on val, reported on test
+
+| candidate | rows | errors | cost $ | $/row (x ref) | p95 ms | who answered | flips | regression [95% CI] | excess vs noise (paired) | gate |
+|---|---:|---:|---:|---:|---:|---|---:|---|---|---|
+| `baseline` (ref) | 80 | 0p/0d | 0.6068 | 0.003792 (ref) | 944 | fake-large | - | - | - | PASS |
+| `small` | 80 | 0p/0d | 0.0799 | 0.000998 (0.26x) | 940 | fake-small | 20/80 | 0.300 [0.175, 0.463] | 0.263 [0.163, 0.362] | FAIL |
+| `small-thinking` | 80 | 0p/0d | 0.3150 | 0.003937 (1.04x) | 940 | fake-small | 4/80 | 0.050 [0.013, 0.113] | 0.013 [-0.087, 0.087] | FAIL |
+
+Cost projection (20,000 calls/day x 30 days): baseline $2,275.41/mo; small $598.93/mo (-$1,676.48 vs ref); small-thinking $2,362.15/mo (+$86.74 vs ref).
+
+**Changed outcomes vs reference**
+
+- `small`: auto_publish -> needs_review: 19, needs_review -> auto_publish: 1
+- `small-thinking`: auto_publish -> needs_review: 4
+
+**Slices**
+
+- `rare_code` (must_not_lose, 14 rows): `small` FAIL, `small-thinking` FAIL
+- `lookalike` (max_regression, 8 rows): `small` FAIL, `small-thinking` PASS
+
+**Matched operating point** (same coverage as the reference)
+
+- `small` at score >= 0.620 (reference coverage 77.5% on val), on test: internal_reviewer lost 13 vs 10 (delta +0.086 [-0.057, +0.257]); llm_teacher disagreements 2 vs 1 (delta +0.250 [+0.000, +0.750]); unknown disagreements 0 vs 0 (delta +0.000 [+0.000, +0.000])
+- `small-thinking` at score >= 0.807 (reference coverage 77.5% on val), on test: internal_reviewer lost 11 vs 10 (delta +0.029 [-0.057, +0.114]); llm_teacher disagreements 0 vs 1 (delta -0.250 [-0.750, +0.000]); unknown disagreements 0 vs 0 (delta +0.000 [+0.000, +0.000])
+
+**Calibration** (auto-accept when score >= threshold)
+
+- `baseline`: 28 rows on val (precision), ECE 0.125; picked 0.70; on test: precision 85.7% (internal_reviewer, 35), teacher agreement 75.0% (llm_teacher, 4), agreement (unknown source) 100.0% (unknown, 1)
+- `small`: 28 rows on val (precision), ECE 0.184; picked 0.70; on test: precision 78.3% (internal_reviewer, 35), teacher agreement 66.7% (llm_teacher, 4), agreement (unknown source) 100.0% (unknown, 1)
+- `small-thinking`: 28 rows on val (precision), ECE 0.136; picked 0.75; on test: precision 88.0% (internal_reviewer, 35), teacher agreement 100.0% (llm_teacher, 4), agreement (unknown source) 100.0% (unknown, 1)
+
+**Gate failures** (pass when paired excess upper bound <= 0.1 and cost <= 1.25x the reference)
+
+- `small`: paired excess regression 0.263 [0.163, 0.362]: upper bound 0.362 > allowed 0.100 (regression 0.300 - noise 0.037; 20 rows flipped)
+- `small`: slice rare_code (must_not_lose): 7 human-labelled rows on test: baseline loses 0, small loses 4; 4 lost vs baseline: lst-0032, lst-0053, lst-0132, lst-0240
+- `small`: slice lookalike (max_regression): paired excess 0.500 [0.125, 0.875], upper bound 0.875 > 0.500; flipped lst-0013, lst-0035, lst-0193, lst-0227
+- `small-thinking`: slice rare_code (must_not_lose): 7 human-labelled rows on test: baseline loses 0, small-thinking loses 1; 1 lost vs baseline: lst-0053

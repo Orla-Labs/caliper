@@ -1,0 +1,41 @@
+# caliper label config for the catalog_cleanup golden set (fictional data).
+#
+#   uv run caliper label serve examples/catalog_cleanup/golden.jsonl \
+#       --config examples/catalog_cleanup/label.yaml
+#
+# The reviewer checks the tax code production assigned to each listing.
+# Reference: docs/label.md.
+
+title: Catalog cleanup · tax-code review
+instructions: >-
+  Is the tax code production assigned right for this listing? Judge the code, not the
+  description. Use Unsure when the listing could honestly fit two codes, and add a note (N).
+  Codes: CTX-100 general · 210 packaged food · 310 books/maps · 420 kids' clothing ·
+  430 adult clothing/footwear · 510 small electronics · 520 loose batteries ·
+  610 home health devices · 900 gift cards.
+
+fields:
+  - {template: "cards/{id}.svg", type: image, label: Product}
+  - {key: metadata.production_tax_code, type: badge, label: Production code}
+  - {key: metadata.production_score, type: number, decimals: 2, label: Confidence}
+  - {key: reference_outcome, type: badge, label: Outcome}
+  - {key: metadata.supplier, type: badge, label: Supplier}
+  - {key: request.messages.-1.content, type: text, label: Listing}
+
+decisions:
+  - {key: "1", value: correct, label: Code correct, approved: true, outcome: auto_publish}
+  - {key: "2", value: wrong, label: Wrong code, outcome: needs_review}
+  - {key: "3", value: unsure, label: Unsure, outcome: needs_review}
+
+keys: {skip: s, undo: backspace, note: n}
+
+queue_key: stratum                         # common / mixed / rare_code / lookalike / unlisted
+category_key: metadata.production_tax_code  # kappa by category
+source: internal_reviewer
+stage: tax_code_review
+double_label: 1                             # set to 2 to have every item labelled twice
+
+# export --format rollouts: what the labelled "response" was
+rollout:
+  prompt: request.messages.-1.content
+  response: metadata.production_tax_code

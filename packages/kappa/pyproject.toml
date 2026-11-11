@@ -1,7 +1,7 @@
 [project]
 name = "caliper-kappa"
 version = "0.0.1"
-description = "Cohen's kappa agreement between a grader and a labeled reference set."
+description = "Agreement statistics: Cohen's kappa grader-vs-labels, and inter-rater kappa (Cohen's/Fleiss') by category."
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.7",

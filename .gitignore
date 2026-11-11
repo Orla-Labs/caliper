@@ -36,5 +36,11 @@ docs/*
 !docs/targets.md
 !docs/02-technical-state.md
 !docs/03-graders-and-rewards.md
+!docs/eval.md
+!docs/label.md
+!docs/label.png
+!docs/label-setup.md
+!docs/label-connectors.md
+!docs/label-product/
 building/
 CLAUDE.md

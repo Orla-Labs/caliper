@@ -15,6 +15,8 @@ members = [
     "packages/kappa",
     "packages/store",
     "packages/server",
+    "packages/eval",
+    "packages/label",
 ]
 
 [tool.uv.sources]
@@ -26,6 +28,8 @@ caliper-mutate = { workspace = true }
 caliper-kappa = { workspace = true }
 caliper-store = { workspace = true }
 caliper-server = { workspace = true }
+caliper-eval = { workspace = true }
+caliper-label = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -41,6 +45,8 @@ dev = [
     "caliper-kappa",
     "caliper-store",
     "caliper-server",
+    "caliper-eval",
+    "caliper-label",
 ]
 
 [tool.ruff]
@@ -53,6 +59,11 @@ ignore = ["S101"]  # allow asserts in tests
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S", "N"]
+# The label data layer builds DuckDB/SQLite SQL from config-owned table names and queries; every
+# value is quoted with lit()/ident() or bound as a parameter (see connectors/duck.py).
+"packages/label/src/caliper_label/{connectors/duck.py,project_store.py,snapshot.py,sinks.py}" = [
+    "S608",
+]
 
 [tool.pytest.ini_options]
 testpaths = [
@@ -64,5 +75,12 @@ testpaths = [
     "packages/kappa/tests",
     "packages/store/tests",
     "packages/server/tests",
+    "packages/eval/tests",
+    "packages/label/tests",
+    "examples/catalog_cleanup/tests",
 ]
-addopts = "-ra --strict-markers --import-mode=importlib"
+addopts = "-ra --strict-markers --import-mode=importlib -m 'not docker and not slow'"
+markers = [
+    "docker: needs the label test services (docker compose); run with -m docker",
+    "slow: large-data tests (e.g. 1M-row Parquet); run with -m slow",
+]

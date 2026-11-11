@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>caliper label</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%224%22 fill=%22%232c55c9%22/%3E%3Crect x=%224%22 y=%224%22 width=%224%22 height=%228%22 fill=%22white%22/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/css/tokens.css">
+<link rel="stylesheet" href="/static/css/app.css">
+<link rel="stylesheet" href="/static/css/label.css">
+<link rel="stylesheet" href="/static/css/dashboard.css">
+<link rel="stylesheet" href="/static/css/adjudicate.css">
+<link rel="stylesheet" href="/static/css/export.css">
+<link rel="stylesheet" href="/static/css/start.css">
+<link rel="stylesheet" href="/static/css/wizard.css">
+<link rel="stylesheet" href="/static/css/settings.css">
+<link rel="modulepreload" href="/static/js/shell.js">
+<link rel="modulepreload" href="/static/js/common/api.js">
+<script type="module" src="/static/js/boot.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#view">Skip to content</a>
+<header class="appbar">
+  <a class="brand" href="#/start" aria-label="caliper label: all projects" title="All projects"><span class="logo" aria-hidden="true">◧</span><span>caliper label</span></a>
+  <a class="project-name" id="project-name" href="#/start" title="Switch project, or start a new one" aria-describedby="project-name-hint"></a>
+  <span id="project-name-hint" class="visually-hidden">Switch project, or start a new one</span>
+  <nav class="appnav" id="appnav" aria-label="Main" hidden>
+    <a href="#/label" data-route="label">Label</a>
+    <a href="#/dashboard" data-route="dashboard">Dashboard</a>
+    <a href="#/adjudicate" data-route="adjudicate">Adjudicate</a>
+    <a href="#/export" data-route="export">Export</a>
+    <a href="#/settings" data-route="settings" data-project-only>Settings</a>
+    <a href="#/start" data-route="start" class="appnav-projects" data-project-only title="Open another project or start a new one">Projects</a>
+  </nav>
+  <div class="appbar-slot" id="appbar-slot"></div>
+</header>
+<main id="view" tabindex="-1" aria-live="off"></main>
+<div id="announcer" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<noscript><div class="state"><h2>JavaScript is off</h2><p>caliper label needs JavaScript to run in this browser.</p></div></noscript>
+</body>
+</html>

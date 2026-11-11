@@ -1,0 +1,30 @@
+[project]
+name = "caliper-label"
+version = "0.0.1"
+description = "Fast local labelling UI for Caliper datasets (caliper label serve)."
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.7",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pyyaml>=6.0",
+    "ruamel.yaml>=0.18",
+    "caliper-eval",
+    "caliper-kappa",
+    "duckdb>=1.2",
+    "boto3>=1.34",
+    "pytz>=2024.1",
+]
+
+[project.optional-dependencies]
+# Phase 2 connector plugins (docs/label-connectors.md). Placeholders so the names are reserved;
+# they add nothing yet.
+snowflake = []
+bigquery = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/caliper_label"]

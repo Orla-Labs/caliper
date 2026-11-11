@@ -1,0 +1,29 @@
+/* #/dashboard */
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3); margin-bottom: var(--sp-4); }
+.tile { background: var(--c-surface); border: 1px solid var(--c-line); border-radius: var(--radius-l); padding: var(--sp-4); box-shadow: var(--shadow-1); }
+.tile-value { font-size: var(--fs-2xl); font-weight: var(--fw-bold); letter-spacing: -.02em; line-height: 1.1; }
+.tile-label { font-size: var(--fs-sm); color: var(--c-ink); margin-top: var(--sp-1); font-weight: var(--fw-medium); }
+.tile-sub { font-size: var(--fs-xs); }
+.tile-warn { border-color: color-mix(in srgb, var(--c-warn) 45%, var(--c-line)); }
+.dash-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-4); }
+.dash-section { padding: var(--sp-4) var(--sp-5); min-width: 0; overflow-x: auto; }
+/* a section that scrolls sideways is a Tab stop in Chromium: show where focus is (LPF-C-5) */
+.dash-section:focus-visible { box-shadow: var(--focus-ring), var(--shadow-1); }
+.dash-section h2 { font-size: var(--fs-md); margin-bottom: var(--sp-3); }
+.dash-section table th[scope="row"] { font-weight: var(--fw-medium); text-transform: none; letter-spacing: 0; font-size: var(--fs-sm); color: var(--c-ink); }
+.hbar { height: 8px; border-radius: 4px; background: var(--c-surface-2); overflow: hidden; min-width: 80px; }
+.hbar > span { display: block; height: 100%; background: var(--c-accent); border-radius: 0 4px 4px 0; }
+.bar-cell { width: 34%; vertical-align: middle !important; }
+.bar-with-num { display: flex; align-items: center; gap: var(--sp-2); }
+.bar-with-num .hbar { flex: 1; }
+.kappa { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.gold { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.lead { margin: 0 0 var(--sp-3); }
+.dis-list { list-style: none; margin: 0 0 var(--sp-3); padding: 0; font-size: var(--fs-sm); }
+.dis-list li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: 6px 0; border-bottom: 1px solid var(--c-line); }
+@media (max-width: 1024px) {
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dash-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.nowrap { white-space: nowrap; }
+.dash-section table.data th, .dash-section table.data td { padding-left: var(--sp-2); padding-right: var(--sp-2); }

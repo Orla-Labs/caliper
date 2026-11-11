@@ -1,0 +1,123 @@
+# The same golden set and decide() on real providers. This costs real money.
+# Not run in CI; needs keys:
+#
+#   export ANTHROPIC_API_KEY=...        # Anthropic direct
+#   export OPENAI_COMPAT_API_KEY=...    # read via params.api_key_env below
+#   uv run caliper eval --config examples/catalog_cleanup/caliper.real.toml \
+#       --out build/catalog-real --budget-usd 5
+#
+# Run with `--candidates baseline,haiku` to try a subset. Preflight sends one
+# small request per candidate first, so a request shape a provider rejects
+# (for example a thinking setting a model does not accept) fails in seconds,
+# before the golden set is spent.
+#
+# Model IDs checked 2026-11-06. Bedrock candidates are priced live from the AWS
+# Price List for their region and tier; Anthropic-direct ones from Caliper's
+# dated list-price table (Anthropic has no pricing API), with a warning.
+
+golden = "golden.jsonl"
+decide = "decide.py:decide"
+reference = "baseline"
+noise_replays = 2
+budget_usd = 5.0
+seed = 0
+
+# Thinking: `thinking = "off"` sends {type: "disabled"}, which Claude Sonnet 5.5
+# and Claude Opus 5.5 reject (preflight reports the 400). For those models use
+# thinking = "on" (adaptive) and keep it cheap with params.effort. Thinking
+# tokens count against max_tokens, so thinking candidates raise the golden
+# request's max_tokens (400, as production sent it) through params.
+
+# What production runs today.
+[[candidates]]
+name = "baseline"
+provider = "anthropic"
+model = "claude-sonnet-5-5"
+thinking = "on"
+params = { effort = "low", max_tokens = 4000 }
+replies_per_row = 3
+
+# The cheaper model, thinking off (Claude Haiku 5.5 accepts this at effort <= high).
+[[candidates]]
+name = "haiku"
+provider = "anthropic"
+model = "claude-haiku-5-5"
+thinking = "off"
+replies_per_row = 3
+
+# The cheaper model with adaptive thinking on.
+[[candidates]]
+name = "haiku-thinking"
+provider = "anthropic"
+model = "claude-haiku-5-5"
+thinking = "on"
+params = { max_tokens = 4000 }
+replies_per_row = 3
+
+# Any OpenAI-compatible chat-completions endpoint (a self-hosted open-weight
+# model here; the URL and model name are placeholders).
+[[candidates]]
+name = "open-weights"
+provider = "openai_compat"
+base_url = "http://localhost:8000/v1"
+model = "your-open-weight-model"
+params = { api_key_env = "OPENAI_COMPAT_API_KEY" }
+replies_per_row = 3
+
+# Anthropic models on Amazon Bedrock (uncomment; uses your AWS credentials).
+# The global. prefix is global cross-region inference, priced at AWS's global
+# rate; us. / bare IDs get the regional rate (+10%).
+# [[candidates]]
+# name = "baseline-bedrock"
+# provider = "bedrock"
+# region = "us-east-1"
+# model = "global.anthropic.claude-sonnet-5-5"
+# thinking = "on"
+# params = { effort = "low", max_tokens = 4000 }
+# replies_per_row = 3
+
+# Any Bedrock model through the Converse API, e.g. Amazon Nova 2 Lite with
+# reasoning (needs caliper-eval[bedrock-converse]). Reasoning is the model's own
+# field; its tokens are billed as output.
+# [[candidates]]
+# name = "nova-lite-reasoning"
+# provider = "bedrock_converse"
+# region = "us-east-1"
+# model = "global.amazon.nova-2-lite-v1:0"
+# params = { max_tokens = 4000, additionalModelRequestFields = { reasoningConfig = { type = "enabled", maxReasoningEffort = "low" } } }
+# replies_per_row = 3
+
+# Override any price with a [pricing."<model>"] table like the one below. A
+# model with no known price (or a zero price) shows as "unpriced" and fails the
+# gate under [ci] max_cost_ratio.
+
+[pricing."your-open-weight-model"]   # your own hosting cost, if you want a dollar column
+input = 0.0
+output = 0.0
+source = "self-hosted placeholder"
+
+[costs]
+"auto_publish->needs_review" = 1.0
+"auto_publish->fallback" = 3.0
+"needs_review->fallback" = 2.0
+"needs_review->auto_publish" = 5.0
+"fallback->auto_publish" = 5.0
+
+[ci]
+max_regression = 0.10    # paired excess upper bound; see caliper.toml for why 0.10 on 80 rows
+# max_cost_ratio = 1.25  # fail a candidate above 1.25x the baseline's cost per row
+
+[operating_point]
+auto_outcomes = ["auto_publish"]
+
+[[slices]]
+name = "rare_code"
+rule = "must_not_lose"
+
+[[slices]]
+name = "lookalike"
+rule = "max_regression"
+threshold = 0.5
+
+[calibration]
+thresholds = [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9]
