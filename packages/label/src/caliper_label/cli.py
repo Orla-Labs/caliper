@@ -377,19 +377,37 @@ def open_parser() -> argparse.ArgumentParser:
     return p
 
 
+# Third-party modules the label UI needs; they ship in the `label` extra.
+_LABEL_DEPS = {"fastapi", "starlette", "uvicorn", "yaml", "ruamel", "duckdb", "boto3", "pytz"}
+
+
+def _call(ns: argparse.Namespace) -> int:
+    """Run a label subcommand; a missing `label` extra becomes an install hint, not a traceback."""
+    try:
+        return int(ns.func(ns))
+    except ModuleNotFoundError as exc:
+        if (exc.name or "").split(".")[0] not in _LABEL_DEPS:
+            raise
+        _err(
+            f"caliper label needs the label extra (missing module {exc.name!r}): "
+            "pip install 'orlalabs-caliper[label]'  or  uv add 'orlalabs-caliper[label]'"
+        )
+        return EXIT_USAGE
+
+
 def cmd_label(args: argparse.Namespace) -> int:
     argv: list[str] = list(args.label_argv or [])
     inner, sub = build_parser()
     if argv and argv[0] in sub.choices:
         ns = inner.parse_args(argv)
-        return int(ns.func(ns))
+        return _call(ns)
     if argv and argv[0] in ("-h", "--help"):
         inner.print_help()
         print()
         print(open_parser().format_usage().strip())
         return EXIT_OK
     ns = open_parser().parse_args(argv)
-    return int(ns.func(ns))
+    return _call(ns)
 
 
 def register(subparsers: Any) -> None:

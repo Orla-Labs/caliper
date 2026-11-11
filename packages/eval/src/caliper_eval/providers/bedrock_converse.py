@@ -1,6 +1,6 @@
 """Any Amazon Bedrock model through the Converse API (``bedrock_converse``).
 
-Install with ``caliper-eval[bedrock-converse]`` (boto3); imported lazily. Use it
+Install with ``orlalabs-caliper[bedrock-converse]`` (boto3); imported lazily. Use it
 for models the Messages API on Bedrock does not serve (Amazon Nova, Llama,
 Mistral, ...), or to evaluate a Claude model exactly as a Converse-based
 production feature calls it.
@@ -217,7 +217,8 @@ def default_client(candidate: Candidate) -> Any:
         import boto3
     except ImportError as exc:  # pragma: no cover - depends on install
         raise ImportError(
-            "provider 'bedrock_converse' needs boto3: pip install 'caliper-eval[bedrock-converse]'"
+            "provider 'bedrock_converse' needs boto3: "
+            "pip install 'orlalabs-caliper[bedrock-converse]'"
         ) from exc
     return boto3.client("bedrock-runtime", region_name=candidate.region)
 
