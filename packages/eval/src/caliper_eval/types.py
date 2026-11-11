@@ -57,14 +57,13 @@ class GoldenRow(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    id: str
-    request: dict[str, Any]
+    id: str  # unique row id
+    request: dict[str, Any]  # the request as the feature sent it (see the class docstring)
     reference_outcome: str | None = None  # outcome production recorded, if known
     label: str | None = None  # human-approved outcome, if labeled
     label_approved: bool | None = None  # human approved the feature's output (calibration)
     stratum: str | None = None  # e.g. "positive" / "unsure" / "negative" from the sampler
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    # Phase 1b additions (all optional, additive):
+    metadata: dict[str, Any] = Field(default_factory=dict)  # free-form; slices can match on it
     label_source: LabelSource | None = None  # provenance of label/label_approved
     label_stage: str | None = None  # e.g. "triage", "final_review"; free-form
     split: Split | None = None  # selection hygiene: thresholds picked on val, test touched once
@@ -145,17 +144,19 @@ class Candidate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str  # unique within a run, e.g. "baseline", "haiku-nothink"
-    provider: ProviderKind
-    model: str
-    thinking: ThinkingMode = ThinkingMode.OFF
-    thinking_budget_tokens: int | None = None
-    output_mode: OutputMode = OutputMode.TEXT
-    output_schema: dict[str, Any] | None = None
+    provider: ProviderKind  # fake is offline and free; the others call (and bill) a provider
+    model: str  # the provider's model id, e.g. a Bedrock inference profile id
+    thinking: ThinkingMode = ThinkingMode.OFF  # extended/adaptive thinking on or off
+    thinking_budget_tokens: int | None = None  # thinking budget, where the provider takes one
+    output_mode: OutputMode = OutputMode.TEXT  # text, provider-native JSON schema, or a tool call
+    output_schema: dict[str, Any] | None = None  # JSON Schema for json_schema / tool output
     replies_per_row: int = Field(default=1, ge=1)  # >1 for vote loops
-    params: dict[str, Any] = Field(default_factory=dict)  # temperature etc.
-    base_url: str | None = None  # openai_compat
-    region: str | None = None  # bedrock, bedrock_converse
-    fake_script: str | None = None  # fake: "path/to/file.py:func"
+    # Extra request params (temperature etc.); openai_compat reads its key from the env var
+    # named by params.api_key_env (default OPENAI_API_KEY).
+    params: dict[str, Any] = Field(default_factory=dict)
+    base_url: str | None = None  # openai_compat endpoint, or an Anthropic API base URL
+    region: str | None = None  # AWS region for bedrock / bedrock_converse
+    fake_script: str | None = None  # fake provider: "path/to/file.py:func" producing replies
 
 
 # --------------------------------------------------------------------------- replies
@@ -166,7 +167,7 @@ class ServedBy(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    provider: ProviderKind
+    provider: ProviderKind  # provider that answered
     model: str  # as reported by the response, not as requested
     endpoint: str | None = None  # base URL / region / "fake"
     matches_request: bool  # False => fallback/substitution happened; surfaced in reports
@@ -175,21 +176,21 @@ class ServedBy(BaseModel):
 class Usage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cache_read_tokens: int = 0
-    cache_write_tokens: int = 0
+    input_tokens: int = 0  # uncached input tokens
+    output_tokens: int = 0  # output tokens, reasoning included
+    cache_read_tokens: int = 0  # input tokens read from the prompt cache
+    cache_write_tokens: int = 0  # input tokens written to the prompt cache
 
 
 class Reply(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    text: str | None = None
+    text: str | None = None  # the reply text, when there is one
     parsed: Any = None  # structured output, when output_mode != text
-    served_by: ServedBy | None = None
-    usage: Usage = Field(default_factory=Usage)
-    latency_ms: float = 0.0
-    cost_usd: float = 0.0
+    served_by: ServedBy | None = None  # who answered, from the response
+    usage: Usage = Field(default_factory=Usage)  # token counts from the response
+    latency_ms: float = 0.0  # wall time of the request
+    cost_usd: float = 0.0  # usage x price; 0.0 when no price was found (see report warnings)
     error: str | None = None  # provider/transport/parse error; text/parsed may be None
 
 
@@ -203,7 +204,7 @@ class Decision(BaseModel):
 
     outcome: str  # categorical outcome; transitions are computed on this
     score: float | None = None  # confidence score in [0, 1] for calibration, if any
-    detail: dict[str, Any] = Field(default_factory=dict)
+    detail: dict[str, Any] = Field(default_factory=dict)  # free-form, from decide()
 
 
 DecideFn = Callable[[list[Reply]], Decision]
@@ -217,13 +218,13 @@ class RowResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    run_id: str
-    candidate: str
-    row_id: str
+    run_id: str  # the invocation that wrote this line
+    candidate: str  # candidate name from the config
+    row_id: str  # GoldenRow.id
     replica: int = 0  # replay index; the reference is replayed >= 2x for the noise floor
     request_sha256: str  # hash of GoldenRow.request (pre-overlay)
     candidate_sha256: str | None = None  # hash of the Candidate settings (stale-resume check)
-    replies: list[Reply]
+    replies: list[Reply]  # replies_per_row replies, in order
     decision: Decision | None = None  # None if decide() raised
     error: str | None = None  # decide() error or row-level failure
 
@@ -240,8 +241,8 @@ class Price(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    input: float
-    output: float
+    input: float  # USD per million input tokens
+    output: float  # USD per million output tokens (reasoning tokens bill as output)
     cache_read: float | None = None  # defaults to input if None
     cache_write: float | None = None  # defaults to input if None
     source: str | None = None  # URL + date checked

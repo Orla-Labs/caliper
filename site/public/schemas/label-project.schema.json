@@ -1,0 +1,767 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://caliper.orlalabs.com/schemas/label-project.schema.json",
+  "$comment": "caliper.label.yaml: A label project, YAML 1.2. Written by `caliper label init` or the setup wizard. Credentials are never stored here: `credentials.env` names an environment variable.",
+  "$defs": {
+    "Assignment": {
+      "enum": [
+        "open",
+        "round_robin"
+      ],
+      "title": "Assignment",
+      "type": "string"
+    },
+    "CardConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/CardField"
+          },
+          "title": "Fields",
+          "type": "array"
+        }
+      },
+      "title": "CardConfig",
+      "type": "object"
+    },
+    "CardField": {
+      "additionalProperties": false,
+      "properties": {
+        "column": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Column",
+          "description": "source column; dotted paths into JSON columns allowed"
+        },
+        "template": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Template",
+          "description": "\"cards/{id}.svg\" style; exactly one of column/template"
+        },
+        "type": {
+          "$ref": "#/$defs/DisplayType",
+          "default": "text"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "decimals": {
+          "anyOf": [
+            {
+              "maximum": 10,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decimals"
+        },
+        "hidden": {
+          "default": false,
+          "title": "Hidden",
+          "type": "boolean",
+          "description": "kept in snapshot/export but not shown"
+        },
+        "mono": {
+          "default": false,
+          "title": "Mono",
+          "type": "boolean",
+          "description": "text: monospace, keep whitespace (legacy FieldSpec.mono)"
+        }
+      },
+      "title": "CardField",
+      "type": "object"
+    },
+    "Credentials": {
+      "additionalProperties": false,
+      "description": "References only. Never a secret value.",
+      "properties": {
+        "env": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Env",
+          "description": "e.g. \"DATABASE_URL\" (whole DSN) or \"PGPASSWORD\""
+        },
+        "env_map": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Env Map",
+          "type": "object",
+          "description": "option -> ENV_VAR"
+        },
+        "aws_profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aws Profile",
+          "description": "else default chain (env, SSO, instance role)"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Region"
+        },
+        "endpoint_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Endpoint Url",
+          "description": "S3-compatible endpoints (not a secret)"
+        }
+      },
+      "title": "Credentials",
+      "type": "object"
+    },
+    "DisplayType": {
+      "enum": [
+        "text",
+        "long_text",
+        "number",
+        "badge",
+        "link",
+        "image",
+        "json",
+        "datetime"
+      ],
+      "title": "DisplayType",
+      "type": "string"
+    },
+    "ExportTarget": {
+      "additionalProperties": false,
+      "description": "A saved export destination (optional). Same connector/credential rules as source.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "format": {
+          "title": "Format",
+          "type": "string",
+          "description": "golden|rollouts|records|csv|jsonl|parquet|table"
+        },
+        "destination": {
+          "$ref": "#/$defs/SourceConfig",
+          "description": "file path / s3 URL / database table"
+        }
+      },
+      "required": [
+        "name",
+        "format",
+        "destination"
+      ],
+      "title": "ExportTarget",
+      "type": "object"
+    },
+    "GoldenCheck": {
+      "additionalProperties": false,
+      "description": "Hidden items with known answers; per-labeller accuracy on them.",
+      "properties": {
+        "answer_column": {
+          "title": "Answer Column",
+          "type": "string",
+          "description": "rows with a non-empty value here are golden items"
+        },
+        "rate": {
+          "default": 0.05,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Rate",
+          "type": "number",
+          "description": "share of served items"
+        }
+      },
+      "required": [
+        "answer_column"
+      ],
+      "title": "GoldenCheck",
+      "type": "object"
+    },
+    "Keys": {
+      "additionalProperties": false,
+      "properties": {
+        "skip": {
+          "default": "s",
+          "title": "Skip",
+          "type": "string"
+        },
+        "undo": {
+          "default": "backspace",
+          "title": "Undo",
+          "type": "string"
+        },
+        "note": {
+          "default": "n",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "title": "Keys",
+      "type": "object"
+    },
+    "LabelOption": {
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "title": "Value",
+          "type": "string",
+          "description": "stored value; stable identity (renames change `label`, or migrate)"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "hotkey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hotkey",
+          "description": "auto-assigned 1..9 by the wizard; clash-checked"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color",
+          "description": "\"#rrggbb\""
+        },
+        "approved": {
+          "default": false,
+          "title": "Approved",
+          "type": "boolean",
+          "description": "counts as approved/positive (label_approved, human_label=1)"
+        },
+        "requires_note": {
+          "default": false,
+          "title": "Requires Note",
+          "type": "boolean"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outcome",
+          "description": "GoldenRow.label on export; default: value"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score",
+          "description": "human_label override"
+        },
+        "retired": {
+          "default": false,
+          "title": "Retired",
+          "type": "boolean",
+          "description": "removed in settings after labels existed: kept, flagged"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "LabelOption",
+      "type": "object"
+    },
+    "LabelSource": {
+      "description": "Who produced a label. Agreement with LLM_TEACHER is 'teacher agreement', never accuracy.",
+      "enum": [
+        "human_end_user",
+        "internal_reviewer",
+        "llm_teacher",
+        "heuristic",
+        "adjudicated"
+      ],
+      "title": "LabelSource",
+      "type": "string"
+    },
+    "LabelType": {
+      "enum": [
+        "single",
+        "multi",
+        "yes_no_unsure",
+        "free_text",
+        "score"
+      ],
+      "title": "LabelType",
+      "type": "string"
+    },
+    "LabelsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/LabelType",
+          "default": "single"
+        },
+        "options": {
+          "items": {
+            "$ref": "#/$defs/LabelOption"
+          },
+          "title": "Options",
+          "type": "array"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScoreRange"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "type=score"
+        },
+        "keys": {
+          "$ref": "#/$defs/Keys"
+        },
+        "category_column": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Category Column",
+          "description": "inter-annotator kappa by category"
+        }
+      },
+      "title": "LabelsConfig",
+      "type": "object"
+    },
+    "QueueConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "By",
+          "description": "column (or \"stratum\" from `caliper sample`)"
+        }
+      },
+      "title": "QueueConfig",
+      "type": "object"
+    },
+    "RolloutConfig": {
+      "additionalProperties": false,
+      "description": "`export --format rollouts` for non-EvalRow rows: dotted paths (legacy `rollout:`).",
+      "properties": {
+        "prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt"
+        },
+        "response": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Response"
+        },
+        "gold": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gold"
+        }
+      },
+      "title": "RolloutConfig",
+      "type": "object"
+    },
+    "ScoreRange": {
+      "additionalProperties": false,
+      "properties": {
+        "min": {
+          "default": 1,
+          "title": "Min",
+          "type": "number"
+        },
+        "max": {
+          "default": 5,
+          "title": "Max",
+          "type": "number"
+        },
+        "step": {
+          "default": 1,
+          "title": "Step",
+          "type": "number"
+        }
+      },
+      "title": "ScoreRange",
+      "type": "object"
+    },
+    "SourceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/SourceKind"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path",
+          "description": "file/folder/sqlite path, or URL / glob for s3/gcs/http"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Format",
+          "description": "csv|tsv|jsonl|json|parquet|xlsx; None = by extension"
+        },
+        "table": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Table",
+          "description": "databases: a table ..."
+        },
+        "query": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Query",
+          "description": "... or a SQL query (exactly one of table/query)"
+        },
+        "sidecar": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sidecar",
+          "description": "folder sources: CSV joined on file name"
+        },
+        "id_column": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id Column",
+          "description": "None = row number (stable within a snapshot)"
+        },
+        "plugin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plugin",
+          "description": "kind=plugin: entry-point name"
+        },
+        "options": {
+          "additionalProperties": true,
+          "title": "Options",
+          "type": "object",
+          "description": "connector-specific, non-secret"
+        },
+        "credentials": {
+          "$ref": "#/$defs/Credentials"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "SourceConfig",
+      "type": "object"
+    },
+    "SourceKind": {
+      "enum": [
+        "file",
+        "folder",
+        "s3",
+        "gcs",
+        "http",
+        "postgres",
+        "mysql",
+        "sqlite",
+        "plugin"
+      ],
+      "title": "SourceKind",
+      "type": "string"
+    },
+    "WorkflowConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "queues": {
+          "$ref": "#/$defs/QueueConfig"
+        },
+        "double_label": {
+          "default": 1,
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Double Label",
+          "type": "integer"
+        },
+        "assignment": {
+          "$ref": "#/$defs/Assignment",
+          "default": "open"
+        },
+        "instructions": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instructions",
+          "description": "markdown"
+        },
+        "golden": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GoldenCheck"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "$ref": "#/$defs/LabelSource",
+          "default": "internal_reviewer"
+        },
+        "stage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stage"
+        }
+      },
+      "title": "WorkflowConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "default": 1,
+      "title": "Version",
+      "type": "integer",
+      "description": "schema version of this file (always 1 for now)"
+    },
+    "revision": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer",
+      "description": "config revision: bumped by every settings save"
+    },
+    "name": {
+      "default": "Untitled project",
+      "title": "Name",
+      "type": "string"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Description"
+    },
+    "source": {
+      "$ref": "#/$defs/SourceConfig"
+    },
+    "card": {
+      "$ref": "#/$defs/CardConfig"
+    },
+    "labels": {
+      "$ref": "#/$defs/LabelsConfig"
+    },
+    "workflow": {
+      "$ref": "#/$defs/WorkflowConfig"
+    },
+    "exports": {
+      "items": {
+        "$ref": "#/$defs/ExportTarget"
+      },
+      "title": "Exports",
+      "type": "array"
+    },
+    "rollout": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RolloutConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "source"
+  ],
+  "title": "ProjectConfig",
+  "type": "object"
+}

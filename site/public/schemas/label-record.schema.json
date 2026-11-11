@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://caliper.orlalabs.com/schemas/label-record.schema.json",
+  "$comment": "label records JSONL: One label event per line: `caliper label export --format records` writes it and `caliper kappa --labels` reads it.",
+  "$defs": {
+    "LabelSource": {
+      "description": "Who produced a label. Agreement with LLM_TEACHER is 'teacher agreement', never accuracy.",
+      "enum": [
+        "human_end_user",
+        "internal_reviewer",
+        "llm_teacher",
+        "heuristic",
+        "adjudicated"
+      ],
+      "title": "LabelSource",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One labelling act. Append-only; several records per item when double-labelled.",
+  "properties": {
+    "item_id": {
+      "title": "Item Id",
+      "type": "string"
+    },
+    "decision": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Decision",
+      "description": "a configured decision key's value; None when skipped"
+    },
+    "skipped": {
+      "default": false,
+      "title": "Skipped",
+      "type": "boolean"
+    },
+    "labeller": {
+      "title": "Labeller",
+      "type": "string"
+    },
+    "source": {
+      "$ref": "#/$defs/LabelSource",
+      "default": "internal_reviewer"
+    },
+    "stage": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Stage"
+    },
+    "labelled_at": {
+      "title": "Labelled At",
+      "type": "string",
+      "description": "ISO-8601 UTC, e.g. \"2026-11-06T12:00:00Z\""
+    },
+    "queue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Queue"
+    },
+    "category": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Category",
+      "description": "for inter-rater kappa by category"
+    },
+    "note": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Note"
+    },
+    "undoes": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Undoes",
+      "description": "record_id this record retracts (undo), if any"
+    },
+    "record_id": {
+      "title": "Record Id",
+      "type": "string",
+      "description": "stable unique id (e.g. sha256 of the other fields), assigned by the writer"
+    }
+  },
+  "required": [
+    "item_id",
+    "decision",
+    "labeller",
+    "labelled_at",
+    "record_id"
+  ],
+  "title": "LabelRecord",
+  "type": "object"
+}

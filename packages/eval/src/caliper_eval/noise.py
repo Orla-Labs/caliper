@@ -27,16 +27,16 @@ from .types import RowResult
 class NoiseFloor(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    reference: str
-    n_replicas: int
+    reference: str  # reference candidate name
+    n_replicas: int  # times the reference was replayed
     n_rows: int  # rows with every replica decided (denominator)
-    n_errored_rows: int
+    n_errored_rows: int  # rows where a replica has no decision
     n_incomplete_rows: int  # fewer replicas than n_replicas recorded
-    n_flipped_rows: int
-    flip_rate: CI
-    cost_weighted_flip_rate: CI
-    flipped_rows: list[str] = Field(default_factory=list)
-    errored_rows: list[str] = Field(default_factory=list)
+    n_flipped_rows: int  # rows whose outcome differs between the reference's own replays
+    flip_rate: CI  # share of rows that flipped between replays
+    cost_weighted_flip_rate: CI  # the same, weighted by [costs]: the noise the gate subtracts
+    flipped_rows: list[str] = Field(default_factory=list)  # ids of flipped rows
+    errored_rows: list[str] = Field(default_factory=list)  # ids of errored rows
 
 
 def index_results(results: Iterable[RowResult]) -> dict[tuple[str, str, int], RowResult]:

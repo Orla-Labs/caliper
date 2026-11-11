@@ -6,6 +6,9 @@
 // For each page: drop the leading "# Title" (Starlight renders the frontmatter title),
 // point links to other synced pages at their site URL, copy images into public/images,
 // and send every other repo-relative link to GitHub.
+//
+// docs/agents/AGENTS.md and SKILL.md are served raw (public/agents/) and embedded in the
+// "Instructions for your agent" page, built from docs/agents/instructions.md.
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, normalize, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -75,6 +78,7 @@ for (const dir of ["eval", "label", "graders", "examples"]) {
 	rmSync(join(content, dir), { recursive: true, force: true });
 }
 rmSync(images, { recursive: true, force: true });
+rmSync(join(site, "public/agents"), { recursive: true, force: true });
 mkdirSync(images, { recursive: true });
 
 for (const [source, page] of Object.entries(PAGES)) {
@@ -99,3 +103,27 @@ for (const [source, page] of Object.entries(PAGES)) {
 	writeFileSync(out, front + body);
 	console.log(`synced ${source} -> /${page.slug}/`);
 }
+
+// Agent instruction files: served as-is and embedded in their page.
+const AGENT_FILES = { "AGENTS.md": "agents/AGENTS.md", "SKILL.md": "agents/caliper/SKILL.md" };
+let instructions = readFileSync(join(repo, "docs/agents/instructions.md"), "utf8").replace(/^# .*\n+/, "");
+for (const [name, served] of Object.entries(AGENT_FILES)) {
+	const text = readFileSync(join(repo, "docs/agents", name), "utf8");
+	const out = join(site, "public", served);
+	mkdirSync(dirname(out), { recursive: true });
+	writeFileSync(out, text);
+	if (!instructions.includes(`{{${name}}}`)) throw new Error(`instructions.md has no {{${name}}}`);
+	instructions = instructions.replace(`{{${name}}}`, "````markdown\n" + text.trimEnd() + "\n````");
+}
+writeFileSync(
+	join(content, "agents/instructions.md"),
+	[
+		"---",
+		'title: "Instructions for your agent"',
+		'description: "A drop-in AGENTS.md section and a Claude Code skill that teach a coding agent to use Caliper correctly."',
+		'editUrl: "https://github.com/Orla-Labs/caliper/edit/main/docs/agents/instructions.md"',
+		"---",
+		"",
+	].join("\n") + instructions,
+);
+console.log("synced docs/agents -> /agents/instructions/, /agents/AGENTS.md, /agents/caliper/SKILL.md");

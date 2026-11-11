@@ -20,11 +20,11 @@ class Rollout(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    prompt: str
-    response: str
-    gold: str | None = None
-    trace: list[dict[str, Any]] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    prompt: str  # what the model was asked
+    response: str  # what it answered
+    gold: str | None = None  # reference answer, for graders that use one
+    trace: list[dict[str, Any]] = Field(default_factory=list)  # tool-call records
+    metadata: dict[str, Any] = Field(default_factory=dict)  # free-form; human_label for kappa
 
 
 class GraderResult(BaseModel):
@@ -43,8 +43,8 @@ class EvalRow(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    id: str
-    rollout: Rollout
+    id: str  # unique row id
+    rollout: Rollout  # the rollout to grade
 
 
 class GraderCallable(Protocol):

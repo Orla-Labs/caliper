@@ -23,11 +23,11 @@ class CI(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    estimate: float
-    low: float
-    high: float
-    confidence: float = DEFAULT_CONFIDENCE
-    n_boot: int = DEFAULT_N_BOOT
+    estimate: float  # point estimate
+    low: float  # lower bound of the bootstrap interval
+    high: float  # upper bound of the bootstrap interval
+    confidence: float = DEFAULT_CONFIDENCE  # interval level, e.g. 0.95
+    n_boot: int = DEFAULT_N_BOOT  # bootstrap resamples
 
 
 def derive_seed(seed: int, *parts: str) -> int:

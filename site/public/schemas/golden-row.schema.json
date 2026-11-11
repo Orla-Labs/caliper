@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://caliper.orlalabs.com/schemas/golden-row.schema.json",
+  "$comment": "golden.jsonl: The golden set, one JSON object per line. Written by `caliper sample` and `caliper label export --format golden`; read by `caliper eval`. Only `id` and `request` are required; `request` is passed to every candidate as-is.",
+  "$defs": {
+    "LabelSource": {
+      "description": "Who produced a label. Agreement with LLM_TEACHER is 'teacher agreement', never accuracy.",
+      "enum": [
+        "human_end_user",
+        "internal_reviewer",
+        "llm_teacher",
+        "heuristic",
+        "adjudicated"
+      ],
+      "title": "LabelSource",
+      "type": "string"
+    },
+    "Split": {
+      "enum": [
+        "train",
+        "val",
+        "test"
+      ],
+      "title": "Split",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A golden-set row. One JSONL line in a golden file.\n\n``request`` is provider-neutral and stored exactly as the feature sent it:\n``{\"system\": str | None, \"messages\": [{\"role\", \"content\"}], \"max_tokens\": int,\n...any other params}``. A Candidate overlays model / thinking /\nstructured-output settings at send time; nothing else is rewritten.",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string",
+      "description": "unique row id"
+    },
+    "request": {
+      "additionalProperties": true,
+      "title": "Request",
+      "type": "object",
+      "description": "the request as the feature sent it (see the class docstring)"
+    },
+    "reference_outcome": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reference Outcome",
+      "description": "outcome production recorded, if known"
+    },
+    "label": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Label",
+      "description": "human-approved outcome, if labeled"
+    },
+    "label_approved": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Label Approved",
+      "description": "human approved the feature's output (calibration)"
+    },
+    "stratum": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Stratum",
+      "description": "e.g. \"positive\" / \"unsure\" / \"negative\" from the sampler"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object",
+      "description": "free-form; slices can match on it"
+    },
+    "label_source": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LabelSource"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "provenance of label/label_approved"
+    },
+    "label_stage": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Label Stage",
+      "description": "e.g. \"triage\", \"final_review\"; free-form"
+    },
+    "split": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Split"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "selection hygiene: thresholds picked on val, test touched once"
+    },
+    "slices": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Slices",
+      "type": "array",
+      "description": "named hard slices this row belongs to"
+    }
+  },
+  "required": [
+    "id",
+    "request"
+  ],
+  "title": "GoldenRow",
+  "type": "object"
+}

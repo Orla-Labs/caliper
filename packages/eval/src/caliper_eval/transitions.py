@@ -49,15 +49,15 @@ class FlippedRow(BaseModel):
 class Transitions(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    candidate: str
-    reference: str
+    candidate: str  # candidate name
+    reference: str  # reference name
     n_rows: int  # compared rows (both sides decided)
     n_errored: int  # either side has no decision
     n_missing: int  # row present on one side only
-    matrix: list[TransitionCount] = Field(default_factory=list)
-    flipped: list[FlippedRow] = Field(default_factory=list)
-    errored_rows: list[str] = Field(default_factory=list)
-    flip_rate: CI
+    matrix: list[TransitionCount] = Field(default_factory=list)  # reference -> candidate counts
+    flipped: list[FlippedRow] = Field(default_factory=list)  # rows whose outcome changed
+    errored_rows: list[str] = Field(default_factory=list)  # ids with no decision on a side
+    flip_rate: CI  # share of compared rows that changed outcome
     regression: CI  # cost-weighted
 
     @property
@@ -132,7 +132,7 @@ class PairedExcess(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    n_rows: int
+    n_rows: int  # compared rows
     n_without_noise: int  # compared rows with no complete reference replays (n_i = 0)
     regression: float  # mean candidate cost on these rows
     noise: float  # mean reference replay cost on these rows
