@@ -26,7 +26,26 @@ Caliper is for teams shipping an LLM feature on a frontier API: classification, 
 - **Cost is part of the verdict.** Every reply is priced from the provider's own published prices where one exists (live AWS Price List for Bedrock, by region and inference tier). The report shows cost per row against the incumbent and, given your traffic, dollars per month. `[ci] max_cost_ratio` fails a change that costs too much, and a reply with no known price fails it too instead of reading as free.
 - **Practical plumbing.** It replays the request exactly as stored, enforces a budget guard, keeps results resumable, and has a stratified sampler that builds golden sets from production logs without losing the rare cases.
 
-## Quickstart
+## Install
+
+```bash
+uv add orlalabs-caliper            # or: pip install orlalabs-caliper
+```
+
+This gives you the `caliper` command (`eval`, `sample`, `kappa`, `label`) and `caliper-compile`. The core runs offline. Add extras for what you use:
+
+| Extra | For |
+| --- | --- |
+| `orlalabs-caliper[anthropic]` | Claude through the Anthropic API |
+| `orlalabs-caliper[bedrock]` | Claude on Amazon Bedrock |
+| `orlalabs-caliper[bedrock-converse]` | Any Bedrock model through the Converse API (Nova, Llama, ...) |
+| `orlalabs-caliper[label]` | The `caliper label` web UI |
+| `orlalabs-caliper[server]`, `[postgres]`, `[e2b]` | `caliper-server` and its store and sandbox |
+| `orlalabs-caliper[all]` | Everything above except `e2b` |
+
+Requires Python 3.12 or newer. Import names are unchanged (`caliper_eval`, `caliper_label`, ...).
+
+## Quickstart (from a clone)
 
 Needs [uv](https://docs.astral.sh/uv/) ≥ 0.11.
 
@@ -84,7 +103,7 @@ permissions:
 steps:
   - uses: actions/checkout@v4
   - uses: astral-sh/setup-uv@v3
-  - run: uv sync --all-extras    # real providers need the [anthropic] extra
+  - run: uv sync    # with orlalabs-caliper[anthropic] (or another provider extra) in your dependencies
 
   - name: Eval the feature
     run: >

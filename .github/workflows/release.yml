@@ -1,0 +1,72 @@
+name: Release
+
+# Publishes orlalabs-caliper to PyPI when a version tag is pushed:
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# The tag must match `version` in pyproject.toml. Publishing uses PyPI Trusted
+# Publishing (OIDC): no API token is stored. On pypi.org the publisher is
+# owner Orla-Labs, repository caliper, workflow release.yml, environment pypi.
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    name: build + smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Tag matches pyproject version
+        run: |
+          version=$(uv run --no-project python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          test "v${version}" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} != pyproject version ${version}"; exit 1; }
+
+      - name: Test
+        run: uv sync && uv run pytest -q
+
+      - name: Build sdist and wheel
+        run: uv build --out-dir dist
+
+      - name: Smoke test the wheel in a clean environment
+        run: |
+          uv venv /tmp/smoke -p 3.12
+          VIRTUAL_ENV=/tmp/smoke uv pip install dist/*.whl
+          /tmp/smoke/bin/caliper --help
+          /tmp/smoke/bin/caliper-compile --help
+          /tmp/smoke/bin/caliper eval --config examples/catalog_cleanup/caliper.toml \
+            --out /tmp/smoke-eval --no-resume > /tmp/smoke-eval.txt
+          grep -q "baseline (ref)" /tmp/smoke-eval.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/orlalabs-caliper/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1

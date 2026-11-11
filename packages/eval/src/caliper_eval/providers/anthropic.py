@@ -1,6 +1,6 @@
 """Anthropic Messages API, direct (``anthropic``) and on Amazon Bedrock (``bedrock``).
 
-Install with ``caliper-eval[anthropic]`` or ``caliper-eval[bedrock]``; the SDK is
+Install with ``orlalabs-caliper[anthropic]`` or ``orlalabs-caliper[bedrock]``; the SDK is
 imported lazily.
 
 Wire shapes (Claude API docs via the claude-api skill, cached 2026-10-06, and
@@ -173,7 +173,8 @@ def default_client(candidate: Candidate) -> Any:
     except ImportError as exc:  # pragma: no cover - depends on install
         extra = "bedrock" if candidate.provider == ProviderKind.BEDROCK else "anthropic"
         raise ImportError(
-            f"provider {candidate.provider!r} needs the SDK: pip install 'caliper-eval[{extra}]'"
+            f"provider {candidate.provider!r} needs the SDK: "
+            f"pip install 'orlalabs-caliper[{extra}]'"
         ) from exc
     if candidate.provider == ProviderKind.BEDROCK:
         return anthropic.AnthropicBedrockMantle(aws_region=candidate.region)

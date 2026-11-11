@@ -148,7 +148,7 @@ knob (`reasoning_effort`, ...) in `params`. The API key comes from the
 environment variable named by `params.api_key_env` (default `OPENAI_API_KEY`).
 No server-side fallback is ever enabled.
 
-On `bedrock_converse` (install `caliper-eval[bedrock-converse]`; AWS credentials
+On `bedrock_converse` (install `orlalabs-caliper[bedrock-converse]`; AWS credentials
 from the usual boto3 chain):
 
 - `model` is a base model ID or an inference profile ID

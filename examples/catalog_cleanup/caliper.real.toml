@@ -77,7 +77,7 @@ replies_per_row = 3
 # replies_per_row = 3
 
 # Any Bedrock model through the Converse API, e.g. Amazon Nova 2 Lite with
-# reasoning (needs caliper-eval[bedrock-converse]). Reasoning is the model's own
+# reasoning (needs orlalabs-caliper[bedrock-converse]). Reasoning is the model's own
 # field; its tokens are billed as output.
 # [[candidates]]
 # name = "nova-lite-reasoning"

@@ -21,8 +21,10 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
+      # Plain sync: the root's extras are the published package's (orlalabs-caliper[...]);
+      # the server tests check that the optional e2b executor is absent by default.
       - name: Sync workspace
-        run: uv sync --all-extras
+        run: uv sync
 
       - name: Lint
         run: uv run ruff check packages examples
