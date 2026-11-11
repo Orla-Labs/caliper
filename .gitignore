@@ -43,5 +43,6 @@ docs/*
 !docs/label-connectors.md
 !docs/label-product/
 !docs/brand/
+!docs/agents/
 building/
 CLAUDE.md
