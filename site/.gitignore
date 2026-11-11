@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.astro/
+# generated from ../docs and ../examples by scripts/sync-docs.mjs
+src/content/docs/eval/
+src/content/docs/label/
+src/content/docs/graders/
+src/content/docs/examples/
+public/images/

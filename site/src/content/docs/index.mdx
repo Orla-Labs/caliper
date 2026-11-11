@@ -1,0 +1,47 @@
+---
+title: Caliper Documentation
+description: Know when a model or prompt change breaks your AI feature, before your users do.
+template: splash
+hero:
+  title: Caliper
+  tagline: Know when a model or prompt change breaks your AI feature, before your users do. Replay a golden set of real requests, measure the change against the noise you already live with and what it costs, and gate the pull request.
+  image:
+    file: ../../assets/caliper-mark.svg
+  actions:
+    - text: Quick Start
+      link: /getting-started/quick-start/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/Orla-Labs/caliper
+      variant: minimal
+      icon: external
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+```bash
+pip install orlalabs-caliper
+```
+
+<CardGrid>
+  <LinkCard
+    title="Quick Start"
+    description="Copy the bundled example and run your first eval, offline and without API keys, in about a minute."
+    href="/getting-started/quick-start/"
+  />
+  <LinkCard
+    title="caliper eval"
+    description="Noise floor, cost-weighted transitions, a paired gate, slices, calibration, cost per row and the CI gate."
+    href="/eval/guide/"
+  />
+  <LinkCard
+    title="caliper label"
+    description="Label data in a local, keyboard-first UI, with double labelling and inter-annotator kappa."
+    href="/label/overview/"
+  />
+  <LinkCard
+    title="Graders for RL fine-tuning"
+    description="Mutation-test a grader, measure it against human labels, and compile it for TRL or Bedrock RFT."
+    href="/graders/compile-targets/"
+  />
+</CardGrid>

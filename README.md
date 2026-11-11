@@ -246,6 +246,7 @@ scripts/demo.sh --check           # demo/expected_output.txt
 │   ├── label.png
 │   ├── demo.gif
 │   └── targets.md          per-target details for caliper-compile
+├── site/               caliper.orlalabs.com: Starlight docs built from docs/*.md and the example READMEs
 └── scripts/
     ├── demo_eval.sh                runs the catalog_cleanup eval demo; --check diffs its transcript
     ├── demo.sh                     runs demo/run_demo.py; --check diffs against the transcript
