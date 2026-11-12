@@ -427,6 +427,11 @@ def _approval_warnings(s: ApprovalSummary) -> list[str]:
             f"approvals: {s.labels_not_outcomes} human golden labels are not an outcome any "
             "candidate decided (e.g. a yes/no label); they judge nothing and are ignored"
         )
+    if s.outranked:
+        out.append(
+            f"approvals: {s.outranked} approval lines were outranked by an adjudicated golden "
+            "label (only an adjudicated approval can override it)"
+        )
     if s.overrides:
         out.append(
             f"approvals: {s.overrides} approval verdicts differ from the row's golden label; "
@@ -681,6 +686,9 @@ def _approvals_head(report: EvalReport) -> str:
     parts = [f"{a.used} approval lines"]
     if a.golden_labels:
         parts.append(f"{a.from_golden_labels} human golden labels")
+    conf = report.quality_confidence
+    if conf is not None and conf != 0.95:
+        parts.append(f"{conf:.0%} intervals" if conf > 0 else "point estimates")
     return "quality vs human approvals (" + ", ".join(parts) + ")"
 
 
@@ -726,11 +734,17 @@ def quality_summary(report: EvalReport, c: CandidateReport) -> str:
     assert q is not None
     if q.n_rows == 0:
         return "no row run by both sides"
+    left_out = (
+        f"; {q.n_reference_undecided} rows left out: {report.reference} has no decision there "
+        "(`--retry-errors` re-runs provider failures)"
+        if q.n_reference_undecided
+        else ""
+    )
     if q.n_changed_reviewed < q.n_changed:
         missing = q.n_changed - q.n_changed_reviewed
         return (
             f"{q.n_changed} changed rows, {missing} without a verdict on both outcomes "
-            f"({row_ids(q.unreviewed_rows, missing)}): unknown until reviewed"
+            f"({row_ids(q.unreviewed_rows, missing)}): unknown until reviewed" + left_out
         )
     parts = [
         f"{q.n_changed} changed rows: {q.fixed} fixed, {q.broken} broken, "
@@ -741,12 +755,7 @@ def quality_summary(report: EvalReport, c: CandidateReport) -> str:
         if q.relative_improvement is not None:
             reduction += f", {relative_ci(q.relative_improvement)} of {report.reference}'s errors"
         parts.append(reduction + " (negative: more errors)")
-    if q.n_reference_undecided:
-        parts.append(
-            f"{q.n_reference_undecided} rows left out: {report.reference} has no decision there "
-            "(`--retry-errors` re-runs provider failures)"
-        )
-    return "; ".join(parts)
+    return "; ".join(parts) + left_out
 
 
 def _quality_lines(report: EvalReport) -> list[str]:

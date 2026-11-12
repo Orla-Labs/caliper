@@ -51,6 +51,8 @@ Errors go to stderr as one line (sometimes followed by a hint), prefixed with th
 | `warning: approvals: N lines judged a request that has changed since; ignored` | The golden row's request changed after the review; review those rows again. |
 | `warning: approvals: N (row, outcome) pairs have contradicting verdicts` | Two verdicts disagree; the pair counts as unreviewed until an adjudicated approval settles it. |
 | `warning: approvals: N human golden labels are not an outcome any candidate decided` | A label like `yes` from a yes/no project cannot judge an outcome; it is ignored. |
+| `warning: approvals: N approval lines were outranked by an adjudicated golden label` | An adjudicated label can only be overridden by an adjudicated approval. |
+| `...; the base sample shows no REF errors, so a relative improvement cannot be measured` | With `quality_confidence = 0` and no reference errors in the base sample, "X% fewer errors" has no denominator. Enlarge `[quality] base_sample`. |
 | `warning: approvals: N approval verdicts differ from the row's golden label` | An explicit approval overrides the golden label for that outcome. |
 | `-8.3% [-45.0%, +15.0%] of REF's errors (negative: more errors)` | The candidate makes more errors than the reference on human verdicts (here, not shown at 95%). |
 | `N rows left out: REF has no decision there` | The reference failed on those rows (usually provider errors); they are not counted for or against anyone. `--retry-errors` re-runs them. |

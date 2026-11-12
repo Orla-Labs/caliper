@@ -69,6 +69,7 @@ class ApprovalSummary(BaseModel):
     from_golden_labels: int  # golden rows whose human label gives verdicts
     labels_not_outcomes: int = 0  # human golden labels that are no decided outcome (ignored)
     overrides: int = 0  # approval verdicts that differ from the row's golden label (they win)
+    outranked: int = 0  # (row, outcome) pairs whose approvals lost to an adjudicated label
     not_human: int  # lines from a non-human source (ignored)
     unsure: int  # lines with approved = null (ignored)
     stale: int  # lines for a request that has changed since (ignored)
@@ -196,10 +197,11 @@ def build_verdicts(
 
     explicit: dict[tuple[str, str], bool] = {}
     conflicts: set[tuple[str, str]] = set()
-    overrides = 0
+    overrides = outranked = 0
     for key, by_level in seen.items():
         if True not in by_level and key[0] in adjudicated_labels:
-            continue  # an adjudicated golden label outranks ordinary approvals
+            outranked += 1  # an adjudicated golden label outranks ordinary approvals
+            continue
         values = by_level.get(True) or by_level[False]
         if len(values) > 1:
             conflicts.add(key)
@@ -228,6 +230,7 @@ def build_verdicts(
         from_golden_labels=len(labels),
         labels_not_outcomes=not_an_outcome,
         overrides=overrides,
+        outranked=outranked,
         not_human=not_human,
         unsure=unsure,
         stale=stale,

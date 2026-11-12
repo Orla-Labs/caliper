@@ -219,7 +219,8 @@ def _quality_reasons(report: EvalReport, c: CandidateReport, k: float) -> list[s
         return []
     conf = report.quality_confidence or 0.0
     level = f"at {conf:.0%}" if conf > 0 else "by the point estimates"
-    if b.error_rate.estimate == 0 and q.improvement is not None and q.improvement.estimate > 0:
+    no_errors = b.error_rate.estimate == 0 and q.improvement is not None
+    if conf == 0 and no_errors and q.improvement.estimate > 0:
         return [
             head + f"; the base sample shows no {report.reference} errors, so a relative "
             "improvement cannot be measured: enlarge [quality] base_sample"

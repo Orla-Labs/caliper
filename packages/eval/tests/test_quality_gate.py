@@ -266,6 +266,7 @@ def test_n1_the_reference_failing_does_not_credit_the_candidate():
     assert (q.fixed, q.n_changed, q.n_reference_undecided) == (0, 0, 12)
     assert q.improvement.estimate == 0 and not cand.passed
     assert "12 rows left out" in render_text(report)
+    assert "ref error rate" in render_text(report)
     base = report.base_rate
     assert base.n_judged + base.n_undecided == base.n_sample
 
@@ -273,7 +274,7 @@ def test_n1_the_reference_failing_does_not_credit_the_candidate():
 def test_n3_an_adjudicated_golden_label_outranks_an_ordinary_approval():
     golden = [GoldenRow(id="x", request=_req("x"), label=BAD, label_source=LabelSource.ADJUDICATED)]
     v, s = build_verdicts(golden, [Approval(row_id="x", outcome=GOOD, approved=True)])
-    assert v.get("x", GOOD) is False and s.overrides == 0
+    assert v.get("x", GOOD) is False and s.overrides == 0 and s.outranked == 1
     adj = Approval(row_id="x", outcome=GOOD, approved=True, source=LabelSource.ADJUDICATED)
     v2, _ = build_verdicts(golden, [adj])
     assert v2.get("x", GOOD) is True
@@ -342,11 +343,7 @@ def test_b2_a_clean_small_sample_is_not_false_precision():
         sum(1 for r in base_sample_rows(golden, 20, 0) if int(r[1:]) < 6),
     )
     assert b.error_rate.high > 0.15  # Wilson keeps the upper end honest
-    assert not cand.passed
-    if b.n_errors == 0:  # T3: say why, rather than "n/a [..., +inf]"
-        assert "base sample shows no ref errors" in cand.reasons[0]
-    else:
-        assert "not shown at 95%" in cand.reasons[0]
+    assert not cand.passed and "not shown at 95%" in cand.reasons[0]
 
 
 def test_unreviewed_base_sample_leaves_the_relative_number_unknown():

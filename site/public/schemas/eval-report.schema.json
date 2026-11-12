@@ -42,6 +42,12 @@
           "type": "integer",
           "description": "approval verdicts that differ from the row's golden label (they win)"
         },
+        "outranked": {
+          "default": 0,
+          "title": "Outranked",
+          "type": "integer",
+          "description": "(row, outcome) pairs whose approvals lost to an adjudicated label"
+        },
         "not_human": {
           "title": "Not Human",
           "type": "integer",

@@ -332,8 +332,8 @@ candidate; `--retry-errors` re-runs them. The candidate's own missing decisions
 count as errors, so it cannot abstain its way past a hard row.
 
 **How big the base sample must be.** The relative low end divides by the error
-rate's *high* end, and on 30 rows that is 1.5 to 3 times the estimate. A staff
-review measured, on 4,000 rows with a 10% reference error rate: a candidate at
+rate's *high* end, and on 30 rows that is 1.5 to 3 times the estimate. On 4,000
+rows with a 10% reference error rate, for example, a candidate at
 1.10x cost that truly makes 20% fewer errors fails with `base_sample = 30` and
 passes with 300; one at 1.04x and 8% fewer errors passes only with 1,000. The
 default of 30 is a cheap first look. To make a decision, plan on a few hundred

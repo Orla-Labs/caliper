@@ -263,6 +263,7 @@ What the approval evidence contained and what was set aside.
 | `from_golden_labels` | integer | yes |  | golden rows whose human label gives verdicts |
 | `labels_not_outcomes` | integer |  | `0` | human golden labels that are no decided outcome (ignored) |
 | `overrides` | integer |  | `0` | approval verdicts that differ from the row's golden label (they win) |
+| `outranked` | integer |  | `0` | (row, outcome) pairs whose approvals lost to an adjudicated label |
 | `not_human` | integer | yes |  | lines from a non-human source (ignored) |
 | `unsure` | integer | yes |  | lines with approved = null (ignored) |
 | `stale` | integer | yes |  | lines for a request that has changed since (ignored) |
