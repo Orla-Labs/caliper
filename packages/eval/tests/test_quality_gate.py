@@ -342,7 +342,11 @@ def test_b2_a_clean_small_sample_is_not_false_precision():
         sum(1 for r in base_sample_rows(golden, 20, 0) if int(r[1:]) < 6),
     )
     assert b.error_rate.high > 0.15  # Wilson keeps the upper end honest
-    assert not cand.passed and "not shown at 95%" in cand.reasons[0]
+    assert not cand.passed
+    if b.n_errors == 0:  # T3: say why, rather than "n/a [..., +inf]"
+        assert "base sample shows no ref errors" in cand.reasons[0]
+    else:
+        assert "not shown at 95%" in cand.reasons[0]
 
 
 def test_unreviewed_base_sample_leaves_the_relative_number_unknown():
@@ -400,7 +404,7 @@ def test_ten_percent_more_cost_for_five_percent_better_fails():
     assert report.candidate("cand").quality.relative_improvement.estimate < 0.1
     assert not cand.passed
     (reason,) = cand.reasons
-    assert "costs 1.10x the reference, so it must make at least 10.0% fewer errors" in reason
+    assert "costs 1.100x the reference, so it must make at least 10.0% fewer errors" in reason
     assert "not shown at 95%" in reason
 
 
@@ -447,7 +451,13 @@ def test_cost_within_the_tolerance_is_noise_not_extra_cost():
         50, 0, cand_cost=0.00101, ci={"quality_per_cost": 1, "quality_cost_tolerance": 0}
     )
     _, cand = _gate(config, results, golden)
-    assert not cand.passed and "costs 1.01x the reference" in cand.reasons[0]
+    assert not cand.passed and "costs 1.010x the reference" in cand.reasons[0]
+
+
+def test_t1_the_tolerance_boundary_survives_float_drift():
+    config, results, golden = _world(50, 0, cand_cost=0.00102, ci={"quality_per_cost": 1})
+    _, cand = _gate(config, results, golden)
+    assert cand.passed, cand.reasons  # 1.02x is inside the default 2%
 
 
 def test_quality_confidence_sets_where_the_burden_of_proof_sits():
@@ -461,7 +471,7 @@ def test_quality_confidence_sets_where_the_burden_of_proof_sits():
     report, cand = _gate(*point)
     assert cand.passed, cand.reasons
     assert report.base_rate.error_rate.low == report.base_rate.error_rate.high == 0.2
-    assert "by human approvals at 0%" in render_text(report, evaluate_gate(report))
+    assert "by human approvals by point estimates" in render_text(report, evaluate_gate(report))
 
 
 def test_cheaper_candidates_are_not_judged_by_this_rule():

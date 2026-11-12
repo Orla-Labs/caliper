@@ -364,7 +364,8 @@ quality section use the same level.
 
 `quality_cost_tolerance` exists because the cost ratio comes from token counts,
 which vary from run to run. A candidate within it (1.02x by default) is not judged
-by this rule.
+by this rule. It is a threshold, not a deduction: at 1.03x the candidate must show
+the full 3% (not 1%), so "10% more cost needs 10% fewer errors" holds as written.
 
 It fails, with a next step, when a changed row is unreviewed, when the base sample
 is not fully reviewed, or when the cost cannot be compared (no price). Paying more

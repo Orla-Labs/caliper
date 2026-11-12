@@ -187,11 +187,11 @@ def _quality_reasons(report: EvalReport, c: CandidateReport, k: float) -> list[s
     """Why ``c`` fails ``[ci] quality_per_cost``, or nothing when it passes."""
     ratio = c.cost_vs_reference
     tolerance = report.quality_cost_tolerance or 0.0
-    if ratio is None or ratio <= 1 + tolerance:
+    if ratio is None or ratio <= 1 + tolerance + 1e-9:
         return []  # within the cost tolerance, or the cost reasons already say why unknown
     required = k * (ratio - 1)
     head = (
-        f"costs {ratio:.2f}x the reference, so it must make at least {required:.1%} fewer "
+        f"costs {ratio:.3f}x the reference, so it must make at least {required:.1%} fewer "
         f"errors than {report.reference} by human approvals (quality_per_cost {k:g})"
     )
     q = c.quality
@@ -217,11 +217,18 @@ def _quality_reasons(report: EvalReport, c: CandidateReport, k: float) -> list[s
         return [head + f"; {report.reference}'s error rate is unknown: {why}"]
     if quality_passes(q):
         return []
+    conf = report.quality_confidence or 0.0
+    level = f"at {conf:.0%}" if conf > 0 else "by the point estimates"
+    if b.error_rate.estimate == 0 and q.improvement is not None and q.improvement.estimate > 0:
+        return [
+            head + f"; the base sample shows no {report.reference} errors, so a relative "
+            "improvement cannot be measured: enlarge [quality] base_sample"
+        ]
     assert q.improvement is not None and q.relative_improvement is not None
     return [
         head + f"; measured {relative_ci(q.relative_improvement)} of {report.reference}'s "
         f"errors ({q.fixed} fixed, {q.broken} broken of {q.n_changed} changed rows, "
-        f"{q.n_rows} rows): not shown at {report.quality_confidence or 0:.0%}"
+        f"{q.n_rows} rows): not shown {level}"
     ]
 
 

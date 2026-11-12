@@ -357,7 +357,12 @@ def build_report(
                 continue
             required = None
             ratio = rep.cost_vs_reference
-            if quality_per_cost is not None and ratio is not None and ratio > 1 + cost_tolerance:
+            # Float slack: 0.00102 / 0.001 must count as 1.02x, inside a 2% tolerance.
+            if (
+                quality_per_cost is not None
+                and ratio is not None
+                and ratio > 1 + cost_tolerance + 1e-9
+            ):
                 required = float(quality_per_cost) * (ratio - 1)
             rep.quality = compute_quality(
                 latest,
@@ -703,7 +708,8 @@ def base_rate_summary(report: EvalReport) -> str:
     left_out = b.n_not_run + b.n_undecided
     return head + (
         f": {_pct(e.estimate)} [{_pct(e.low)}, {_pct(e.high)}] "
-        f"({b.n_errors} of {b.n_judged} rejected; Wilson {e.confidence:.0%}"
+        f"({b.n_errors} of {b.n_judged} rejected; "
+        + (f"Wilson {e.confidence:.0%}" if e.confidence > 0 else "point estimate")
         + (f"; {left_out} with no {report.reference} decision left out" if left_out else "")
         + ")"
     )
@@ -903,7 +909,8 @@ def _gate_rule(report: EvalReport) -> str:
         conf = report.quality_confidence if report.quality_confidence is not None else 0.95
         rule += (
             f" and a candidate costing over {1 + tol:g}x cuts errors by at least "
-            f"{report.quality_per_cost:g}x its extra cost, by human approvals at {conf:.0%}"
+            f"{report.quality_per_cost:g}x its extra cost, by human approvals "
+            + (f"at {conf:.0%}" if conf > 0 else "by point estimates")
         )
     return rule
 
