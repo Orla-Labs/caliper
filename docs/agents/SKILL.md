@@ -47,3 +47,5 @@ same command to resume.
 - Do not use `--skip-preflight` to get past a preflight failure; fix the candidate.
 - Do not raise `budget_usd` or re-run paid evals without asking.
 - Do not read `$0` cost as free: it means no price was found. Add `[pricing."<model>"]`.
+- Do not write `[quality]` approvals yourself or with a model. For "is the costlier model
+  worth it", run `caliper review` and have the user label the items (recipe 10).

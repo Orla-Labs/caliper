@@ -3,6 +3,79 @@
   "$id": "https://caliper.orlalabs.com/schemas/eval-report.schema.json",
   "$comment": "OUT/report.json: Everything `caliper eval` prints, and more, as JSON. Parse this instead of stdout. The gate verdict itself is not in it: use the exit code of `--ci`, or `--summary-md`.",
   "$defs": {
+    "ApprovalSummary": {
+      "additionalProperties": false,
+      "description": "What the approval evidence contained and what was set aside.",
+      "properties": {
+        "files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Files",
+          "type": "array",
+          "description": "approval files read, as given in [quality] approvals"
+        },
+        "golden_labels": {
+          "title": "Golden Labels",
+          "type": "boolean",
+          "description": "whether human golden labels count as verdicts"
+        },
+        "used": {
+          "title": "Used",
+          "type": "integer",
+          "description": "human verdicts in use (approval lines, before merging duplicates)"
+        },
+        "from_golden_labels": {
+          "title": "From Golden Labels",
+          "type": "integer",
+          "description": "golden rows whose human label gives verdicts"
+        },
+        "not_human": {
+          "title": "Not Human",
+          "type": "integer",
+          "description": "lines from a non-human source (ignored)"
+        },
+        "unsure": {
+          "title": "Unsure",
+          "type": "integer",
+          "description": "lines with approved = null (ignored)"
+        },
+        "stale": {
+          "title": "Stale",
+          "type": "integer",
+          "description": "lines for a request that has changed since (ignored)"
+        },
+        "unknown_rows": {
+          "title": "Unknown Rows",
+          "type": "integer",
+          "description": "lines for a row id not in the golden set (ignored)"
+        },
+        "conflicts": {
+          "title": "Conflicts",
+          "type": "integer",
+          "description": "(row, outcome) pairs with contradicting verdicts (no verdict)"
+        },
+        "fingerprint": {
+          "title": "Fingerprint",
+          "type": "string",
+          "description": "hash of the verdicts on test rows (part of the test-ledger key)"
+        }
+      },
+      "required": [
+        "files",
+        "golden_labels",
+        "used",
+        "from_golden_labels",
+        "not_human",
+        "unsure",
+        "stale",
+        "unknown_rows",
+        "conflicts",
+        "fingerprint"
+      ],
+      "title": "ApprovalSummary",
+      "type": "object"
+    },
     "CI": {
       "additionalProperties": false,
       "description": "Percentile bootstrap confidence interval around a point estimate.",
@@ -404,6 +477,18 @@
           "title": "Slices",
           "type": "array",
           "description": "per-slice pass/fail"
+        },
+        "quality": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QualityComparison"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "vs the reference on human approvals ([quality])"
         }
       },
       "required": [
@@ -626,12 +711,18 @@
     },
     "PairedExcess": {
       "additionalProperties": false,
-      "description": "Candidate regression minus reference replay noise, paired per row.\n\nFor every compared row ``i``: ``d_i = cost(ref replica 0 -> candidate) - n_i``\nwhere ``n_i`` is the reference's own symmetrized replay cost on that row\n(0 when the row has no complete noise replays). ``delta`` is the paired\nbootstrap CI of ``mean(d)``: one row resample per draw, both terms\ncomputed on the same rows.",
+      "description": "Candidate regression minus reference replay noise, paired per row.\n\nFor every compared row ``i``: ``d_i = cost(ref replica 0 -> candidate) - n_i``\nwhere ``n_i`` is the reference's own symmetrized replay cost on that row\n(0 when the row has no complete noise replays). ``delta`` is the paired\nbootstrap CI of ``mean(d)``: one row resample per draw, both terms\ncomputed on the same rows.\n\nWith human approvals (``[quality]``), a change to an outcome a person\napproved for that row costs 0: it is not a regression.",
       "properties": {
         "n_rows": {
           "title": "N Rows",
           "type": "integer",
           "description": "compared rows"
+        },
+        "n_approved_changes": {
+          "default": 0,
+          "title": "N Approved Changes",
+          "type": "integer",
+          "description": "changed rows not counted: a person approved the new outcome"
         },
         "n_without_noise": {
           "title": "N Without Noise",
@@ -708,6 +799,163 @@
         "n_labelled"
       ],
       "title": "ProvenanceSummary",
+      "type": "object"
+    },
+    "QualityComparison": {
+      "additionalProperties": false,
+      "description": "A candidate against the reference, both judged by human approvals.",
+      "properties": {
+        "n_rows": {
+          "title": "N Rows",
+          "type": "integer",
+          "description": "rows decided by both sides (reference replica 0)"
+        },
+        "n_excluded": {
+          "title": "N Excluded",
+          "type": "integer",
+          "description": "rows with no decision on one side"
+        },
+        "n_changed": {
+          "title": "N Changed",
+          "type": "integer",
+          "description": "rows where the outcomes differ"
+        },
+        "n_changed_reviewed": {
+          "title": "N Changed Reviewed",
+          "type": "integer",
+          "description": "changed rows with a verdict on both outcomes"
+        },
+        "fixed": {
+          "title": "Fixed",
+          "type": "integer",
+          "description": "changed rows: candidate approved, reference rejected"
+        },
+        "broken": {
+          "title": "Broken",
+          "type": "integer",
+          "description": "changed rows: reference approved, candidate rejected"
+        },
+        "both_approved": {
+          "title": "Both Approved",
+          "type": "integer",
+          "description": "changed rows where both outcomes are acceptable"
+        },
+        "both_rejected": {
+          "title": "Both Rejected",
+          "type": "integer",
+          "description": "changed rows where neither outcome is acceptable"
+        },
+        "unreviewed_rows": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unreviewed Rows",
+          "type": "array",
+          "description": "changed rows missing a verdict"
+        },
+        "n_same": {
+          "title": "N Same",
+          "type": "integer",
+          "description": "rows where both decide the same outcome"
+        },
+        "n_same_reviewed": {
+          "title": "N Same Reviewed",
+          "type": "integer",
+          "description": "same rows with a verdict on that outcome"
+        },
+        "same_rejected": {
+          "title": "Same Rejected",
+          "type": "integer",
+          "description": "reviewed same rows where that outcome was rejected"
+        },
+        "reference_error_rate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CI"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "share of rows the reference gets wrong"
+        },
+        "candidate_error_rate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CI"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "share of rows the candidate gets wrong"
+        },
+        "improvement": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CI"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "reference error rate - candidate error rate"
+        },
+        "relative_improvement": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CI"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "improvement / reference error rate"
+        },
+        "required_relative": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Required Relative",
+          "description": "quality_per_cost x (cost ratio - 1)"
+        },
+        "margin": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CI"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "improvement - required_relative x reference error rate"
+        }
+      },
+      "required": [
+        "n_rows",
+        "n_excluded",
+        "n_changed",
+        "n_changed_reviewed",
+        "fixed",
+        "broken",
+        "both_approved",
+        "both_rejected",
+        "n_same",
+        "n_same_reviewed",
+        "same_rejected"
+      ],
+      "title": "QualityComparison",
       "type": "object"
     },
     "ReliabilityBin": {
@@ -1376,6 +1624,31 @@
       "default": null,
       "title": "Max Cost Ratio",
       "description": "[ci] max_cost_ratio"
+    },
+    "quality_per_cost": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Quality Per Cost",
+      "description": "[ci] quality_per_cost"
+    },
+    "approvals": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ApprovalSummary"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "human approvals in use ([quality])"
     },
     "calls_per_day": {
       "anyOf": [

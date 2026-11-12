@@ -1,0 +1,116 @@
+# caliper.toml plus human approvals: is a costlier candidate *better*, not just different?
+# Offline and free, like caliper.toml:
+#
+#   caliper eval --config examples/catalog_cleanup/caliper.quality.toml --out build/quality --ci
+#
+# [quality] counts the human golden labels as verdicts on outcomes, plus
+# approvals.jsonl: one review round of the 8 outcomes `caliper review` listed for
+# rows where a candidate changed the outcome and no human label exists yet
+# (a fictional reviewer, judging by the synthetic truth). [ci] quality_per_cost = 1
+# then asks every candidate that costs more than the baseline to make at least as
+# many percent fewer errors as it costs percent more.
+
+# Offline eval of the catalog-cleanup feature on the deterministic fake provider.
+# No network, no API keys. Paths are relative to this file.
+#
+#   uv run caliper eval --config examples/catalog_cleanup/caliper.toml --out build/catalog-eval
+#
+# Prices below are invented for the fake models; they only make the cost
+# column meaningful. Real prices live in caliper.real.toml.
+
+golden = "golden.jsonl"
+decide = "decide.py:decide"
+reference = "baseline"
+noise_replays = 2        # the reference is replayed twice; its own flip rate is the noise floor
+budget_usd = 2.0         # hard stop before spending more than this
+seed = 0
+
+# The model production runs today: three replies per listing for the vote loop.
+[[candidates]]
+name = "baseline"
+provider = "fake"
+model = "fake-large"
+fake_script = "fake_models.py:respond"
+replies_per_row = 3
+
+# The cheaper model someone wants to switch to.
+[[candidates]]
+name = "small"
+provider = "fake"
+model = "fake-small"
+fake_script = "fake_models.py:respond"
+replies_per_row = 3
+
+# Same cheaper model with thinking on: more output tokens, fewer regressions.
+[[candidates]]
+name = "small-thinking"
+provider = "fake"
+model = "fake-small"
+thinking = "on"
+fake_script = "fake_models.py:respond"
+replies_per_row = 3
+
+[pricing."fake-large"]   # USD per million tokens (fictional)
+input = 3.0
+output = 15.0
+source = "fictional price for the fake provider"
+
+[pricing."fake-small"]
+input = 0.8
+output = 4.0
+source = "fictional price for the fake provider"
+
+# What a changed outcome costs, relative to the reference run (arbitrary units:
+# think "minutes of someone's time"). A changed outcome not listed here costs 1.0.
+[costs]
+"auto_publish->needs_review" = 1.0   # a record a person now has to check
+"auto_publish->fallback" = 3.0       # a record typed in by hand
+"needs_review->fallback" = 2.0
+"needs_review->auto_publish" = 5.0   # a record goes live that a person would have checked
+"fallback->auto_publish" = 5.0
+
+[ci]
+# The gate reads the paired bootstrap CI of (candidate regression - baseline replay
+# noise), row by row. require = "non_inferiority" (the default) passes a candidate
+# only when the CI's upper bound is within max_regression. On 80 rows that CI is
+# about +-0.09 wide, so the allowance is 0.10 cost units per record (roughly one
+# extra review per ten records). A tighter allowance needs a bigger golden set.
+max_regression = 0.10
+require = "non_inferiority"
+# Cost per row (per execution, so the baseline's noise replays are not counted
+# twice) may be at most 1.25x the baseline's. A candidate with replies priced
+# at $0 fails too: an unknown price must not pass as free.
+max_cost_ratio = 1.25
+# A candidate that costs X% more must make at least X% fewer errors than the baseline,
+# by human approvals, at 95%. Cheaper candidates are not judged by this rule.
+quality_per_cost = 1.0
+
+# Production volume, to show what each candidate would cost per month.
+[cost_projection]
+calls_per_day = 20000
+
+# Matched operating point: what counts as "handled without a person". The
+# candidate's score threshold is set on val so it auto-publishes the same share
+# as the baseline does; then both are scored on test against the labels.
+[operating_point]
+auto_outcomes = ["auto_publish"]
+
+# Named slices (rows tagged in golden.jsonl "slices"), each with its own rule.
+[[slices]]
+name = "rare_code"       # batteries, health devices, gift cards: never lose one
+rule = "must_not_lose"
+
+[[slices]]
+name = "lookalike"       # misleading keywords: must not regress beyond noise
+rule = "max_regression"
+threshold = 0.5
+
+[calibration]
+thresholds = [0.6, 0.7, 0.75, 0.8, 0.85, 0.9]
+target_precision = 0.95  # picked on val (human labels): lowest threshold with >= 95% approved
+
+# Human verdicts on outcomes. Golden rows with a human label approve that outcome
+# and reject the others; approvals.jsonl adds verdicts where no human label exists.
+[quality]
+approvals = ["approvals.jsonl"]
+golden_labels = true

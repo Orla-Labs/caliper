@@ -35,6 +35,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from ._stats import DEFAULT_N_BOOT
+from .approvals import Verdicts
 from .config import GateRequirement, SliceConfig, SliceRule
 from .noise import index_results
 from .operating_point import MatchedOperatingPoint
@@ -132,6 +133,7 @@ def _max_regression(
     require: GateRequirement,
     seed: int,
     n_boot: int,
+    verdicts: Verdicts | None = None,
 ) -> SliceResult:
     assert cfg.threshold is not None
     paired = compute_paired_excess(
@@ -143,6 +145,7 @@ def _max_regression(
         seed=seed,
         n_boot=n_boot,
         label=f"slice:{cfg.name}",
+        verdicts=verdicts,
     )
     d = paired.delta
     upper = require == GateRequirement.NON_INFERIORITY
@@ -291,6 +294,7 @@ def evaluate_slices(
     auto_outcomes: Sequence[str] = (),
     seed: int = 0,
     n_boot: int = DEFAULT_N_BOOT,
+    verdicts: Verdicts | None = None,
 ) -> list[SliceResult]:
     golden = list(golden)
     results = list(results)
@@ -311,6 +315,7 @@ def evaluate_slices(
                     require=require,
                     seed=seed,
                     n_boot=n_boot,
+                    verdicts=verdicts,
                 )
             )
         elif cfg.rule == SliceRule.MUST_NOT_LOSE:

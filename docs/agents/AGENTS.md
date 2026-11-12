@@ -21,3 +21,6 @@ Markdown; everything in one file: https://caliper.orlalabs.com/llms-full.txt).
 - After editing `decide.py`, re-run with `--no-resume`.
 - A model with no known price costs `$0` and is flagged `unpriced`; add `[pricing."<model>"]`
   in USD per million tokens.
+- To show a costlier candidate is *better*, not just different: `[ci] quality_per_cost` plus
+  `[quality]` approvals. `caliper review` lists the outcomes to judge; a person labels them
+  (`caliper label`). Never write approvals yourself or with a model.

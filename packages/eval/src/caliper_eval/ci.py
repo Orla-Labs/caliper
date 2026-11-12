@@ -30,6 +30,13 @@ A candidate fails when any of these holds:
 8. **cost** (only with ``[ci] max_cost_ratio``): its cost per execution is
    above ``max_cost_ratio`` x the reference's, or either side has replies
    priced at $0 (an unknown price must not pass as free).
+9. **quality per cost** (only with ``[ci] quality_per_cost = k``): it costs
+   ``ratio > 1`` times the reference, and human approvals do not show it at
+   least ``k * (ratio - 1)`` better, relative to the reference's error rate
+   (:mod:`caliper_eval.quality`). It fails when a changed row has no verdict
+   on both outcomes, when the reference's error rate is unknown, when the
+   margin's lower bound is below 0, or when the improvement's lower bound is
+   not above 0. A cost that cannot be compared fails it too.
 
 Rules 2-5 also apply to the reference. Exit code 0 = pass, 1 = fail.
 """
@@ -41,7 +48,7 @@ from collections.abc import Mapping
 from pydantic import BaseModel, ConfigDict, Field
 
 from .config import GateRequirement
-from .report import CandidateReport, EvalReport
+from .report import CandidateReport, EvalReport, points_ci, relative_ci, row_ids
 
 EXIT_PASS = 0
 EXIT_FAIL = 1
@@ -64,6 +71,7 @@ class GateResult(BaseModel):
     max_error_rate: float
     require: str
     max_cost_ratio: float | None = None
+    quality_per_cost: float | None = None
     candidates: list[CandidateGate] = Field(default_factory=list)
 
     @property
@@ -121,6 +129,10 @@ def evaluate_gate(
                 reasons.append(f"slice {r.slice} ({r.rule}): {r.detail}")
         if report.max_cost_ratio is not None and not c.is_reference:
             reasons += _cost_reasons(report, c, report.max_cost_ratio)
+        if report.quality_per_cost is not None and not c.is_reference:
+            if report.max_cost_ratio is None:
+                reasons += _cost_reasons(report, c, float("inf"))
+            reasons += _quality_reasons(report, c, report.quality_per_cost)
         if retouched and c.name in retouched:
             n = retouched[c.name]
             reasons.append(
@@ -136,6 +148,7 @@ def evaluate_gate(
         max_error_rate=max_error_rate,
         require=require.value,
         max_cost_ratio=report.max_cost_ratio,
+        quality_per_cost=report.quality_per_cost,
         candidates=gates,
     )
 
@@ -162,6 +175,43 @@ def _cost_reasons(report: EvalReport, c: CandidateReport, limit: float) -> list[
     return [
         f"cost {c.cost_vs_reference:.2f}x the reference > allowed {limit:g}x "
         f"(${c.cost_per_row:.6f} vs ${ref.cost_per_row:.6f} per row{monthly})"
+    ]
+
+
+def _quality_reasons(report: EvalReport, c: CandidateReport, k: float) -> list[str]:
+    """Why ``c`` fails ``[ci] quality_per_cost``, or nothing when it passes."""
+    ratio = c.cost_vs_reference
+    if ratio is None or ratio <= 1:
+        return []  # not more expensive, or the cost reasons already say why unknown
+    required = k * (ratio - 1)
+    head = (
+        f"costs {ratio:.2f}x the reference, so it must make at least {required:.1%} fewer "
+        f"errors than {report.reference} by human approvals (quality_per_cost {k:g})"
+    )
+    q = c.quality
+    if q is None or q.n_rows == 0:
+        return [head + "; no row was decided by both sides"]
+    missing = q.n_changed - q.n_changed_reviewed
+    if missing:
+        return [
+            head + f"; {missing} of {q.n_changed} changed rows have no human verdict on both "
+            f"outcomes ({row_ids(q.unreviewed_rows, missing)}): run `caliper review` and add the "
+            "approvals to [quality]"
+        ]
+    if q.margin is None or q.improvement is None:
+        return [
+            head + f"; {report.reference}'s error rate is unknown: no human verdicts on the "
+            f"{q.n_same} rows where both decide the same (`caliper review --base-sample N`)"
+        ]
+    if q.margin.low >= 0 and q.improvement.low > 0:
+        return []
+    if q.relative_improvement is not None:
+        measured = f"{relative_ci(q.relative_improvement)} of {report.reference}'s errors"
+    else:
+        measured = points_ci(q.improvement)
+    return [
+        head + f"; measured error reduction {measured} on {q.n_rows} rows ({q.fixed} fixed, "
+        f"{q.broken} broken of {q.n_changed} changed): not shown at 95%"
     ]
 
 

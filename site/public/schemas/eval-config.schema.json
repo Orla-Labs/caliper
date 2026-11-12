@@ -45,6 +45,20 @@
           "default": null,
           "title": "Max Cost Ratio",
           "description": "Fail a candidate whose mean cost per execution is above this multiple of the reference's (1.0 = \"no more expensive\"). A candidate or reference with replies priced at $0 fails too: an unknown price must not read as free."
+        },
+        "quality_per_cost": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quality Per Cost",
+          "description": "A candidate that costs more than the reference must be better by at least this many times its extra cost, judged by human approvals (needs [quality]): 1.0 means 10% more cost needs at least 10% fewer errors than the reference."
         }
       },
       "title": "CIConfig",
@@ -349,6 +363,28 @@
       "title": "ProviderKind",
       "type": "string"
     },
+    "QualityConfig": {
+      "additionalProperties": false,
+      "description": "Human approvals of outcomes, to measure \"better\" (``[quality]``).\n\nSee :mod:`caliper_eval.approvals` for the file format and what counts.",
+      "properties": {
+        "approvals": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Approvals",
+          "type": "array",
+          "description": "Approval JSONL files, relative to the config file (`caliper review` builds them)."
+        },
+        "golden_labels": {
+          "default": true,
+          "title": "Golden Labels",
+          "type": "boolean",
+          "description": "Also count human golden labels: the labelled outcome is approved, any other rejected."
+        }
+      },
+      "title": "QualityConfig",
+      "type": "object"
+    },
     "SliceConfig": {
       "additionalProperties": false,
       "description": "A named hard slice with its own pass rule (``[[slices]]``).\n\nA row belongs to the slice when ``name`` is in ``GoldenRow.slices`` or when\nit matches ``where`` (``{\"stratum\": \"x\"}`` / ``{\"metadata.key\": value}``;\na list value means \"any of\"). ``label_sources`` restricts which label\nsources a label-based rule reads (default: ``min_precision`` reads human\nsources only, ``must_not_lose`` reads every labelled row).",
@@ -547,6 +583,18 @@
       "title": "Slices",
       "type": "array",
       "description": "[[slices]] with their own rules"
+    },
+    "quality": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/QualityConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "[quality]: human approvals, to measure \"better\""
     }
   },
   "required": [

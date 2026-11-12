@@ -74,6 +74,28 @@ build a golden set from production logs
 
 **Touches:** Local files only.
 
+## `caliper review`
+
+list the outcomes a person must approve to measure which candidate is better
+
+| Flag | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--config` `CONFIG` | yes |  | eval TOML file |
+| `--eval-out` `EVAL_OUT` | yes |  | the caliper eval --out folder to read |
+| `--out` `OUT` | yes |  | folder for the review items (a new one) |
+| `--candidates` `CANDIDATES` |  |  | comma-separated candidates (default: all but ref) |
+| `--base-sample` `BASE_SAMPLE` |  | `30` | rows sampled at random to measure the reference's error rate (0 for none) |
+| `--seed` `SEED` |  |  | sampling seed (default: config seed) |
+
+**Exit codes**
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | Success. |
+| `2` | Bad flags or input (the message on stderr says which). |
+
+**Touches:** Local files only, and free: reads the eval's `results.jsonl`, writes `items.jsonl` and, with the `label` extra, a `caliper.label.yaml` project. No model calls.
+
 ## `caliper example`
 
 copy a bundled example project to try caliper

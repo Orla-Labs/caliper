@@ -24,6 +24,7 @@ from ._stats import (
     paired_bootstrap_delta,
     transition_cost,
 )
+from .approvals import Verdicts
 from .noise import index_results, noise_row_costs
 from .types import RowResult
 
@@ -128,11 +129,15 @@ class PairedExcess(BaseModel):
     (0 when the row has no complete noise replays). ``delta`` is the paired
     bootstrap CI of ``mean(d)``: one row resample per draw, both terms
     computed on the same rows.
+
+    With human approvals (``[quality]``), a change to an outcome a person
+    approved for that row costs 0: it is not a regression.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     n_rows: int  # compared rows
+    n_approved_changes: int = 0  # changed rows not counted: a person approved the new outcome
     n_without_noise: int  # compared rows with no complete reference replays (n_i = 0)
     regression: float  # mean candidate cost on these rows
     noise: float  # mean reference replay cost on these rows
@@ -145,8 +150,12 @@ def transition_row_costs(
     reference: str,
     *,
     costs: Mapping[str, float] | None = None,
+    verdicts: Verdicts | None = None,
 ) -> dict[str, float]:
-    """Per-row ``cost(reference replica 0 -> candidate)``, rows decided on both sides."""
+    """Per-row ``cost(reference replica 0 -> candidate)``, rows decided on both sides.
+
+    With ``verdicts``, a change to an outcome a person approved on that row costs 0.
+    """
     costs = costs or {}
     idx = index_results(results)
     out: dict[str, float] = {}
@@ -156,7 +165,11 @@ def transition_row_costs(
         ref = idx.get((reference, row_id, 0))
         if ref is None or ref.decision is None or res.decision is None:
             continue
-        out[row_id] = transition_cost(costs, ref.decision.outcome, res.decision.outcome)
+        src, dst = ref.decision.outcome, res.decision.outcome
+        if src != dst and verdicts is not None and verdicts.get(row_id, dst) is True:
+            out[row_id] = 0.0
+            continue
+        out[row_id] = transition_cost(costs, src, dst)
     return out
 
 
@@ -170,20 +183,28 @@ def compute_paired_excess(
     seed: int = 0,
     n_boot: int = DEFAULT_N_BOOT,
     label: str = "all",
+    verdicts: Verdicts | None = None,
 ) -> PairedExcess:
     """Paired excess regression of ``candidate`` over the reference's noise.
 
     ``rows`` restricts the comparison (a slice); ``label`` keeps the bootstrap
-    seed of each slice independent of the others.
+    seed of each slice independent of the others. ``verdicts`` (human approvals)
+    stop a change to an approved outcome from counting as a regression.
     """
     results = list(results)
-    reg = transition_row_costs(results, candidate, reference, costs=costs)
+    reg = transition_row_costs(results, candidate, reference, costs=costs, verdicts=verdicts)
+
     noise = noise_row_costs(results, reference, costs=costs)
     keep = sorted(reg if rows is None else set(reg) & set(rows))
+    approved_changes = 0
+    if verdicts is not None:
+        plain = transition_row_costs(results, candidate, reference, costs=costs)
+        approved_changes = sum(1 for r in keep if reg[r] != plain[r])
     a = [reg[r] for r in keep]
     b = [noise.get(r, 0.0) for r in keep]
     return PairedExcess(
         n_rows=len(keep),
+        n_approved_changes=approved_changes,
         n_without_noise=sum(1 for r in keep if r not in noise),
         regression=sum(a) / len(a) if a else 0.0,
         noise=sum(b) / len(b) if b else 0.0,

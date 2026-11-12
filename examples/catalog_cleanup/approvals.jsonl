@@ -1,0 +1,8 @@
+{"approved": false, "outcome": "auto_publish", "request_sha256": "bbea15b8dd3ae19f42cadd8b21a562f1f011802e1040ee25824d091783fdd5fa", "reviewer": "fictional-reviewer", "row_id": "lst-0035", "source": "internal_reviewer"}
+{"approved": true, "outcome": "needs_review", "request_sha256": "bbea15b8dd3ae19f42cadd8b21a562f1f011802e1040ee25824d091783fdd5fa", "reviewer": "fictional-reviewer", "row_id": "lst-0035", "source": "internal_reviewer"}
+{"approved": true, "outcome": "auto_publish", "request_sha256": "0da2d065a097ec65010db8f5acac137238ffc2de70324f4a6ea3abf02058bee4", "reviewer": "fictional-reviewer", "row_id": "lst-0096", "source": "internal_reviewer"}
+{"approved": false, "outcome": "needs_review", "request_sha256": "0da2d065a097ec65010db8f5acac137238ffc2de70324f4a6ea3abf02058bee4", "reviewer": "fictional-reviewer", "row_id": "lst-0096", "source": "internal_reviewer"}
+{"approved": false, "outcome": "auto_publish", "request_sha256": "c2f2ddad473c6269aed4990872b0cddccfb6ebdb5b058d27af1a847c87bd3219", "reviewer": "fictional-reviewer", "row_id": "lst-0193", "source": "internal_reviewer"}
+{"approved": true, "outcome": "needs_review", "request_sha256": "c2f2ddad473c6269aed4990872b0cddccfb6ebdb5b058d27af1a847c87bd3219", "reviewer": "fictional-reviewer", "row_id": "lst-0193", "source": "internal_reviewer"}
+{"approved": false, "outcome": "auto_publish", "request_sha256": "ed5eb107ad3036289a3cd3ef378187e8b1dd7f38a0198e5765b7e04e27e36021", "reviewer": "fictional-reviewer", "row_id": "lst-0227", "source": "internal_reviewer"}
+{"approved": true, "outcome": "needs_review", "request_sha256": "ed5eb107ad3036289a3cd3ef378187e8b1dd7f38a0198e5765b7e04e27e36021", "reviewer": "fictional-reviewer", "row_id": "lst-0227", "source": "internal_reviewer"}

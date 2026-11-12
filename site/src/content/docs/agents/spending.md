@@ -26,6 +26,7 @@ requests to a model provider on your user's account.
 | `caliper eval` (real providers) | **yes** | provider APIs, AWS price list (public), Bedrock `GetFoundationModel` | preflight + golden set |
 | `caliper eval --skip-preflight` | **yes** | as above | skips the one-request check; a bad shape then fails on every row |
 | `caliper sample` | none | none | local files |
+| `caliper review` | none | none | reads `results.jsonl`, writes review items; the labelling is a person's time |
 | `caliper example` | none | none | copies bundled files |
 | `caliper kappa` | none | none | runs your grader file locally |
 | `caliper label`, `label serve` | none | the project's data source (may be S3, GCS, HTTP or a database) | local web UI |

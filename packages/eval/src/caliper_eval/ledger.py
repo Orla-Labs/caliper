@@ -22,6 +22,10 @@ rows with ``split == "test"``. Each touch appends one JSON line to the ledger
 * ``--no-resume`` does not clear the ledger. A fresh ``--out`` per CI job
   starts an empty ledger; point ``--test-ledger`` at a persisted file to
   detect re-touches across jobs.
+* Human approvals (``[quality]``) on test rows are part of the test set:
+  ``approvals_key`` (their fingerprint) is folded into ``test_set_sha256``,
+  so reviewing changed rows and re-running is a new measurement, not a
+  re-touch, just as relabelling a test row is.
 * Golden sets with no ``test`` rows record nothing.
 """
 
@@ -57,8 +61,8 @@ class Retouch(BaseModel):
     previous_touches: int
 
 
-def split_sha256(golden: Iterable[GoldenRow]) -> str | None:
-    """Hash of the test rows (sorted by id); ``None`` when there are none."""
+def split_sha256(golden: Iterable[GoldenRow], approvals_key: str | None = None) -> str | None:
+    """Hash of the test rows (sorted by id) and their approvals; ``None`` without test rows."""
     rows = sorted((g for g in golden if g.split == Split.TEST), key=lambda g: g.id)
     if not rows:
         return None
@@ -72,6 +76,8 @@ def split_sha256(golden: Iterable[GoldenRow]) -> str | None:
                 )
             ).encode("utf-8")
         )
+    if approvals_key is not None:
+        h.update(f"approvals:{approvals_key}".encode())
     return h.hexdigest()
 
 
@@ -97,12 +103,13 @@ def record_touches(
     reference: str,
     *,
     clock: Callable[[], str] = _now,
+    approvals_key: str | None = None,
 ) -> list[Retouch]:
     """Append one touch per candidate; return the non-reference re-touches.
 
     Does nothing (and returns ``[]``) when the golden set has no test rows.
     """
-    test_hash = split_sha256(golden)
+    test_hash = split_sha256(golden, approvals_key)
     if test_hash is None:
         return []
     n_test = sum(1 for g in golden if g.split == Split.TEST)

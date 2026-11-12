@@ -84,6 +84,8 @@ packages = [
 [tool.hatch.build.targets.wheel.force-include]
 "examples/catalog_cleanup/README.md" = "caliper_eval/_examples/catalog_cleanup/README.md"
 "examples/catalog_cleanup/caliper.preflight.toml" = "caliper_eval/_examples/catalog_cleanup/caliper.preflight.toml"
+"examples/catalog_cleanup/caliper.quality.toml" = "caliper_eval/_examples/catalog_cleanup/caliper.quality.toml"
+"examples/catalog_cleanup/approvals.jsonl" = "caliper_eval/_examples/catalog_cleanup/approvals.jsonl"
 "examples/catalog_cleanup/caliper.real.toml" = "caliper_eval/_examples/catalog_cleanup/caliper.real.toml"
 "examples/catalog_cleanup/caliper.toml" = "caliper_eval/_examples/catalog_cleanup/caliper.toml"
 "examples/catalog_cleanup/decide.py" = "caliper_eval/_examples/catalog_cleanup/decide.py"

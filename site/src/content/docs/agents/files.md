@@ -14,6 +14,8 @@ Generated from the code by `scripts/gen_agent_docs.py`; edit the code, then re-r
 | `golden.jsonl` | [golden-row](/schemas/golden-row.schema.json) | `caliper eval`, `caliper label serve` | `caliper sample`, `caliper label export --format golden` |
 | `OUT/results.jsonl` | [results-row](/schemas/results-row.schema.json) | `caliper eval` (resume) | `caliper eval` |
 | `OUT/report.json` | [eval-report](/schemas/eval-report.schema.json) | you | `caliper eval` |
+| approvals JSONL | [approval](/schemas/approval.schema.json) | `caliper eval`, `caliper review` (via `[quality] approvals`) | you, or `caliper label export --format jsonl` of a review project |
+| `REVIEW/items.jsonl` | [review-item](/schemas/review-item.schema.json) | `caliper label` | `caliper review` |
 | `caliper.label.yaml` | [label-project](/schemas/label-project.schema.json) | `caliper label` | `caliper label init`, the setup wizard |
 | label records JSONL | [label-record](/schemas/label-record.schema.json) | `caliper kappa --labels` | `caliper label export --format records` |
 | rollouts JSONL | [eval-row](/schemas/eval-row.schema.json) | `caliper-compile`, `caliper kappa --rollouts` | you |
@@ -49,6 +51,7 @@ Schema: [https://caliper.orlalabs.com/schemas/eval-config.schema.json](/schemas/
 | `operating_point` | [OperatingPointConfig](#operatingpointconfig) or null |  | `null` | [operating_point] |
 | `cost_projection` | [CostProjectionConfig](#costprojectionconfig) or null |  | `null` | [cost_projection], for $/month |
 | `slices` | list of [SliceConfig](#sliceconfig) |  |  | [[slices]] with their own rules |
+| `quality` | [QualityConfig](#qualityconfig) or null |  | `null` | [quality]: human approvals, to measure "better" |
 
 ### Candidate
 
@@ -89,6 +92,7 @@ USD per million tokens. Cache-aware.
 | `require` | `"non_inferiority"` or `"no_evidence_of_regression"` |  | `"non_inferiority"` | which CI bound the gate reads |
 | `max_error_rate` | number or null |  | `null` | Share of results allowed to end with no decision; --max-error-rate overrides it. (>= 0, &lt;= 1) |
 | `max_cost_ratio` | number or null |  | `null` | Fail a candidate whose mean cost per execution is above this multiple of the reference's (1.0 = "no more expensive"). A candidate or reference with replies priced at $0 fails too: an unknown price must not read as free. (> 0) |
+| `quality_per_cost` | number or null |  | `null` | A candidate that costs more than the reference must be better by at least this many times its extra cost, judged by human approvals (needs [quality]): 1.0 means 10% more cost needs at least 10% fewer errors than the reference. (> 0) |
 
 ### CalibrationConfig
 
@@ -125,6 +129,15 @@ A named hard slice with its own pass rule (``[[slices]]``). A row belongs to the
 | `threshold` | number or null |  | `null` | required except for must_not_lose |
 | `where` | object |  |  | {"stratum": ...} / {"metadata.k": ...} |
 | `label_sources` | list of `"human_end_user"` or `"internal_reviewer"` or `"llm_teacher"` or `"heuristic"` or `"adjudicated"` or null |  | `null` | label sources a label-based rule reads |
+
+### QualityConfig
+
+Human approvals of outcomes, to measure "better" (``[quality]``). See :mod:`caliper_eval.approvals` for the file format and what counts.
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `approvals` | list of string |  |  | Approval JSONL files, relative to the config file (`caliper review` builds them). |
+| `golden_labels` | boolean |  | `true` | Also count human golden labels: the labelled outcome is approved, any other rejected. |
 
 ## `golden.jsonl`
 
@@ -222,6 +235,8 @@ Schema: [https://caliper.orlalabs.com/schemas/eval-report.schema.json](/schemas/
 | `max_regression` | number | yes |  | [ci] max_regression |
 | `require` | string |  | `"non_inferiority"` | [ci] require |
 | `max_cost_ratio` | number or null |  | `null` | [ci] max_cost_ratio |
+| `quality_per_cost` | number or null |  | `null` | [ci] quality_per_cost |
+| `approvals` | [ApprovalSummary](#approvalsummary) or null |  | `null` | human approvals in use ([quality]) |
 | `calls_per_day` | number or null |  | `null` | [cost_projection] calls_per_day |
 | `days_per_month` | number or null |  | `null` | [cost_projection] days_per_month |
 | `noise_floor` | [NoiseFloor](#noisefloor) or null | yes |  | the reference's own replay-to-replay variation |
@@ -229,6 +244,23 @@ Schema: [https://caliper.orlalabs.com/schemas/eval-report.schema.json](/schemas/
 | `slices` | list of [SliceDef](#slicedef) |  |  | [[slices]] and their row counts |
 | `candidates` | list of [CandidateReport](#candidatereport) | yes |  | one per candidate, the reference included |
 | `warnings` | list of string |  |  | e.g. approximate or missing prices |
+
+### ApprovalSummary
+
+What the approval evidence contained and what was set aside.
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `files` | list of string | yes |  | approval files read, as given in [quality] approvals |
+| `golden_labels` | boolean | yes |  | whether human golden labels count as verdicts |
+| `used` | integer | yes |  | human verdicts in use (approval lines, before merging duplicates) |
+| `from_golden_labels` | integer | yes |  | golden rows whose human label gives verdicts |
+| `not_human` | integer | yes |  | lines from a non-human source (ignored) |
+| `unsure` | integer | yes |  | lines with approved = null (ignored) |
+| `stale` | integer | yes |  | lines for a request that has changed since (ignored) |
+| `unknown_rows` | integer | yes |  | lines for a row id not in the golden set (ignored) |
+| `conflicts` | integer | yes |  | (row, outcome) pairs with contradicting verdicts (no verdict) |
+| `fingerprint` | string | yes |  | hash of the verdicts on test rows (part of the test-ledger key) |
 
 ### NoiseFloor
 
@@ -302,6 +334,7 @@ Where the golden set's labels come from, and how it is split.
 | `calibration` | [Calibration](#calibration) or null |  | `null` | precision/coverage by score threshold |
 | `matched_operating_point` | [MatchedOperatingPoint](#matchedoperatingpoint) or null |  | `null` |  |
 | `slices` | list of [SliceResult](#sliceresult) |  |  | per-slice pass/fail |
+| `quality` | [QualityComparison](#qualitycomparison) or null |  | `null` | vs the reference on human approvals ([quality]) |
 
 ### CI
 
@@ -341,11 +374,12 @@ Percentile bootstrap confidence interval around a point estimate.
 
 ### PairedExcess
 
-Candidate regression minus reference replay noise, paired per row. For every compared row ``i``: ``d_i = cost(ref replica 0 -> candidate) - n_i`` where ``n_i`` is the reference's own symmetrized replay cost on that row (0 when the row has no complete noise replays). ``delta`` is the paired bootstrap CI of ``mean(d)``: one row resample per draw, both terms computed on the same rows.
+Candidate regression minus reference replay noise, paired per row. For every compared row ``i``: ``d_i = cost(ref replica 0 -> candidate) - n_i`` where ``n_i`` is the reference's own symmetrized replay cost on that row (0 when the row has no complete noise replays). ``delta`` is the paired bootstrap CI of ``mean(d)``: one row resample per draw, both terms computed on the same rows. With human approvals (``[quality]``), a change to an outcome a person approved for that row costs 0: it is not a regression.
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `n_rows` | integer | yes |  | compared rows |
+| `n_approved_changes` | integer |  | `0` | changed rows not counted: a person approved the new outcome |
 | `n_without_noise` | integer | yes |  | compared rows with no complete reference replays (n_i = 0) |
 | `regression` | number | yes |  | mean candidate cost on these rows |
 | `noise` | number | yes |  | mean reference replay cost on these rows |
@@ -410,6 +444,31 @@ Candidate regression minus reference replay noise, paired per row. For every com
 | `paired` | [PairedExcess](#pairedexcess) or null |  | `null` |  |
 | `reference_lost` | integer or null |  | `null` | must_not_lose: slice rows each side gets wrong |
 | `candidate_lost` | integer or null |  | `null` |  |
+
+### QualityComparison
+
+A candidate against the reference, both judged by human approvals.
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `n_rows` | integer | yes |  | rows decided by both sides (reference replica 0) |
+| `n_excluded` | integer | yes |  | rows with no decision on one side |
+| `n_changed` | integer | yes |  | rows where the outcomes differ |
+| `n_changed_reviewed` | integer | yes |  | changed rows with a verdict on both outcomes |
+| `fixed` | integer | yes |  | changed rows: candidate approved, reference rejected |
+| `broken` | integer | yes |  | changed rows: reference approved, candidate rejected |
+| `both_approved` | integer | yes |  | changed rows where both outcomes are acceptable |
+| `both_rejected` | integer | yes |  | changed rows where neither outcome is acceptable |
+| `unreviewed_rows` | list of string |  |  | changed rows missing a verdict |
+| `n_same` | integer | yes |  | rows where both decide the same outcome |
+| `n_same_reviewed` | integer | yes |  | same rows with a verdict on that outcome |
+| `same_rejected` | integer | yes |  | reviewed same rows where that outcome was rejected |
+| `reference_error_rate` | [CI](#ci) or null |  | `null` | share of rows the reference gets wrong |
+| `candidate_error_rate` | [CI](#ci) or null |  | `null` | share of rows the candidate gets wrong |
+| `improvement` | [CI](#ci) or null |  | `null` | reference error rate - candidate error rate |
+| `relative_improvement` | [CI](#ci) or null |  | `null` | improvement / reference error rate |
+| `required_relative` | number or null |  | `null` | quality_per_cost x (cost ratio - 1) |
+| `margin` | [CI](#ci) or null |  | `null` | improvement - required_relative x reference error rate |
 
 ### TransitionCount
 
@@ -494,6 +553,35 @@ Losses on the report rows of one label source.
 | `n_auto` | integer | yes |  |  |
 | `missed` | integer | yes |  | approved, not auto-handled |
 | `bad_auto` | integer | yes |  | not approved, auto-handled |
+
+## `approvals JSONL`
+
+Human verdicts on outcomes, one per line, listed in `[quality] approvals`. `caliper label export --format jsonl` of a `caliper review` project writes them in its own shape (`item.row_id`, `item.outcome`, `item.request_sha256`, `approved`, `source`, `labeller`), which `caliper eval` reads as well.
+
+Schema: [https://caliper.orlalabs.com/schemas/approval.schema.json](/schemas/approval.schema.json)
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `row_id` | string | yes |  | golden row id |
+| `outcome` | string | yes |  | the decided outcome being judged |
+| `approved` | boolean or null | yes |  | true: a person would accept it; null: unsure (no verdict) |
+| `source` | `"human_end_user"` or `"internal_reviewer"` or `"llm_teacher"` or `"heuristic"` or `"adjudicated"` |  | `"internal_reviewer"` | who judged it; only human sources count |
+| `request_sha256` | string or null |  | `null` | the request the reviewer saw; stale when it changed |
+| `reviewer` | string or null |  | `null` | free-form reviewer name |
+
+## `REVIEW/items.jsonl`
+
+The outcomes `caliper review` asks a person to judge, shuffled. The card shows `outcome` and `request` only.
+
+Schema: [https://caliper.orlalabs.com/schemas/review-item.schema.json](/schemas/review-item.schema.json)
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | string | yes |  | hash of (row_id, outcome); reveals nothing about the model |
+| `row_id` | string | yes |  | golden row id |
+| `outcome` | string | yes |  | the outcome to judge |
+| `request_sha256` | string | yes |  | the request shown; a later change makes the verdict stale |
+| `request` | object | yes |  | the golden row's request, as the feature sent it |
 
 ## `caliper.label.yaml`
 
