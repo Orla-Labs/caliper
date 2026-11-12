@@ -305,7 +305,8 @@ model.
    [quality]
    approvals = []             # filled in at step 4
    golden_labels = true       # human golden labels already count as verdicts
-   base_sample = 30           # random rows that measure the reference's error rate
+   base_sample = 300          # random rows that measure the reference's error rate;
+                              # 30 (the default) is a first look, a decision needs hundreds
    ```
 
 2. Run the eval without `--ci` (this is the paid step; see [What costs money](/agents/spending/)):

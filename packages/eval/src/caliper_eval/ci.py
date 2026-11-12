@@ -209,7 +209,7 @@ def _quality_reasons(report: EvalReport, c: CandidateReport, k: float) -> list[s
         if b is None or b.n_sample == 0:
             why = "[quality] base_sample is 0"
         else:
-            left = b.n_sample - b.n_not_run - b.n_judged
+            left = b.n_sample - b.n_not_run - b.n_undecided - b.n_judged
             why = (
                 f"{left} of the {b.n_sample} base-sample rows have no verdict on its outcome "
                 f"({row_ids(b.unreviewed_rows, left)}); `caliper review` lists them"

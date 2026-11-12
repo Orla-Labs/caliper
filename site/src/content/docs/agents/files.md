@@ -278,8 +278,9 @@ The reference's error rate, on a uniform random sample of golden rows.
 | --- | --- | --- | --- | --- |
 | `n_sample` | integer | yes |  | rows drawn ([quality] base_sample, at most the golden set) |
 | `n_not_run` | integer | yes |  | sampled rows with no reference result (excluded) |
-| `n_judged` | integer | yes |  | sampled rows with a verdict on the reference's outcome (or no decision) |
-| `n_errors` | integer | yes |  | judged rows where the reference's outcome was rejected or missing |
+| `n_undecided` | integer |  | `0` | sampled rows where the reference has no decision (excluded) |
+| `n_judged` | integer | yes |  | sampled rows with a verdict on the reference's outcome |
+| `n_errors` | integer | yes |  | judged rows where the reference's outcome was rejected |
 | `unreviewed_rows` | list of string |  |  | sampled rows still to review |
 | `error_rate` | [CI](#ci) or null |  | `null` | Wilson interval; None until every sampled row is judged |
 
@@ -474,6 +475,7 @@ A candidate against the reference, both judged by human approvals.
 | --- | --- | --- | --- | --- |
 | `n_rows` | integer | yes |  | rows run on both sides (reference replica 0) |
 | `n_excluded` | integer | yes |  | rows missing a result on one side (not run) |
+| `n_reference_undecided` | integer |  | `0` | rows left out: the reference has no decision there |
 | `n_changed` | integer | yes |  | rows where the outcomes differ (no decision counts as an outcome) |
 | `n_changed_reviewed` | integer | yes |  | changed rows with a verdict on both sides |
 | `fixed` | integer | yes |  | changed rows: candidate right, reference wrong |

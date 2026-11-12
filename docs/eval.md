@@ -294,7 +294,9 @@ base_sample = 30                           # default: rows drawn at random to me
 ```
 
 A golden label that is not an outcome any candidate decided (a `yes` from a yes/no
-project, say) judges nothing and is reported.
+project, say) judges nothing and is reported. So is a real outcome that no
+candidate in this run happened to decide; that row then needs a review. An
+adjudicated golden label can be overridden only by an adjudicated approval.
 
 **Two numbers, two sources of evidence.**
 
@@ -323,6 +325,21 @@ project, say) judges nothing and is reported.
 
 The **relative improvement** divides the two, conservatively: its low end is the
 improvement's low end over the error rate's high end.
+
+**Rows the reference did not decide** (usually provider errors) are left out of
+both numbers and reported, so the reference's outage is never credited to a
+candidate; `--retry-errors` re-runs them. The candidate's own missing decisions
+count as errors, so it cannot abstain its way past a hard row.
+
+**How big the base sample must be.** The relative low end divides by the error
+rate's *high* end, and on 30 rows that is 1.5 to 3 times the estimate. A staff
+review measured, on 4,000 rows with a 10% reference error rate: a candidate at
+1.10x cost that truly makes 20% fewer errors fails with `base_sample = 30` and
+passes with 300; one at 1.04x and 8% fewer errors passes only with 1,000. The
+default of 30 is a cheap first look. To make a decision, plan on a few hundred
+reviewed base-sample rows (growing `base_sample` keeps the rows already drawn, so
+earlier verdicts stay useful). A base-sample row answered "Unsure" blocks the
+error rate until someone decides it or adjudicates it.
 
 **The gate.** `[ci] quality_per_cost = k`: a candidate that costs `ratio` times the
 reference must make at least `k x (ratio - 1)` fewer errors, relative to the

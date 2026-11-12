@@ -53,6 +53,8 @@ Errors go to stderr as one line (sometimes followed by a hint), prefixed with th
 | `warning: approvals: N human golden labels are not an outcome any candidate decided` | A label like `yes` from a yes/no project cannot judge an outcome; it is ignored. |
 | `warning: approvals: N approval verdicts differ from the row's golden label` | An explicit approval overrides the golden label for that outcome. |
 | `-8.3% [-45.0%, +15.0%] of REF's errors (negative: more errors)` | The candidate makes more errors than the reference on human verdicts (here, not shown at 95%). |
+| `N rows left out: REF has no decision there` | The reference failed on those rows (usually provider errors); they are not counted for or against anyone. `--retry-errors` re-runs them. |
+| A base-sample row comes back in every `caliper review` | It was answered Unsure. Someone has to decide it (or adjudicate it) before the error rate is known. |
 | `caliper review` lists 0 outcomes | Every changed row and the base sample already have verdicts. Re-run `caliper eval`. |
 | `regression ... (N rows flipped, K of them fixes that cost 0)` | With `[quality]`, a change from a rejected to an approved outcome is not a regression. |
 

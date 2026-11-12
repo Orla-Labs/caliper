@@ -252,6 +252,47 @@ def test_s1_no_decision_is_an_error_not_a_way_out():
     assert q.improvement.estimate == pytest.approx(-0.1)
 
 
+def test_n1_the_reference_failing_does_not_credit_the_candidate():
+    # Same decisions at 1.03x, but the reference has no decision on 12 rows (outages).
+    config, results, golden = _world(400, 40, cand_cost=0.00103, ci={"quality_per_cost": 1})
+    results = [
+        r.model_copy(update={"decision": None})
+        if r.candidate == "ref" and r.replica == 0 and 100 <= int(r.row_id[1:]) < 112
+        else r
+        for r in results
+    ]
+    report, cand = _gate(config, results, golden)
+    q = report.candidate("cand").quality
+    assert (q.fixed, q.n_changed, q.n_reference_undecided) == (0, 0, 12)
+    assert q.improvement.estimate == 0 and not cand.passed
+    assert "12 rows left out" in render_text(report)
+    base = report.base_rate
+    assert base.n_judged + base.n_undecided == base.n_sample
+
+
+def test_n3_an_adjudicated_golden_label_outranks_an_ordinary_approval():
+    golden = [GoldenRow(id="x", request=_req("x"), label=BAD, label_source=LabelSource.ADJUDICATED)]
+    v, s = build_verdicts(golden, [Approval(row_id="x", outcome=GOOD, approved=True)])
+    assert v.get("x", GOOD) is False and s.overrides == 0
+    adj = Approval(row_id="x", outcome=GOOD, approved=True, source=LabelSource.ADJUDICATED)
+    v2, _ = build_verdicts(golden, [adj])
+    assert v2.get("x", GOOD) is True
+
+
+def test_n2_review_and_gate_count_the_same_changed_rows():
+    _, results, golden = _world(30, 4, fixes=4, labelled=0)
+    results = [
+        r.model_copy(update={"decision": None})
+        if r.candidate == "ref" and r.replica == 0 and r.row_id in ("r0000", "r0001")
+        else r
+        for r in results
+    ]
+    v, _ = build_verdicts(golden, [])
+    plan = plan_review(golden, results, v, "ref", ["cand"])
+    q = compute_quality(results, v, "cand", "ref", n_boot=20)
+    assert plan.changed_rows["cand"] == q.n_changed == 2
+
+
 def test_b1_the_reference_error_rate_comes_from_the_random_base_sample_only():
     _, results, golden = _world(400, 20, labelled=0)
     base_rows = set(base_sample_rows(golden, 50, seed=0))

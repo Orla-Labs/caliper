@@ -9,7 +9,10 @@ outcome a person rejected is an *error*; so is no decision at all.
 (reference replica 0):
 
 * **same** outcome: both are right or both are wrong; the row adds 0.
-* **changed** outcome: the row needs a verdict on both outcomes. It is *fixed*
+* **changed** outcome: the row needs a verdict on both outcomes. No decision
+  from the candidate is an error (it must not abstain its way out). Rows where
+  the reference has no decision are left out and counted: a provider failure on
+  the reference's side must not credit the candidate. A changed row is *fixed*
   (candidate approved, reference rejected), *broken* (the reverse), or a tie.
 
 ``improvement = (fixed - broken) / N``: how many fewer errors per row the
@@ -71,8 +74,9 @@ class BaseRate(BaseModel):
 
     n_sample: int  # rows drawn ([quality] base_sample, at most the golden set)
     n_not_run: int  # sampled rows with no reference result (excluded)
-    n_judged: int  # sampled rows with a verdict on the reference's outcome (or no decision)
-    n_errors: int  # judged rows where the reference's outcome was rejected or missing
+    n_undecided: int = 0  # sampled rows where the reference has no decision (excluded)
+    n_judged: int  # sampled rows with a verdict on the reference's outcome
+    n_errors: int  # judged rows where the reference's outcome was rejected
     unreviewed_rows: list[str] = Field(default_factory=list)  # sampled rows still to review
     error_rate: CI | None = None  # Wilson interval; None until every sampled row is judged
 
@@ -84,6 +88,7 @@ class QualityComparison(BaseModel):
 
     n_rows: int  # rows run on both sides (reference replica 0)
     n_excluded: int  # rows missing a result on one side (not run)
+    n_reference_undecided: int = 0  # rows left out: the reference has no decision there
     n_changed: int  # rows where the outcomes differ (no decision counts as an outcome)
     n_changed_reviewed: int  # changed rows with a verdict on both sides
     fixed: int  # changed rows: candidate right, reference wrong
@@ -130,7 +135,7 @@ def compute_base_rate(
     """The reference's error rate on the base sample (see the module docstring)."""
     idx = index_results(results)
     rows = base_sample_rows(golden, size, seed)
-    not_run = judged = errors = 0
+    not_run = undecided = judged = errors = 0
     unreviewed: list[str] = []
     for row_id in rows:
         r = idx.get((reference, row_id, 0))
@@ -138,8 +143,7 @@ def compute_base_rate(
             not_run += 1
             continue
         if r.decision is None:
-            judged += 1
-            errors += 1
+            undecided += 1  # a provider failure says nothing about the reference's quality
             continue
         v = verdicts.get(row_id, r.decision.outcome)
         if v is None:
@@ -150,6 +154,7 @@ def compute_base_rate(
     out = BaseRate(
         n_sample=len(rows),
         n_not_run=not_run,
+        n_undecided=undecided,
         n_judged=judged,
         n_errors=errors,
         unreviewed_rows=unreviewed[:MAX_LISTED_ROWS],
@@ -207,7 +212,7 @@ def compute_quality(
     """Compare ``candidate`` with ``reference`` on human approvals of their outcomes."""
     idx = index_results(results)
     diffs: list[int] = []  # per row: error(ref) - error(cand), 0 for same outcomes
-    excluded = 0
+    excluded = ref_undecided = 0
     unreviewed: list[str] = []
     n_changed = fixed = broken = both_ok = both_bad = 0
     for (cand, row_id, replica), res in sorted(idx.items()):
@@ -217,14 +222,18 @@ def compute_quality(
         if ref is None:
             excluded += 1
             continue
-        a = None if ref.decision is None else ref.decision.outcome
+        if ref.decision is None:
+            # The reference failing (often a provider error) must not credit the candidate.
+            ref_undecided += 1
+            continue
+        a = ref.decision.outcome
         b = None if res.decision is None else res.decision.outcome
         if a == b:
             diffs.append(0)
             continue
         n_changed += 1
-        # No decision is an error: nothing reached the user, or a fallback did.
-        ea = 1 if a is None else _error(verdicts.get(row_id, a))
+        # The candidate's missing decision is its error: it must not abstain its way out.
+        ea = _error(verdicts.get(row_id, a))
         eb = 1 if b is None else _error(verdicts.get(row_id, b))
         if ea is None or eb is None:
             unreviewed.append(row_id)
@@ -246,6 +255,7 @@ def compute_quality(
     out = QualityComparison(
         n_rows=n,
         n_excluded=excluded,
+        n_reference_undecided=ref_undecided,
         n_changed=n_changed,
         n_changed_reviewed=n_changed - len(unreviewed),
         fixed=fixed,

@@ -102,15 +102,21 @@
           "type": "integer",
           "description": "sampled rows with no reference result (excluded)"
         },
+        "n_undecided": {
+          "default": 0,
+          "title": "N Undecided",
+          "type": "integer",
+          "description": "sampled rows where the reference has no decision (excluded)"
+        },
         "n_judged": {
           "title": "N Judged",
           "type": "integer",
-          "description": "sampled rows with a verdict on the reference's outcome (or no decision)"
+          "description": "sampled rows with a verdict on the reference's outcome"
         },
         "n_errors": {
           "title": "N Errors",
           "type": "integer",
-          "description": "judged rows where the reference's outcome was rejected or missing"
+          "description": "judged rows where the reference's outcome was rejected"
         },
         "unreviewed_rows": {
           "items": {
@@ -929,6 +935,12 @@
           "title": "N Excluded",
           "type": "integer",
           "description": "rows missing a result on one side (not run)"
+        },
+        "n_reference_undecided": {
+          "default": 0,
+          "title": "N Reference Undecided",
+          "type": "integer",
+          "description": "rows left out: the reference has no decision there"
         },
         "n_changed": {
           "title": "N Changed",

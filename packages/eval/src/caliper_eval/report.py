@@ -694,15 +694,18 @@ def base_rate_summary(report: EvalReport) -> str:
     if b.n_sample == 0:
         return head + ": none drawn ([quality] base_sample = 0), so no relative numbers"
     if b.error_rate is None:
-        missing = b.n_sample - b.n_not_run - b.n_judged
+        missing = b.n_sample - b.n_not_run - b.n_undecided - b.n_judged
         return head + (
             f": {missing} rows still need a verdict on {report.reference}'s outcome "
             f"({row_ids(b.unreviewed_rows, missing)}), so no relative numbers yet"
         )
     e = b.error_rate
+    left_out = b.n_not_run + b.n_undecided
     return head + (
         f": {_pct(e.estimate)} [{_pct(e.low)}, {_pct(e.high)}] "
-        f"({b.n_errors} of {b.n_judged} rejected; Wilson {e.confidence:.0%})"
+        f"({b.n_errors} of {b.n_judged} rejected; Wilson {e.confidence:.0%}"
+        + (f"; {left_out} with no {report.reference} decision left out" if left_out else "")
+        + ")"
     )
 
 
@@ -732,6 +735,11 @@ def quality_summary(report: EvalReport, c: CandidateReport) -> str:
         if q.relative_improvement is not None:
             reduction += f", {relative_ci(q.relative_improvement)} of {report.reference}'s errors"
         parts.append(reduction + " (negative: more errors)")
+    if q.n_reference_undecided:
+        parts.append(
+            f"{q.n_reference_undecided} rows left out: {report.reference} has no decision there "
+            "(`--retry-errors` re-runs provider failures)"
+        )
     return "; ".join(parts)
 
 

@@ -26,8 +26,9 @@ counted, because agreement with a model is not evidence of being right.
 ``approved: null`` (an "Unsure" answer) gives no verdict. An approval whose
 ``request_sha256`` no longer matches the golden row is stale and ignored.
 
-For one ``(row_id, outcome)``, adjudicated lines win over other lines, and any
-approval line wins over the golden label. Lines that contradict each other at
+For one ``(row_id, outcome)``, adjudicated lines win over other lines, and an
+approval line wins over the golden label, unless the label itself is
+adjudicated (then only an adjudicated line can override it). Lines that contradict each other at
 the level that decides give no verdict and are counted as conflicts.
 """
 
@@ -150,11 +151,12 @@ def build_verdicts(
 ) -> tuple[Verdicts, ApprovalSummary]:
     """Merge approval lines and human golden labels into one verdict lookup.
 
-    Precedence for one ``(row, outcome)``: adjudicated approval lines, then other
-    approval lines, then the row's golden label. Lines that disagree at the level
-    that decides give no verdict (a conflict). ``outcomes`` are the outcomes any
-    candidate decided: a golden label that is none of them (e.g. "yes" from a
-    yes/no project) cannot judge an outcome and is ignored.
+    Precedence for one ``(row, outcome)``: adjudicated approval lines, then an
+    adjudicated golden label, then other approval lines, then the golden label.
+    Lines that disagree at the level that decides give no verdict (a conflict).
+    ``outcomes`` are the outcomes any candidate decided: a golden label that is
+    none of them (e.g. "yes" from a yes/no project) cannot judge an outcome and
+    is ignored.
     """
     by_id = {g.id: g for g in golden}
     want_sha = {g.id: request_sha256(g.request) for g in golden}
@@ -179,6 +181,7 @@ def build_verdicts(
 
     known = None if outcomes is None else set(outcomes)
     labels: dict[str, str] = {}
+    adjudicated_labels: set[str] = set()
     not_an_outcome = 0
     if golden_labels:
         for g in golden:
@@ -188,11 +191,15 @@ def build_verdicts(
                 not_an_outcome += 1
                 continue
             labels[g.id] = g.label
+            if g.label_source == LabelSource.ADJUDICATED:
+                adjudicated_labels.add(g.id)
 
     explicit: dict[tuple[str, str], bool] = {}
     conflicts: set[tuple[str, str]] = set()
     overrides = 0
     for key, by_level in seen.items():
+        if True not in by_level and key[0] in adjudicated_labels:
+            continue  # an adjudicated golden label outranks ordinary approvals
         values = by_level.get(True) or by_level[False]
         if len(values) > 1:
             conflicts.add(key)
