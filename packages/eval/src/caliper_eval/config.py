@@ -133,6 +133,9 @@ class QualityConfig(BaseModel):
     approvals: list[str] = Field(default_factory=list)
     # Also count human golden labels: the labelled outcome is approved, any other rejected.
     golden_labels: bool = True
+    # Rows drawn uniformly at random (config seed) to measure the reference's error rate,
+    # which "X% fewer errors" needs; `caliper review` lists the same rows.
+    base_sample: int = Field(default=30, ge=0)
 
 
 class CalibrationConfig(BaseModel):

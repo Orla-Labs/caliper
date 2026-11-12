@@ -33,10 +33,11 @@ A candidate fails when any of these holds:
 9. **quality per cost** (only with ``[ci] quality_per_cost = k``): it costs
    ``ratio > 1`` times the reference, and human approvals do not show it at
    least ``k * (ratio - 1)`` better, relative to the reference's error rate
-   (:mod:`caliper_eval.quality`). It fails when a changed row has no verdict
-   on both outcomes, when the reference's error rate is unknown, when the
-   margin's lower bound is below 0, or when the improvement's lower bound is
-   not above 0. A cost that cannot be compared fails it too.
+   (:mod:`caliper_eval.quality`): the relative improvement's low end must reach
+   that share and the improvement's low end must be above 0. It also fails when
+   a changed row has no verdict on both outcomes, when the reference's error
+   rate is unknown (base sample not reviewed), or when the cost cannot be
+   compared (no price).
 
 Rules 2-5 also apply to the reference. Exit code 0 = pass, 1 = fail.
 """
@@ -48,7 +49,8 @@ from collections.abc import Mapping
 from pydantic import BaseModel, ConfigDict, Field
 
 from .config import GateRequirement
-from .report import CandidateReport, EvalReport, points_ci, relative_ci, row_ids
+from .quality import quality_passes
+from .report import CandidateReport, EvalReport, relative_ci, row_ids
 
 EXIT_PASS = 0
 EXIT_FAIL = 1
@@ -104,7 +106,9 @@ def evaluate_gate(
                     f"paired excess regression {d.estimate:.3f} [{d.low:.3f}, {d.high:.3f}]: "
                     f"{'upper' if upper else 'lower'} bound {bound:.3f} > allowed "
                     f"{max_reg:.3f} (regression {p.regression:.3f} - noise {p.noise:.3f}; "
-                    f"{flipped} rows flipped)"
+                    f"{flipped} rows flipped"
+                    + (f", {p.n_fixes} of them fixes that cost 0" if p.n_fixes else "")
+                    + ")"
                 )
         if t is not None:
             if t.n_missing:
@@ -190,28 +194,32 @@ def _quality_reasons(report: EvalReport, c: CandidateReport, k: float) -> list[s
     )
     q = c.quality
     if q is None or q.n_rows == 0:
-        return [head + "; no row was decided by both sides"]
+        return [head + "; no row was run by both sides"]
     missing = q.n_changed - q.n_changed_reviewed
     if missing:
         return [
             head + f"; {missing} of {q.n_changed} changed rows have no human verdict on both "
-            f"outcomes ({row_ids(q.unreviewed_rows, missing)}): run `caliper review` and add the "
-            "approvals to [quality]"
+            f"outcomes ({row_ids(q.unreviewed_rows, missing)}): run `caliper review` and add "
+            "the approvals to [quality]"
         ]
-    if q.margin is None or q.improvement is None:
-        return [
-            head + f"; {report.reference}'s error rate is unknown: no human verdicts on the "
-            f"{q.n_same} rows where both decide the same (`caliper review --base-sample N`)"
-        ]
-    if q.margin.low >= 0 and q.improvement.low > 0:
+    b = report.base_rate
+    if b is None or b.error_rate is None:
+        if b is None or b.n_sample == 0:
+            why = "[quality] base_sample is 0"
+        else:
+            left = b.n_sample - b.n_not_run - b.n_judged
+            why = (
+                f"{left} of the {b.n_sample} base-sample rows have no verdict on its outcome "
+                f"({row_ids(b.unreviewed_rows, left)}); `caliper review` lists them"
+            )
+        return [head + f"; {report.reference}'s error rate is unknown: {why}"]
+    if quality_passes(q):
         return []
-    if q.relative_improvement is not None:
-        measured = f"{relative_ci(q.relative_improvement)} of {report.reference}'s errors"
-    else:
-        measured = points_ci(q.improvement)
+    assert q.improvement is not None and q.relative_improvement is not None
     return [
-        head + f"; measured error reduction {measured} on {q.n_rows} rows ({q.fixed} fixed, "
-        f"{q.broken} broken of {q.n_changed} changed): not shown at 95%"
+        head + f"; measured {relative_ci(q.relative_improvement)} of {report.reference}'s "
+        f"errors ({q.fixed} fixed, {q.broken} broken of {q.n_changed} changed rows, "
+        f"{q.n_rows} rows): not shown at 95%"
     ]
 
 

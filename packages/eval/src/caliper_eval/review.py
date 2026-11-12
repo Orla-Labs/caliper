@@ -7,12 +7,16 @@ Reads an eval's ``results.jsonl`` and writes one review item per
 
 * both outcomes of every row where a candidate and the reference decide
   differently (only these rows can make one better than the other);
-* the reference's outcome on a random sample of rows (``--base-sample``), to
-  measure how often the reference is wrong, which "X% fewer errors" needs.
+* the reference's outcome on the base sample (``[quality] base_sample`` rows
+  drawn at random with the config's seed: the same rows ``caliper eval`` uses to
+  measure how often the reference is wrong, which "X% fewer errors" needs).
 
 Each item shows the request and one outcome, never the model that produced it,
-and the items are shuffled, so a reviewer cannot tell which side an outcome came
-from. With the ``label`` extra installed, the folder is also a ``caliper label``
+and the items are shuffled. An item whose row has no other item (a base-sample
+row, or a changed row whose other outcome was judged before) can hint at which
+side produced it, never at which model.
+
+With the ``label`` extra installed, the folder is also a ``caliper label``
 project (Yes / No / Unsure); its ``--format jsonl`` export is an approvals file
 for ``[quality] approvals``.
 """
@@ -35,12 +39,13 @@ from pydantic import BaseModel, ConfigDict
 from ._stats import derive_seed
 from .approvals import Verdicts, build_verdicts, read_approvals
 from .noise import index_results
+from .quality import base_sample_rows
 from .types import GoldenRow, RowResult, request_sha256
 
 EXIT_OK = 0
 EXIT_USAGE = 2
 ITEMS_FILE = "items.jsonl"
-DEFAULT_BASE_SAMPLE = 30
+DEFAULT_BASE_SAMPLE = 30  # [quality] base_sample when the config has no [quality]
 # Modules of the `label` extra that `caliper label` needs to open the project.
 LABEL_EXTRA_MODULES = ("fastapi", "uvicorn", "yaml", "ruamel.yaml", "duckdb")
 INSTRUCTIONS = (
@@ -83,7 +88,7 @@ def plan_review(
     reference: str,
     candidates: Sequence[str],
     *,
-    base_sample: int = DEFAULT_BASE_SAMPLE,
+    base_rows: Sequence[str] = (),
     seed: int = 0,
 ) -> ReviewPlan:
     """The outcomes still needing a human verdict, shuffled (pure, deterministic)."""
@@ -114,18 +119,19 @@ def plan_review(
         n = 0
         for row_id in sorted(ref_out):
             r = idx.get((cand, row_id, 0))
-            if r is None or r.decision is None or r.decision.outcome == ref_out[row_id]:
+            if r is None or (r.decision is not None and r.decision.outcome == ref_out[row_id]):
                 continue
-            n += 1
+            n += 1  # no decision is a change too, and needs no verdict of its own
             want(row_id, ref_out[row_id])
-            want(row_id, r.decision.outcome)
+            if r.decision is not None:
+                want(row_id, r.decision.outcome)
         changed_rows[cand] = n
     from_changes = len(wanted)
 
-    rng = random.Random(derive_seed(seed, "review"))  # noqa: S311 - sampling, not crypto
-    pool = sorted(ref_out)
-    for row_id in rng.sample(pool, min(max(base_sample, 0), len(pool))):
-        want(row_id, ref_out[row_id])
+    for row_id in base_rows:
+        if row_id in ref_out:
+            want(row_id, ref_out[row_id])
+    rng = random.Random(derive_seed(seed, "review"))  # noqa: S311 - shuffling, not crypto
 
     rng.shuffle(wanted)
     items = [
@@ -202,8 +208,10 @@ def cmd_review(args: argparse.Namespace) -> int:
         golden = load_golden(config.golden_path)
         approvals = []
         golden_labels = True
+        base_sample = DEFAULT_BASE_SAMPLE
         if config.quality is not None:
             golden_labels = config.quality.golden_labels
+            base_sample = config.quality.base_sample
             for path in config.quality.approvals:
                 approvals += read_approvals(config.resolve(path))
     except (OSError, ValueError) as exc:
@@ -223,15 +231,20 @@ def cmd_review(args: argparse.Namespace) -> int:
             err(f"caliper review: unknown or reference candidates {unknown}; choose from {names}")
             return EXIT_USAGE
         names = chosen
-    verdicts, _ = build_verdicts(golden, approvals, golden_labels=golden_labels)
+    verdicts, _ = build_verdicts(
+        golden,
+        approvals,
+        golden_labels=golden_labels,
+        outcomes={r.decision.outcome for r in results if r.decision is not None},
+    )
     plan = plan_review(
         golden,
         results,
         verdicts,
         reference,
         names,
-        base_sample=args.base_sample,
-        seed=config.seed if args.seed is None else args.seed,
+        base_rows=base_sample_rows(golden, base_sample, config.seed),
+        seed=config.seed,
     )
 
     out.mkdir(parents=True, exist_ok=True)
@@ -244,7 +257,7 @@ def cmd_review(args: argparse.Namespace) -> int:
     print(
         f"{len(plan.items)} outcomes to review: {plan.from_changes} from rows where a "
         f"candidate and {reference} decide differently ({changed}), "
-        f"{plan.from_base_sample} from a base sample of {args.base_sample} rows; "
+        f"{plan.from_base_sample} from the base sample of {base_sample} rows; "
         f"{plan.already_judged} already judged"
     )
     print(f"wrote {out / ITEMS_FILE}")
@@ -276,13 +289,6 @@ def register(sub: Any) -> argparse.ArgumentParser:
     p.add_argument(
         "--candidates", default=None, help="comma-separated candidates (default: all but ref)"
     )
-    p.add_argument(
-        "--base-sample",
-        type=int,
-        default=DEFAULT_BASE_SAMPLE,
-        help="rows sampled at random to measure the reference's error rate (0 for none)",
-    )
-    p.add_argument("--seed", type=int, default=None, help="sampling seed (default: config seed)")
     p.set_defaults(func=cmd_review)
     return p
 

@@ -380,6 +380,13 @@
           "title": "Golden Labels",
           "type": "boolean",
           "description": "Also count human golden labels: the labelled outcome is approved, any other rejected."
+        },
+        "base_sample": {
+          "default": 30,
+          "minimum": 0,
+          "title": "Base Sample",
+          "type": "integer",
+          "description": "Rows drawn uniformly at random (config seed) to measure the reference's error rate, which \"X% fewer errors\" needs; `caliper review` lists the same rows."
         }
       },
       "title": "QualityConfig",

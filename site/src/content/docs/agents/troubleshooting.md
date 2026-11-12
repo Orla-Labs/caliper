@@ -27,8 +27,8 @@ Errors go to stderr as one line (sometimes followed by a hint), prefixed with th
 | 2 | `caliper review: DIR is not an empty folder (use a new folder per review round)` | `--out` exists and holds files. | Use a new folder for each review round. |
 | 2 | `caliper review: unknown or reference candidates [...]` | `--candidates` names the reference or a missing candidate. | Name non-reference candidates from the config. |
 | 1 | `costs Rx the reference, so it must make at least P% fewer errors ...; N of M changed rows have no human verdict on both outcomes` | `[ci] quality_per_cost`: rows where the candidate decides differently have not been judged. | `caliper review`, have your user label, export, add the file to `[quality] approvals` ([recipe 10](/agents/recipes/#10-is-the-more-expensive-model-worth-it)). |
-| 1 | `...; REF's error rate is unknown: no human verdicts on the N rows where both decide the same` | No verdicts on rows where both sides agree, so "P% fewer errors" has no denominator. | `caliper review --base-sample 30` (the default) and label that sample. |
-| 1 | `...; measured error reduction X% [L%, H%] of REF's errors ...: not shown at 95%` | The candidate costs more and is not shown to be at least that much better. | A real result. More reviewed rows narrow the interval; do not lower `quality_per_cost` to pass it. |
+| 1 | `...; REF's error rate is unknown: N of the M base-sample rows have no verdict on its outcome` | "P% fewer errors" needs the reference's error rate, measured on `[quality] base_sample` random rows; some are not reviewed yet. | `caliper review` lists them; have your user label them and add the export to `[quality] approvals`. |
+| 1 | `...; measured X% [L%, H%] of REF's errors (...): not shown at 95%` | The candidate costs more and is not shown to be at least that much better (the interval's low end must reach the required share). | A real result. More rows, and a larger `base_sample`, narrow the interval; do not lower `quality_per_cost` to pass it. |
 | 1 | `N results recorded for a different request or candidate settings than the current config` | `OUT/results.jsonl` holds results from an older config or golden set. | Re-run with `--no-resume`, or use a fresh `--out`. |
 | 1 | `N replies served by a model other than requested` | The provider answered with another model (a fallback or alias). | Request the exact model id the provider reports; check the `served_models` field. |
 | 1 | `error rate X% > allowed Y%` | Replies failed or `decide()` raised. | Look at `error` in `OUT/results.jsonl`; `--retry-errors` re-runs provider failures; fix `decide()` for decision errors, or set `[ci] max_error_rate`. |
@@ -49,9 +49,12 @@ Errors go to stderr as one line (sometimes followed by a hint), prefixed with th
 | An eval finishes instantly with no new spend | Resume found every row already in `OUT/results.jsonl`. |
 | `warning: approvals: N lines from a non-human source ignored` | Approvals from `llm_teacher` or `heuristic` do not count as evidence. |
 | `warning: approvals: N lines judged a request that has changed since; ignored` | The golden row's request changed after the review; review those rows again. |
-| `warning: approvals: N (row, outcome) pairs have contradicting verdicts` | Two verdicts disagree; the pair counts as unreviewed until someone adjudicates. |
-| `error reduction -8.4% [...] (negative: more errors)` | The candidate makes more errors than the reference on human verdicts. |
+| `warning: approvals: N (row, outcome) pairs have contradicting verdicts` | Two verdicts disagree; the pair counts as unreviewed until an adjudicated approval settles it. |
+| `warning: approvals: N human golden labels are not an outcome any candidate decided` | A label like `yes` from a yes/no project cannot judge an outcome; it is ignored. |
+| `warning: approvals: N approval verdicts differ from the row's golden label` | An explicit approval overrides the golden label for that outcome. |
+| `-8.3% [-45.0%, +15.0%] of REF's errors (negative: more errors)` | The candidate makes more errors than the reference on human verdicts (here, not shown at 95%). |
 | `caliper review` lists 0 outcomes | Every changed row and the base sample already have verdicts. Re-run `caliper eval`. |
+| `regression ... (N rows flipped, K of them fixes that cost 0)` | With `[quality]`, a change from a rejected to an approved outcome is not a regression. |
 
 ## Environment variables
 

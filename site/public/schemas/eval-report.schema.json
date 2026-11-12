@@ -30,6 +30,18 @@
           "type": "integer",
           "description": "golden rows whose human label gives verdicts"
         },
+        "labels_not_outcomes": {
+          "default": 0,
+          "title": "Labels Not Outcomes",
+          "type": "integer",
+          "description": "human golden labels that are no decided outcome (ignored)"
+        },
+        "overrides": {
+          "default": 0,
+          "title": "Overrides",
+          "type": "integer",
+          "description": "approval verdicts that differ from the row's golden label (they win)"
+        },
         "not_human": {
           "title": "Not Human",
           "type": "integer",
@@ -58,7 +70,7 @@
         "fingerprint": {
           "title": "Fingerprint",
           "type": "string",
-          "description": "hash of the verdicts on test rows (part of the test-ledger key)"
+          "description": "hash of every verdict in use (part of the test-ledger key)"
         }
       },
       "required": [
@@ -74,6 +86,109 @@
         "fingerprint"
       ],
       "title": "ApprovalSummary",
+      "type": "object"
+    },
+    "BaseRate": {
+      "additionalProperties": false,
+      "description": "The reference's error rate, on a uniform random sample of golden rows.",
+      "properties": {
+        "n_sample": {
+          "title": "N Sample",
+          "type": "integer",
+          "description": "rows drawn ([quality] base_sample, at most the golden set)"
+        },
+        "n_not_run": {
+          "title": "N Not Run",
+          "type": "integer",
+          "description": "sampled rows with no reference result (excluded)"
+        },
+        "n_judged": {
+          "title": "N Judged",
+          "type": "integer",
+          "description": "sampled rows with a verdict on the reference's outcome (or no decision)"
+        },
+        "n_errors": {
+          "title": "N Errors",
+          "type": "integer",
+          "description": "judged rows where the reference's outcome was rejected or missing"
+        },
+        "unreviewed_rows": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unreviewed Rows",
+          "type": "array",
+          "description": "sampled rows still to review"
+        },
+        "error_rate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CI"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Wilson 95%; None until every sampled row is judged"
+        }
+      },
+      "required": [
+        "n_sample",
+        "n_not_run",
+        "n_judged",
+        "n_errors"
+      ],
+      "title": "BaseRate",
+      "type": "object"
+    },
+    "Bounds": {
+      "additionalProperties": false,
+      "description": "An estimate with an interval whose ends may be unbounded (``None``).",
+      "properties": {
+        "estimate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Estimate",
+          "description": "point estimate; None when undefined (e.g. divide by 0)"
+        },
+        "low": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Low",
+          "description": "lower end; None = unbounded below"
+        },
+        "high": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "High",
+          "description": "upper end; None = unbounded above"
+        }
+      },
+      "required": [
+        "estimate",
+        "low",
+        "high"
+      ],
+      "title": "Bounds",
       "type": "object"
     },
     "CI": {
@@ -711,18 +826,18 @@
     },
     "PairedExcess": {
       "additionalProperties": false,
-      "description": "Candidate regression minus reference replay noise, paired per row.\n\nFor every compared row ``i``: ``d_i = cost(ref replica 0 -> candidate) - n_i``\nwhere ``n_i`` is the reference's own symmetrized replay cost on that row\n(0 when the row has no complete noise replays). ``delta`` is the paired\nbootstrap CI of ``mean(d)``: one row resample per draw, both terms\ncomputed on the same rows.\n\nWith human approvals (``[quality]``), a change to an outcome a person\napproved for that row costs 0: it is not a regression.",
+      "description": "Candidate regression minus reference replay noise, paired per row.\n\nFor every compared row ``i``: ``d_i = cost(ref replica 0 -> candidate) - n_i``\nwhere ``n_i`` is the reference's own symmetrized replay cost on that row\n(0 when the row has no complete noise replays). ``delta`` is the paired\nbootstrap CI of ``mean(d)``: one row resample per draw, both terms\ncomputed on the same rows.\n\nWith human approvals (``[quality]``), a *fix* costs 0: a change from an\noutcome a person rejected to one a person approved, on the candidate's side\nand in the reference's own replays alike (:func:`caliper_eval.approvals.judged_cost`).",
       "properties": {
         "n_rows": {
           "title": "N Rows",
           "type": "integer",
           "description": "compared rows"
         },
-        "n_approved_changes": {
+        "n_fixes": {
           "default": 0,
-          "title": "N Approved Changes",
+          "title": "N Fixes",
           "type": "integer",
-          "description": "changed rows not counted: a person approved the new outcome"
+          "description": "changed rows not counted: people rejected the old outcome, approved the new"
         },
         "n_without_noise": {
           "title": "N Without Noise",
@@ -808,32 +923,32 @@
         "n_rows": {
           "title": "N Rows",
           "type": "integer",
-          "description": "rows decided by both sides (reference replica 0)"
+          "description": "rows run on both sides (reference replica 0)"
         },
         "n_excluded": {
           "title": "N Excluded",
           "type": "integer",
-          "description": "rows with no decision on one side"
+          "description": "rows missing a result on one side (not run)"
         },
         "n_changed": {
           "title": "N Changed",
           "type": "integer",
-          "description": "rows where the outcomes differ"
+          "description": "rows where the outcomes differ (no decision counts as an outcome)"
         },
         "n_changed_reviewed": {
           "title": "N Changed Reviewed",
           "type": "integer",
-          "description": "changed rows with a verdict on both outcomes"
+          "description": "changed rows with a verdict on both sides"
         },
         "fixed": {
           "title": "Fixed",
           "type": "integer",
-          "description": "changed rows: candidate approved, reference rejected"
+          "description": "changed rows: candidate right, reference wrong"
         },
         "broken": {
           "title": "Broken",
           "type": "integer",
-          "description": "changed rows: reference approved, candidate rejected"
+          "description": "changed rows: reference right, candidate wrong"
         },
         "both_approved": {
           "title": "Both Approved",
@@ -853,45 +968,6 @@
           "type": "array",
           "description": "changed rows missing a verdict"
         },
-        "n_same": {
-          "title": "N Same",
-          "type": "integer",
-          "description": "rows where both decide the same outcome"
-        },
-        "n_same_reviewed": {
-          "title": "N Same Reviewed",
-          "type": "integer",
-          "description": "same rows with a verdict on that outcome"
-        },
-        "same_rejected": {
-          "title": "Same Rejected",
-          "type": "integer",
-          "description": "reviewed same rows where that outcome was rejected"
-        },
-        "reference_error_rate": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/CI"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "share of rows the reference gets wrong"
-        },
-        "candidate_error_rate": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/CI"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "share of rows the candidate gets wrong"
-        },
         "improvement": {
           "anyOf": [
             {
@@ -902,19 +978,19 @@
             }
           ],
           "default": null,
-          "description": "reference error rate - candidate error rate"
+          "description": "(fixed - broken) / n_rows: fewer errors per row"
         },
         "relative_improvement": {
           "anyOf": [
             {
-              "$ref": "#/$defs/CI"
+              "$ref": "#/$defs/Bounds"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "description": "improvement / reference error rate"
+          "description": "improvement / the reference's error rate"
         },
         "required_relative": {
           "anyOf": [
@@ -928,18 +1004,6 @@
           "default": null,
           "title": "Required Relative",
           "description": "quality_per_cost x (cost ratio - 1)"
-        },
-        "margin": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/CI"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "improvement - required_relative x reference error rate"
         }
       },
       "required": [
@@ -950,10 +1014,7 @@
         "fixed",
         "broken",
         "both_approved",
-        "both_rejected",
-        "n_same",
-        "n_same_reviewed",
-        "same_rejected"
+        "both_rejected"
       ],
       "title": "QualityComparison",
       "type": "object"
@@ -1649,6 +1710,18 @@
       ],
       "default": null,
       "description": "human approvals in use ([quality])"
+    },
+    "base_rate": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BaseRate"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "the reference's error rate on the base sample"
     },
     "calls_per_day": {
       "anyOf": [

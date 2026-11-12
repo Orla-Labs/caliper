@@ -304,6 +304,7 @@ model.
    [quality]
    approvals = []             # filled in at step 4
    golden_labels = true       # human golden labels already count as verdicts
+   base_sample = 30           # random rows that measure the reference's error rate
    ```
 
 2. Run the eval without `--ci` (this is the paid step; see [What costs money](/agents/spending/)):
@@ -320,8 +321,9 @@ model.
    ```
 
    Each card shows the request and one outcome, never the model. The list holds both
-   outcomes of every changed row with no verdict, plus the reference's outcome on 30
-   random rows (`--base-sample`) to measure how often the reference is wrong.
+   outcomes of every changed row with no verdict, plus the reference's outcome on the
+   `base_sample` rows (drawn at random with the config's `seed`), which measure how
+   often the reference is wrong.
 
 4. When your user is done, export and register the verdicts:
 
@@ -329,9 +331,11 @@ model.
    caliper label export build/review-1 --format jsonl --out build/review-1/approvals.jsonl
    ```
 
+   `caliper review` printed the exact line to add, with the path relative to the config:
+
    ```toml
    [quality]
-   approvals = ["build/review-1/approvals.jsonl"]   # relative to caliper.toml
+   approvals = ["build/review-1/approvals.jsonl"]
    ```
 
 5. Gate. The same `--out` resumes, so no model is called again, and the new verdicts
@@ -344,15 +348,16 @@ model.
 **Verify:**
 
 ```bash
-jq '.candidates[] | select(.quality) | {name, cost_vs_reference,
+jq '.base_rate.error_rate, (.candidates[] | select(.quality) | {name, cost_vs_reference,
     changed: .quality.n_changed, reviewed: .quality.n_changed_reviewed,
-    fixed: .quality.fixed, broken: .quality.broken,
-    relative: .quality.relative_improvement, required: .quality.required_relative}' \
+    fixed: .quality.fixed, broken: .quality.broken, improvement: .quality.improvement,
+    relative: .quality.relative_improvement, required: .quality.required_relative})' \
     build/eval/report.json
 ```
 
-`reviewed` equals `changed` for every candidate, and a costlier candidate passes only
-when `relative.low` is above `required`. If `reviewed < changed`, run `caliper review`
+`base_rate.error_rate` is not null, `reviewed` equals `changed` for every candidate,
+and a costlier candidate passes only when `relative.low` is at least `required` and
+`improvement.low` is above 0. If `reviewed < changed`, run `caliper review`
 again into a new folder (`build/review-2`): it lists only what is still missing. Try it
 offline first: `caliper example catalog_cleanup` then
 `caliper eval --config catalog_cleanup/caliper.quality.toml --out catalog_cleanup/out-q --ci`.

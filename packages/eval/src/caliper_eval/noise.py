@@ -21,6 +21,7 @@ from collections.abc import Iterable, Mapping
 from pydantic import BaseModel, ConfigDict, Field
 
 from ._stats import CI, DEFAULT_N_BOOT, bootstrap_mean_ci, derive_seed, transition_cost
+from .approvals import Verdicts, judged_cost
 from .types import RowResult
 
 
@@ -70,11 +71,13 @@ def noise_row_costs(
     reference: str,
     *,
     costs: Mapping[str, float] | None = None,
+    verdicts: Verdicts | None = None,
 ) -> dict[str, float]:
     """Per-row symmetrized replay cost of the reference (rows with every replica decided).
 
     Empty when the reference was replayed fewer than 2 times. This is the
-    per-row noise term the paired gate subtracts from a candidate's cost.
+    per-row noise term the paired gate subtracts from a candidate's cost. With
+    ``verdicts``, a fix costs 0 here too, as it does for the candidate.
     """
     costs = costs or {}
     by_row = _reference_rows(results, reference)
@@ -88,7 +91,19 @@ def noise_row_costs(
         decisions = [reps[i].decision for i in range(n_replicas)]
         if any(d is None for d in decisions):
             continue
-        out[row_id] = _row_noise([d.outcome for d in decisions if d is not None], costs)[1]
+        outs = [d.outcome for d in decisions if d is not None]
+        if verdicts is None:
+            out[row_id] = _row_noise(outs, costs)[1]
+            continue
+        base, others = outs[0], outs[1:]
+        out[row_id] = sum(
+            (
+                judged_cost(costs, verdicts, row_id, base, o)
+                + judged_cost(costs, verdicts, row_id, o, base)
+            )
+            / 2
+            for o in others
+        ) / len(others)
     return out
 
 

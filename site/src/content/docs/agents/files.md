@@ -138,6 +138,7 @@ Human approvals of outcomes, to measure "better" (``[quality]``). See :mod:`cali
 | --- | --- | --- | --- | --- |
 | `approvals` | list of string |  |  | Approval JSONL files, relative to the config file (`caliper review` builds them). |
 | `golden_labels` | boolean |  | `true` | Also count human golden labels: the labelled outcome is approved, any other rejected. |
+| `base_sample` | integer |  | `30` | Rows drawn uniformly at random (config seed) to measure the reference's error rate, which "X% fewer errors" needs; `caliper review` lists the same rows. (>= 0) |
 
 ## `golden.jsonl`
 
@@ -237,6 +238,7 @@ Schema: [https://caliper.orlalabs.com/schemas/eval-report.schema.json](/schemas/
 | `max_cost_ratio` | number or null |  | `null` | [ci] max_cost_ratio |
 | `quality_per_cost` | number or null |  | `null` | [ci] quality_per_cost |
 | `approvals` | [ApprovalSummary](#approvalsummary) or null |  | `null` | human approvals in use ([quality]) |
+| `base_rate` | [BaseRate](#baserate) or null |  | `null` | the reference's error rate on the base sample |
 | `calls_per_day` | number or null |  | `null` | [cost_projection] calls_per_day |
 | `days_per_month` | number or null |  | `null` | [cost_projection] days_per_month |
 | `noise_floor` | [NoiseFloor](#noisefloor) or null | yes |  | the reference's own replay-to-replay variation |
@@ -255,12 +257,27 @@ What the approval evidence contained and what was set aside.
 | `golden_labels` | boolean | yes |  | whether human golden labels count as verdicts |
 | `used` | integer | yes |  | human verdicts in use (approval lines, before merging duplicates) |
 | `from_golden_labels` | integer | yes |  | golden rows whose human label gives verdicts |
+| `labels_not_outcomes` | integer |  | `0` | human golden labels that are no decided outcome (ignored) |
+| `overrides` | integer |  | `0` | approval verdicts that differ from the row's golden label (they win) |
 | `not_human` | integer | yes |  | lines from a non-human source (ignored) |
 | `unsure` | integer | yes |  | lines with approved = null (ignored) |
 | `stale` | integer | yes |  | lines for a request that has changed since (ignored) |
 | `unknown_rows` | integer | yes |  | lines for a row id not in the golden set (ignored) |
 | `conflicts` | integer | yes |  | (row, outcome) pairs with contradicting verdicts (no verdict) |
-| `fingerprint` | string | yes |  | hash of the verdicts on test rows (part of the test-ledger key) |
+| `fingerprint` | string | yes |  | hash of every verdict in use (part of the test-ledger key) |
+
+### BaseRate
+
+The reference's error rate, on a uniform random sample of golden rows.
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `n_sample` | integer | yes |  | rows drawn ([quality] base_sample, at most the golden set) |
+| `n_not_run` | integer | yes |  | sampled rows with no reference result (excluded) |
+| `n_judged` | integer | yes |  | sampled rows with a verdict on the reference's outcome (or no decision) |
+| `n_errors` | integer | yes |  | judged rows where the reference's outcome was rejected or missing |
+| `unreviewed_rows` | list of string |  |  | sampled rows still to review |
+| `error_rate` | [CI](#ci) or null |  | `null` | Wilson 95%; None until every sampled row is judged |
 
 ### NoiseFloor
 
@@ -374,12 +391,12 @@ Percentile bootstrap confidence interval around a point estimate.
 
 ### PairedExcess
 
-Candidate regression minus reference replay noise, paired per row. For every compared row ``i``: ``d_i = cost(ref replica 0 -> candidate) - n_i`` where ``n_i`` is the reference's own symmetrized replay cost on that row (0 when the row has no complete noise replays). ``delta`` is the paired bootstrap CI of ``mean(d)``: one row resample per draw, both terms computed on the same rows. With human approvals (``[quality]``), a change to an outcome a person approved for that row costs 0: it is not a regression.
+Candidate regression minus reference replay noise, paired per row. For every compared row ``i``: ``d_i = cost(ref replica 0 -> candidate) - n_i`` where ``n_i`` is the reference's own symmetrized replay cost on that row (0 when the row has no complete noise replays). ``delta`` is the paired bootstrap CI of ``mean(d)``: one row resample per draw, both terms computed on the same rows. With human approvals (``[quality]``), a *fix* costs 0: a change from an outcome a person rejected to one a person approved, on the candidate's side and in the reference's own replays alike (:func:`caliper_eval.approvals.judged_cost`).
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `n_rows` | integer | yes |  | compared rows |
-| `n_approved_changes` | integer |  | `0` | changed rows not counted: a person approved the new outcome |
+| `n_fixes` | integer |  | `0` | changed rows not counted: people rejected the old outcome, approved the new |
 | `n_without_noise` | integer | yes |  | compared rows with no complete reference replays (n_i = 0) |
 | `regression` | number | yes |  | mean candidate cost on these rows |
 | `noise` | number | yes |  | mean reference replay cost on these rows |
@@ -451,24 +468,18 @@ A candidate against the reference, both judged by human approvals.
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `n_rows` | integer | yes |  | rows decided by both sides (reference replica 0) |
-| `n_excluded` | integer | yes |  | rows with no decision on one side |
-| `n_changed` | integer | yes |  | rows where the outcomes differ |
-| `n_changed_reviewed` | integer | yes |  | changed rows with a verdict on both outcomes |
-| `fixed` | integer | yes |  | changed rows: candidate approved, reference rejected |
-| `broken` | integer | yes |  | changed rows: reference approved, candidate rejected |
+| `n_rows` | integer | yes |  | rows run on both sides (reference replica 0) |
+| `n_excluded` | integer | yes |  | rows missing a result on one side (not run) |
+| `n_changed` | integer | yes |  | rows where the outcomes differ (no decision counts as an outcome) |
+| `n_changed_reviewed` | integer | yes |  | changed rows with a verdict on both sides |
+| `fixed` | integer | yes |  | changed rows: candidate right, reference wrong |
+| `broken` | integer | yes |  | changed rows: reference right, candidate wrong |
 | `both_approved` | integer | yes |  | changed rows where both outcomes are acceptable |
 | `both_rejected` | integer | yes |  | changed rows where neither outcome is acceptable |
 | `unreviewed_rows` | list of string |  |  | changed rows missing a verdict |
-| `n_same` | integer | yes |  | rows where both decide the same outcome |
-| `n_same_reviewed` | integer | yes |  | same rows with a verdict on that outcome |
-| `same_rejected` | integer | yes |  | reviewed same rows where that outcome was rejected |
-| `reference_error_rate` | [CI](#ci) or null |  | `null` | share of rows the reference gets wrong |
-| `candidate_error_rate` | [CI](#ci) or null |  | `null` | share of rows the candidate gets wrong |
-| `improvement` | [CI](#ci) or null |  | `null` | reference error rate - candidate error rate |
-| `relative_improvement` | [CI](#ci) or null |  | `null` | improvement / reference error rate |
+| `improvement` | [CI](#ci) or null |  | `null` | (fixed - broken) / n_rows: fewer errors per row |
+| `relative_improvement` | [Bounds](#bounds) or null |  | `null` | improvement / the reference's error rate |
 | `required_relative` | number or null |  | `null` | quality_per_cost x (cost ratio - 1) |
-| `margin` | [CI](#ci) or null |  | `null` | improvement - required_relative x reference error rate |
 
 ### TransitionCount
 
@@ -545,6 +556,16 @@ Losses on the report rows of one label source.
 | `candidate_only` | list of string |  |  | ref right, candidate wrong |
 | `reference_only` | list of string |  |  | candidate right, ref wrong |
 | `delta` | [CI](#ci) | yes |  | paired: mean(candidate lost) - mean(reference lost) per row |
+
+### Bounds
+
+An estimate with an interval whose ends may be unbounded (``None``).
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `estimate` | number or null | yes |  | point estimate; None when undefined (e.g. divide by 0) |
+| `low` | number or null | yes |  | lower end; None = unbounded below |
+| `high` | number or null | yes |  | upper end; None = unbounded above |
 
 ### SideLosses
 

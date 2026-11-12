@@ -4,11 +4,12 @@
 #   caliper eval --config examples/catalog_cleanup/caliper.quality.toml --out build/quality --ci
 #
 # [quality] counts the human golden labels as verdicts on outcomes, plus
-# approvals.jsonl: one review round of the 8 outcomes `caliper review` listed for
-# rows where a candidate changed the outcome and no human label exists yet
-# (a fictional reviewer, judging by the synthetic truth). [ci] quality_per_cost = 1
-# then asks every candidate that costs more than the baseline to make at least as
-# many percent fewer errors as it costs percent more.
+# approvals.jsonl: one review round of the 15 outcomes `caliper review` listed (rows
+# where a candidate changed the outcome, and the baseline's outcome on base-sample
+# rows, that had no human label yet), by a fictional reviewer judging by the
+# synthetic truth. [ci] quality_per_cost = 1 then asks every candidate that costs
+# more than the baseline to make at least as many percent fewer errors as it costs
+# percent more.
 
 # Offline eval of the catalog-cleanup feature on the deterministic fake provider.
 # No network, no API keys. Paths are relative to this file.
@@ -111,6 +112,8 @@ target_precision = 0.95  # picked on val (human labels): lowest threshold with >
 
 # Human verdicts on outcomes. Golden rows with a human label approve that outcome
 # and reject the others; approvals.jsonl adds verdicts where no human label exists.
+# base_sample rows, drawn at random with `seed`, measure the baseline's error rate.
 [quality]
 approvals = ["approvals.jsonl"]
 golden_labels = true
+base_sample = 30

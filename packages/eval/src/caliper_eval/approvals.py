@@ -25,20 +25,23 @@ Only human sources count (``human_end_user``, ``internal_reviewer``,
 counted, because agreement with a model is not evidence of being right.
 ``approved: null`` (an "Unsure" answer) gives no verdict. An approval whose
 ``request_sha256`` no longer matches the golden row is stale and ignored.
-Contradicting verdicts for the same ``(row_id, outcome)`` give no verdict and
-are counted as conflicts.
+
+For one ``(row_id, outcome)``, adjudicated lines win over other lines, and any
+approval line wins over the golden label. Lines that contradict each other at
+the level that decides give no verdict and are counted as conflicts.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from .types import GoldenRow, LabelSource, Split, canonical_json, request_sha256
+from ._stats import transition_cost
+from .types import GoldenRow, LabelSource, canonical_json, request_sha256
 
 
 class Approval(BaseModel):
@@ -63,12 +66,14 @@ class ApprovalSummary(BaseModel):
     golden_labels: bool  # whether human golden labels count as verdicts
     used: int  # human verdicts in use (approval lines, before merging duplicates)
     from_golden_labels: int  # golden rows whose human label gives verdicts
+    labels_not_outcomes: int = 0  # human golden labels that are no decided outcome (ignored)
+    overrides: int = 0  # approval verdicts that differ from the row's golden label (they win)
     not_human: int  # lines from a non-human source (ignored)
     unsure: int  # lines with approved = null (ignored)
     stale: int  # lines for a request that has changed since (ignored)
     unknown_rows: int  # lines for a row id not in the golden set (ignored)
     conflicts: int  # (row, outcome) pairs with contradicting verdicts (no verdict)
-    fingerprint: str  # hash of the verdicts on test rows (part of the test-ledger key)
+    fingerprint: str  # hash of every verdict in use (part of the test-ledger key)
 
 
 class Verdicts:
@@ -141,12 +146,20 @@ def build_verdicts(
     *,
     files: Sequence[str] = (),
     golden_labels: bool = True,
+    outcomes: Iterable[str] | None = None,
 ) -> tuple[Verdicts, ApprovalSummary]:
-    """Merge approval lines and human golden labels into one verdict lookup."""
+    """Merge approval lines and human golden labels into one verdict lookup.
+
+    Precedence for one ``(row, outcome)``: adjudicated approval lines, then other
+    approval lines, then the row's golden label. Lines that disagree at the level
+    that decides give no verdict (a conflict). ``outcomes`` are the outcomes any
+    candidate decided: a golden label that is none of them (e.g. "yes" from a
+    yes/no project) cannot judge an outcome and is ignored.
+    """
     by_id = {g.id: g for g in golden}
     want_sha = {g.id: request_sha256(g.request) for g in golden}
     not_human = unsure = stale = unknown = used = 0
-    seen: dict[tuple[str, str], set[bool]] = {}
+    seen: dict[tuple[str, str], dict[bool, set[bool]]] = {}
     for a in approvals:
         if a.row_id not in by_id:
             unknown += 1
@@ -161,36 +174,43 @@ def build_verdicts(
             stale += 1
             continue
         used += 1
-        seen.setdefault((a.row_id, a.outcome), set()).add(a.approved)
+        by_level = seen.setdefault((a.row_id, a.outcome), {})
+        by_level.setdefault(a.source == LabelSource.ADJUDICATED, set()).add(a.approved)
 
+    known = None if outcomes is None else set(outcomes)
     labels: dict[str, str] = {}
+    not_an_outcome = 0
     if golden_labels:
         for g in golden:
-            if g.label is not None and g.label_source is not None and g.label_source.is_human:
-                labels[g.id] = g.label
+            if g.label is None or g.label_source is None or not g.label_source.is_human:
+                continue
+            if known is not None and g.label not in known:
+                not_an_outcome += 1
+                continue
+            labels[g.id] = g.label
 
     explicit: dict[tuple[str, str], bool] = {}
     conflicts: set[tuple[str, str]] = set()
-    for key, values in seen.items():
+    overrides = 0
+    for key, by_level in seen.items():
+        values = by_level.get(True) or by_level[False]
         if len(values) > 1:
             conflicts.add(key)
             continue
         value = next(iter(values))
+        explicit[key] = value
         label = labels.get(key[0])
         if label is not None and value != (key[1] == label):
-            conflicts.add(key)
-            continue
-        explicit[key] = value
+            overrides += 1
 
-    # Only test-row verdicts enter the fingerprint: it keys the test ledger, which
-    # val-only changes must not reset.
-    test_ids = {g.id for g in golden if g.split == Split.TEST}
+    # Every verdict in use enters the fingerprint, which keys the test ledger: new
+    # verdicts change gated numbers, so the run after a review is a new measurement.
     h = hashlib.sha256()
-    for key in sorted(k for k in explicit if k[0] in test_ids):
+    for key in sorted(explicit):
         h.update(canonical_json([key[0], key[1], explicit[key]]).encode("utf-8"))
-    for row_id in sorted(r for r in labels if r in test_ids):
+    for row_id in sorted(labels):
         h.update(canonical_json([row_id, "label", labels[row_id]]).encode("utf-8"))
-    for key in sorted(k for k in conflicts if k[0] in test_ids):
+    for key in sorted(conflicts):
         h.update(canonical_json([key[0], key[1], None]).encode("utf-8"))
     # A conflict voids the pair, including what a golden label would say about it.
     verdicts = Verdicts(explicit, labels, conflicts)
@@ -199,6 +219,8 @@ def build_verdicts(
         golden_labels=golden_labels,
         used=used,
         from_golden_labels=len(labels),
+        labels_not_outcomes=not_an_outcome,
+        overrides=overrides,
         not_human=not_human,
         unsure=unsure,
         stale=stale,
@@ -209,4 +231,30 @@ def build_verdicts(
     return verdicts, summary
 
 
-__all__ = ["Approval", "ApprovalSummary", "Verdicts", "build_verdicts", "read_approvals"]
+def judged_cost(
+    costs: Mapping[str, float], verdicts: Verdicts | None, row_id: str, src: str, dst: str
+) -> float:
+    """Cost of the change ``src -> dst`` on a row; 0 when people call it a fix.
+
+    A fix is a change from an outcome a person rejected to one a person approved.
+    A change between two acceptable outcomes still costs its ``[costs]`` weight:
+    "acceptable" is not "free" (an extra review is still an extra review).
+    """
+    if (
+        src != dst
+        and verdicts is not None
+        and verdicts.get(row_id, src) is False
+        and verdicts.get(row_id, dst) is True
+    ):
+        return 0.0
+    return transition_cost(costs, src, dst)
+
+
+__all__ = [
+    "Approval",
+    "ApprovalSummary",
+    "Verdicts",
+    "build_verdicts",
+    "judged_cost",
+    "read_approvals",
+]

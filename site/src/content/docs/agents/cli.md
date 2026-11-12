@@ -84,8 +84,6 @@ list the outcomes a person must approve to measure which candidate is better
 | `--eval-out` `EVAL_OUT` | yes |  | the caliper eval --out folder to read |
 | `--out` `OUT` | yes |  | folder for the review items (a new one) |
 | `--candidates` `CANDIDATES` |  |  | comma-separated candidates (default: all but ref) |
-| `--base-sample` `BASE_SAMPLE` |  | `30` | rows sampled at random to measure the reference's error rate (0 for none) |
-| `--seed` `SEED` |  |  | sampling seed (default: config seed) |
 
 **Exit codes**
 

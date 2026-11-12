@@ -274,92 +274,107 @@ verdict on the outcomes themselves.
 
 **Approvals are verdicts on outcomes.** An approval says whether a person would
 accept one outcome for one golden row (`row_id`, `outcome`, `approved`). It names
-no model. Two consequences:
-
-- When the reference and a candidate decide the same, they are both right or both
-  wrong. Only rows where they **differ** can make one better than the other, so
-  only those need review: on the example, 4 of 80 rows for `small-thinking`.
-- An approval serves every candidate that reached that outcome on that row,
-  including candidates you add later. It goes stale only when the row's request
-  changes (`request_sha256`).
+no model, so it serves every candidate that reached that outcome on that row,
+including candidates added later. It goes stale only when the row's request
+changes (`request_sha256`). An outcome a person rejected is an **error**, and so
+is no decision at all.
 
 Only human verdicts count (`internal_reviewer`, `human_end_user`, `adjudicated`).
-`approved: null` (Unsure) is no verdict. Two verdicts that contradict each other
-are no verdict, and are reported.
-
-**Where verdicts come from**, in `[quality]`:
+`approved: null` (Unsure) is no verdict. For one row and outcome, an adjudicated
+approval wins over other approvals, and any approval wins over the row's golden
+label. Approvals that contradict each other are no verdict, and are reported.
 
 ```toml
 [quality]
-approvals = ["review/approvals.jsonl"]   # one or more files, relative to the config
-golden_labels = true                     # default: a human golden `label` approves that
-                                         # outcome and rejects every other one
+approvals = ["review-1/approvals.jsonl"]   # one or more files, relative to the config
+golden_labels = true                       # default: a human golden `label` approves that
+                                           # outcome and rejects every other one
+base_sample = 30                           # default: rows drawn at random to measure the
+                                           # reference's error rate
 ```
 
-`caliper review` lists the outcomes that still need a verdict and makes a
-`caliper label` project of them:
+A golden label that is not an outcome any candidate decided (a `yes` from a yes/no
+project, say) judges nothing and is reported.
+
+**Two numbers, two sources of evidence.**
+
+1. **Improvement**, per candidate. When the reference and a candidate decide the
+   same, both are right or both are wrong, so only rows where they **differ** can
+   make one better than the other. On the example, that is 4 of 80 rows for
+   `small-thinking`. Each changed row needs a verdict on both outcomes, and is
+   *fixed* (candidate right, reference wrong), *broken* (the reverse) or a tie.
+
+   ```
+   improvement = (fixed - broken) / rows run by both
+   ```
+
+   An unreviewed change is unknown, not a tie, so the improvement stays unknown
+   until every changed row is reviewed. Its 95% interval is a bootstrap over rows.
+
+2. **The reference's error rate**, once per report. "10% fewer errors" needs to
+   know how often the reference is wrong. It is measured on the **base sample**:
+   `base_sample` golden rows drawn uniformly at random with the config's `seed`, so
+   `caliper review` and `caliper eval` always draw the same rows. Every sampled row
+   needs a verdict on the reference's outcome. Rows reviewed for any other reason
+   (another candidate's changes, an earlier round) never enter this estimate,
+   because they were not chosen at random. Its 95% interval is a Wilson score
+   interval, which stays honest when the sample happens to hold no errors: 0 of 30
+   still gives an upper end of 11.4%.
+
+The **relative improvement** divides the two, conservatively: its low end is the
+improvement's low end over the error rate's high end.
+
+**The gate.** `[ci] quality_per_cost = k`: a candidate that costs `ratio > 1` times
+the reference must make at least `k x (ratio - 1)` fewer errors, relative to the
+reference's. With `k = 1`, 10% more cost needs at least 10% fewer errors. It passes
+when the relative improvement's low end reaches that share and the improvement's
+low end is above 0. The burden of proof is on the more expensive candidate: one
+that is exactly as much better as it costs more fails while there is any
+uncertainty, and passes once enough rows are reviewed to show it.
+
+It fails, with a next step, when a changed row is unreviewed, when the base sample
+is not fully reviewed, or when the cost cannot be compared (no price). Paying more
+for the same decisions never passes. Candidates that cost the same or less are not
+judged by it; the regression gate still guards them. `max_cost_ratio`, if set,
+stays a hard ceiling.
+
+**Getting the verdicts.** `caliper review` lists the outcomes that still need one
+and makes a `caliper label` project of them:
 
 ```bash
 caliper eval --config caliper.toml --out build/eval                      # no --ci yet
 caliper review --config caliper.toml --eval-out build/eval --out build/review-1
 caliper label build/review-1                                              # a person: Yes / No / Unsure
 caliper label export build/review-1 --format jsonl --out build/review-1/approvals.jsonl
-# add "build/review-1/approvals.jsonl" to [quality] approvals, then:
+# add it to [quality] approvals (review prints the exact line), then:
 caliper eval --config caliper.toml --out build/eval --ci                  # resumes: no model calls
 ```
 
 The review lists both outcomes of every changed row that has no verdict, plus the
-reference's outcome on `--base-sample` random rows (default 30). Each card shows
-the request and one outcome, never the model, and the cards are shuffled. Verdicts
-already given are not asked again, so a second round lists only what is new. New
-approvals change the test set's key in the test ledger, so the gated run after a
-review is a new measurement, not a re-touch.
+reference's outcome on every base-sample row that has none. Each card shows the
+request and one outcome, never the model, and the cards are shuffled. A card whose
+row has no other card (a base-sample row, or a changed row whose other outcome was
+judged earlier) can hint at which side produced it, never at which model. Verdicts
+already given are not asked again, so a second round lists only what is new. Every
+verdict in use is part of the test ledger's key, so the gated run after a review is
+a new measurement, not a re-touch.
 
-**The measure.** On the `N` rows decided by both sides (`D` changed, `S` same),
-where error = a person rejected that side's outcome:
-
-```
-improvement    = sum over D of (error(ref) - error(cand)) / N
-ref error rate = (sum over D of error(ref) + |S| x mean over reviewed S of error(ref)) / N
-relative       = improvement / ref error rate
-```
-
-`improvement` is known only when every changed row has a verdict on both
-outcomes: an unreviewed change is unknown, not a tie. The reference's error rate
-also needs reviewed rows in `S` (the base sample, or human golden labels), which
-are treated as a random sample of `S`. It is estimated per comparison, so it can
-differ slightly between candidates. All intervals come from one bootstrap that
-resamples the `N` rows.
-
-**The gate.** `[ci] quality_per_cost = k`: a candidate that costs `ratio > 1`
-times the reference must cut the reference's errors by at least
-`k x (ratio - 1)`. With `k = 1`, 10% more cost needs at least 10% fewer errors.
-It passes when, at 95%, both hold:
-
-- `improvement - k x (ratio - 1) x ref error rate` has a lower bound of at least 0;
-- `improvement` has a lower bound above 0 (paying more for the same decisions
-  never passes, even against a perfect reference).
-
-It fails, with a next step, when a changed row is unreviewed, when the
-reference's error rate is unknown, or when the cost cannot be compared (no price).
-Candidates that cost the same or less are not judged by it; the regression gate
-still guards them. `max_cost_ratio`, if set, stays a hard ceiling.
-
-**Approved changes are not regressions.** With `[quality]`, a change to an
-outcome a person approved on that row costs 0 in `paired_excess` and in
-`max_regression` slices (`n_approved_changes` counts them). Without this, a
-candidate that fixes many outcomes would fail the regression gate for changing
-them.
+**Only fixes are free in the regression gate.** With `[quality]`, a change from an
+outcome a person rejected to one a person approved costs 0 in `paired_excess` and
+in `max_regression` slices, and the same rule applies to the reference's own replay
+noise. A change between two acceptable outcomes still costs its `[costs]` weight:
+an extra review is still an extra review. `n_fixes` counts the free changes.
 
 **What an approval cannot see.** Caliper compares outcomes. If two candidates
-reach the same outcome with different content behind it (the same
-`auto_publish`, a different tax code), one verdict covers both. When that
-content matters, make it part of the outcome (for example `auto_publish:CTX-104`).
+reach the same outcome with different content behind it (the same `auto_publish`,
+a different tax code), one verdict covers both. When that content matters, make it
+part of the outcome (for example `auto_publish:CTX-104`).
 
-On the example (`caliper.quality.toml`: the human golden labels plus 8 verdicts
-in `approvals.jsonl`), `small-thinking` costs 1.04x the baseline, so it must make
-at least 3.8% fewer errors. Of its 4 changed rows, 1 is fixed and 3 are broken:
-an error reduction of -8.4% [-32.4%, +6.9%], so the gate fails it.
+On the example (`caliper.quality.toml`: the human golden labels plus 15 verdicts in
+`approvals.jsonl`), the baseline's error rate on its 30-row base sample is 30.0%
+[16.7%, 47.9%]. `small-thinking` costs 1.04x the baseline, so it must make at least
+3.8% fewer errors. Of its 4 changed rows, 1 is fixed and 3 are broken: -8.3%
+[-45.0%, +15.0%] of the baseline's errors, so the gate fails it.
 
 ### Label provenance: truth vs teacher agreement
 
@@ -521,7 +536,7 @@ With `--ci`, the run exits 1 when any candidate fails. A candidate fails when:
   example uses 0.10 on 80 rows). This replaces the round-1 rule
   `regression.estimate > noise.high + max_regression`, which compared one
   candidate number with the upper end of a separate noise interval. With `[quality]`, a
-  change to an outcome a person approved on that row costs 0.
+  fix (rejected outcome to approved outcome) costs 0, in both terms.
 - **slices**: any `[[slices]]` rule fails for it (one reason per slice);
 - **cost** (with `[ci].max_cost_ratio`): its cost per row is above that
   multiple of the reference's, or either side has replies with no known price;
@@ -650,6 +665,7 @@ max_error_rate = 0.0
 # [quality]                       # optional: human approvals of outcomes
 # approvals = ["approvals.jsonl"] # files from `caliper review` + `caliper label export`
 # golden_labels = true            # human golden labels count as verdicts
+# base_sample = 30                # random rows that measure the reference's error rate
 
 # [cost_projection]               # optional: monthly cost per candidate in the report
 # calls_per_day = 20000           # feature calls a day (golden-row equivalents)
@@ -713,18 +729,16 @@ caliper eval --config PATH [--out DIR] [--budget-usd X] [--no-resume] [--retry-e
 | `--target-precision` | `[calibration].target_precision` | threshold recommendation target |
 | `--max-error-rate` | `[ci].max_error_rate` or 0 | gate error allowance |
 | `--n-boot` | 1000 | bootstrap resamples |
-| `--test-ledger` | `REVIEW/items.jsonl` | from `caliper review`: one outcome per line to judge (`id`, `row_id`, `outcome`, `request_sha256`, `request`) |
-| `OUT/test_ledger.jsonl` | where test-split touches are recorded |
+| `--test-ledger` | `OUT/test_ledger.jsonl` | where test-split touches are recorded |
 | `--allow-test-retouch` | off | do not fail `--ci` when a candidate's test split was already reported |
 
 ```
 caliper review --config PATH --eval-out DIR --out NEW_DIR [--candidates a,b]
-               [--base-sample 30] [--seed N]
 ```
 
 Writes `NEW_DIR/items.jsonl`: the outcomes still needing a human verdict (both
-outcomes of every changed row, and the reference's outcome on `--base-sample`
-random rows), shuffled. With the `label` extra, `NEW_DIR` is also a
+outcomes of every changed row, and the reference's outcome on the
+`[quality] base_sample` rows), shuffled. With the `label` extra, `NEW_DIR` is also a
 `caliper label` project. Free: no model calls. Exit 0, or 2 for bad input.
 
 ```
@@ -751,7 +765,7 @@ messages and test re-touch warnings go to stderr.
 | file | content |
 | --- | --- |
 | `OUT/results.jsonl` | one `RowResult` per (candidate, row, replica): replies (text, parsed, served_by, usage, latency, cost, error), the decision, and the request hash. Append-only; last line per key wins. |
-| `OUT/report.json` | the full report: noise floor, label provenance (`provenance`), per-candidate tokens, latency p50/p95, dollars, served models, transitions, regression, `paired_excess`, calibration (`metric`, `on_report` per source), `matched_operating_point`, `slices`, `quality` and `approvals` (with `[quality]`), warnings |
+| `OUT/report.json` | the full report: noise floor, label provenance (`provenance`), per-candidate tokens, latency p50/p95, dollars, served models, transitions, regression, `paired_excess`, calibration (`metric`, `on_report` per source), `matched_operating_point`, `slices`, `quality`, `approvals` and `base_rate` (with `[quality]`), warnings |
 | `REVIEW/items.jsonl` | from `caliper review`: one outcome per line to judge (`id`, `row_id`, `outcome`, `request_sha256`, `request`) |
 | `OUT/test_ledger.jsonl` | one line per candidate per completed run that reported test rows (timestamped; append-only; not cleared by `--no-resume`) |
 | `--summary-md` | the markdown summary |
