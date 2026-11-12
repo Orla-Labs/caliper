@@ -52,6 +52,12 @@ class CIConfig(BaseModel):
     # many times its extra cost, judged by human approvals (needs [quality]):
     # 1.0 means 10% more cost needs at least 10% fewer errors than the reference.
     quality_per_cost: float | None = Field(default=None, gt=0)
+    # How sure the quality rule must be: the confidence of the intervals it reads.
+    # 0.95 puts the burden of proof on the costlier candidate; 0.8 is more lenient;
+    # 0 compares point estimates.
+    quality_confidence: float = Field(default=0.95, ge=0, lt=1)
+    # Cost ratios up to 1 + this are treated as token-count noise, not extra cost.
+    quality_cost_tolerance: float = Field(default=0.02, ge=0)
 
 
 class CostProjectionConfig(BaseModel):

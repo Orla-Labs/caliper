@@ -31,7 +31,8 @@ A candidate fails when any of these holds:
    above ``max_cost_ratio`` x the reference's, or either side has replies
    priced at $0 (an unknown price must not pass as free).
 9. **quality per cost** (only with ``[ci] quality_per_cost = k``): it costs
-   ``ratio > 1`` times the reference, and human approvals do not show it at
+   more than ``1 + quality_cost_tolerance`` (default 1.02) times the reference
+   (``ratio``), and human approvals at ``quality_confidence`` (default 95%) do not show it at
    least ``k * (ratio - 1)`` better, relative to the reference's error rate
    (:mod:`caliper_eval.quality`): the relative improvement's low end must reach
    that share and the improvement's low end must be above 0. It also fails when
@@ -185,8 +186,9 @@ def _cost_reasons(report: EvalReport, c: CandidateReport, limit: float) -> list[
 def _quality_reasons(report: EvalReport, c: CandidateReport, k: float) -> list[str]:
     """Why ``c`` fails ``[ci] quality_per_cost``, or nothing when it passes."""
     ratio = c.cost_vs_reference
-    if ratio is None or ratio <= 1:
-        return []  # not more expensive, or the cost reasons already say why unknown
+    tolerance = report.quality_cost_tolerance or 0.0
+    if ratio is None or ratio <= 1 + tolerance:
+        return []  # within the cost tolerance, or the cost reasons already say why unknown
     required = k * (ratio - 1)
     head = (
         f"costs {ratio:.2f}x the reference, so it must make at least {required:.1%} fewer "
@@ -219,7 +221,7 @@ def _quality_reasons(report: EvalReport, c: CandidateReport, k: float) -> list[s
     return [
         head + f"; measured {relative_ci(q.relative_improvement)} of {report.reference}'s "
         f"errors ({q.fixed} fixed, {q.broken} broken of {q.n_changed} changed rows, "
-        f"{q.n_rows} rows): not shown at 95%"
+        f"{q.n_rows} rows): not shown at {report.quality_confidence or 0:.0%}"
     ]
 
 

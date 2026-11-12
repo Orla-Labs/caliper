@@ -93,6 +93,8 @@ USD per million tokens. Cache-aware.
 | `max_error_rate` | number or null |  | `null` | Share of results allowed to end with no decision; --max-error-rate overrides it. (>= 0, &lt;= 1) |
 | `max_cost_ratio` | number or null |  | `null` | Fail a candidate whose mean cost per execution is above this multiple of the reference's (1.0 = "no more expensive"). A candidate or reference with replies priced at $0 fails too: an unknown price must not read as free. (> 0) |
 | `quality_per_cost` | number or null |  | `null` | A candidate that costs more than the reference must be better by at least this many times its extra cost, judged by human approvals (needs [quality]): 1.0 means 10% more cost needs at least 10% fewer errors than the reference. (> 0) |
+| `quality_confidence` | number |  | `0.95` | How sure the quality rule must be: the confidence of the intervals it reads. 0.95 puts the burden of proof on the costlier candidate; 0.8 is more lenient; 0 compares point estimates. (>= 0, &lt; 1) |
+| `quality_cost_tolerance` | number |  | `0.02` | Cost ratios up to 1 + this are treated as token-count noise, not extra cost. (>= 0) |
 
 ### CalibrationConfig
 
@@ -237,6 +239,8 @@ Schema: [https://caliper.orlalabs.com/schemas/eval-report.schema.json](/schemas/
 | `require` | string |  | `"non_inferiority"` | [ci] require |
 | `max_cost_ratio` | number or null |  | `null` | [ci] max_cost_ratio |
 | `quality_per_cost` | number or null |  | `null` | [ci] quality_per_cost |
+| `quality_confidence` | number or null |  | `null` | [ci] quality_confidence (with [quality]) |
+| `quality_cost_tolerance` | number or null |  | `null` | [ci] quality_cost_tolerance (with [quality]) |
 | `approvals` | [ApprovalSummary](#approvalsummary) or null |  | `null` | human approvals in use ([quality]) |
 | `base_rate` | [BaseRate](#baserate) or null |  | `null` | the reference's error rate on the base sample |
 | `calls_per_day` | number or null |  | `null` | [cost_projection] calls_per_day |
@@ -277,7 +281,7 @@ The reference's error rate, on a uniform random sample of golden rows.
 | `n_judged` | integer | yes |  | sampled rows with a verdict on the reference's outcome (or no decision) |
 | `n_errors` | integer | yes |  | judged rows where the reference's outcome was rejected or missing |
 | `unreviewed_rows` | list of string |  |  | sampled rows still to review |
-| `error_rate` | [CI](#ci) or null |  | `null` | Wilson 95%; None until every sampled row is judged |
+| `error_rate` | [CI](#ci) or null |  | `null` | Wilson interval; None until every sampled row is judged |
 
 ### NoiseFloor
 

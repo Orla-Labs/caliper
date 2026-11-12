@@ -29,9 +29,11 @@ is a Wilson score interval, which stays honest when the sample has no errors.
 conservative interval: the low end divides the improvement's low end by the
 error rate's high end (and so on). ``None`` for an unbounded end.
 
-With ``[ci] quality_per_cost = k``, a candidate that costs ``ratio > 1`` times
-the reference passes only when the relative improvement's low end is at least
-``k * (ratio - 1)`` and the improvement's low end is above 0.
+With ``[ci] quality_per_cost = k``, a candidate that costs ``ratio`` times the
+reference, above ``1 + quality_cost_tolerance``, passes only when the relative
+improvement's low end is at least ``k * (ratio - 1)`` and the improvement's low
+end is above 0. Intervals are at ``[ci] quality_confidence`` (default 0.95; 0
+compares point estimates).
 """
 
 from __future__ import annotations
@@ -39,6 +41,7 @@ from __future__ import annotations
 import math
 import random
 from collections.abc import Iterable, Sequence
+from statistics import NormalDist
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -71,7 +74,7 @@ class BaseRate(BaseModel):
     n_judged: int  # sampled rows with a verdict on the reference's outcome (or no decision)
     n_errors: int  # judged rows where the reference's outcome was rejected or missing
     unreviewed_rows: list[str] = Field(default_factory=list)  # sampled rows still to review
-    error_rate: CI | None = None  # Wilson 95%; None until every sampled row is judged
+    error_rate: CI | None = None  # Wilson interval; None until every sampled row is judged
 
 
 class QualityComparison(BaseModel):
@@ -100,6 +103,11 @@ def base_sample_rows(golden: Sequence[GoldenRow], size: int, seed: int) -> list[
     return sorted(rng.sample(ids, min(max(size, 0), len(ids))))
 
 
+def z_for(confidence: float) -> float:
+    """Two-sided normal quantile for ``confidence`` (0 gives 0: the point estimate)."""
+    return NormalDist().inv_cdf(0.5 + confidence / 2) if confidence > 0 else 0.0
+
+
 def wilson(errors: int, n: int, z: float = Z_95) -> tuple[float, float]:
     """Wilson score interval for a proportion ``errors / n`` (``n > 0``)."""
     p = errors / n
@@ -117,6 +125,7 @@ def compute_base_rate(
     *,
     size: int,
     seed: int,
+    confidence: float = DEFAULT_CONFIDENCE,
 ) -> BaseRate:
     """The reference's error rate on the base sample (see the module docstring)."""
     idx = index_results(results)
@@ -146,12 +155,16 @@ def compute_base_rate(
         unreviewed_rows=unreviewed[:MAX_LISTED_ROWS],
     )
     if judged and not unreviewed:
-        low, high = wilson(errors, judged)
-        out.error_rate = CI(estimate=errors / judged, low=low, high=high, n_boot=0)
+        low, high = wilson(errors, judged, z_for(confidence))
+        out.error_rate = CI(
+            estimate=errors / judged, low=low, high=high, confidence=confidence, n_boot=0
+        )
     return out
 
 
 def _ci(stats: list[float], estimate: float, confidence: float) -> CI:
+    if confidence <= 0:  # a zero-width interval is the point estimate itself
+        return CI(estimate=estimate, low=estimate, high=estimate, confidence=0, n_boot=len(stats))
     stats.sort()
     alpha = (1 - confidence) / 2
     return CI(
@@ -268,7 +281,8 @@ def quality_passes(q: QualityComparison) -> bool:
     if q.improvement is None or q.relative_improvement is None or q.required_relative is None:
         return False
     low = q.relative_improvement.low
-    return q.improvement.low > 0 and low is not None and low >= q.required_relative
+    # "10% more cost for 10% fewer errors" is a pass: compare with float slack.
+    return q.improvement.low > 0 and low is not None and low >= q.required_relative - 1e-9
 
 
 __all__ = [
@@ -280,4 +294,5 @@ __all__ = [
     "compute_quality",
     "quality_passes",
     "wilson",
+    "z_for",
 ]

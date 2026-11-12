@@ -398,6 +398,31 @@ def test_paying_more_for_the_same_decisions_fails_even_against_a_perfect_referen
     assert not cand.passed and "not shown at 95%" in cand.reasons[0]
 
 
+def test_cost_within_the_tolerance_is_noise_not_extra_cost():
+    config, results, golden = _world(50, 0, cand_cost=0.00101, ci={"quality_per_cost": 1})
+    _, cand = _gate(config, results, golden)
+    assert cand.passed, cand.reasons  # 1.01x: within the default 2%
+    config, results, golden = _world(
+        50, 0, cand_cost=0.00101, ci={"quality_per_cost": 1, "quality_cost_tolerance": 0}
+    )
+    _, cand = _gate(config, results, golden)
+    assert not cand.passed and "costs 1.01x the reference" in cand.reasons[0]
+
+
+def test_quality_confidence_sets_where_the_burden_of_proof_sits():
+    # Exactly as much better as it costs more: +10% fewer errors at 1.10x.
+    kw = {"fixes": 40, "cand_cost": 0.0011, "quality": {"base_sample": 2000}}
+    strict = _world(2000, 400, ci={"quality_per_cost": 1}, **kw)
+    report, cand = _gate(*strict)
+    assert report.candidate("cand").quality.relative_improvement.estimate == pytest.approx(0.1)
+    assert not cand.passed and "not shown at 95%" in cand.reasons[0]
+    point = _world(2000, 400, ci={"quality_per_cost": 1, "quality_confidence": 0}, **kw)
+    report, cand = _gate(*point)
+    assert cand.passed, cand.reasons
+    assert report.base_rate.error_rate.low == report.base_rate.error_rate.high == 0.2
+    assert "by human approvals at 0%" in render_text(report, evaluate_gate(report))
+
+
 def test_cheaper_candidates_are_not_judged_by_this_rule():
     config, results, golden = _world(50, 5, breaks=10, cand_cost=0.0005, ci={"quality_per_cost": 1})
     _, cand = _gate(config, results, golden)

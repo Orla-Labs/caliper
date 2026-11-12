@@ -130,7 +130,7 @@
             }
           ],
           "default": null,
-          "description": "Wilson 95%; None until every sampled row is judged"
+          "description": "Wilson interval; None until every sampled row is judged"
         }
       },
       "required": [
@@ -1698,6 +1698,32 @@
       "default": null,
       "title": "Quality Per Cost",
       "description": "[ci] quality_per_cost"
+    },
+    "quality_confidence": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Quality Confidence",
+      "description": "[ci] quality_confidence (with [quality])"
+    },
+    "quality_cost_tolerance": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Quality Cost Tolerance",
+      "description": "[ci] quality_cost_tolerance (with [quality])"
     },
     "approvals": {
       "anyOf": [

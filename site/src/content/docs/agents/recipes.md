@@ -299,7 +299,8 @@ model.
    ```toml
    [ci]
    max_regression = 0.10
-   quality_per_cost = 1.0     # X% more cost needs at least X% fewer errors, at 95%
+   quality_per_cost = 1.0     # X% more cost needs at least X% fewer errors
+   # quality_confidence = 0.95   (default) how sure; your user's call, not yours
 
    [quality]
    approvals = []             # filled in at step 4

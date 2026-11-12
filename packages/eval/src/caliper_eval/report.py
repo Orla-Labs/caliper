@@ -114,6 +114,8 @@ class EvalReport(BaseModel):
     require: str = GateRequirement.NON_INFERIORITY.value  # [ci] require
     max_cost_ratio: float | None = None  # [ci] max_cost_ratio
     quality_per_cost: float | None = None  # [ci] quality_per_cost
+    quality_confidence: float | None = None  # [ci] quality_confidence (with [quality])
+    quality_cost_tolerance: float | None = None  # [ci] quality_cost_tolerance (with [quality])
     approvals: ApprovalSummary | None = None  # human approvals in use ([quality])
     base_rate: BaseRate | None = None  # the reference's error rate on the base sample
     calls_per_day: float | None = None  # [cost_projection] calls_per_day
@@ -229,6 +231,8 @@ def build_report(
     slice_cfgs = list(_get(config, "slices", default=[]))
     quality_cfg = _get(config, "quality")
     quality_per_cost = _get(config, "ci", "quality_per_cost")
+    quality_confidence = float(_get(config, "ci", "quality_confidence", default=0.95))
+    cost_tolerance = float(_get(config, "ci", "quality_cost_tolerance", default=0.02))
     warnings: list[str] = []
     verdicts = None
     approval_summary = None
@@ -249,6 +253,7 @@ def build_report(
             reference,
             size=int(_get(quality_cfg, "base_sample", default=30)),
             seed=seed,
+            confidence=quality_confidence,
         )
 
     noise = compute_noise_floor(latest, reference, costs=costs, seed=seed, n_boot=n_boot)
@@ -352,7 +357,7 @@ def build_report(
                 continue
             required = None
             ratio = rep.cost_vs_reference
-            if quality_per_cost is not None and ratio is not None and ratio > 1:
+            if quality_per_cost is not None and ratio is not None and ratio > 1 + cost_tolerance:
                 required = float(quality_per_cost) * (ratio - 1)
             rep.quality = compute_quality(
                 latest,
@@ -363,6 +368,7 @@ def build_report(
                 required_relative=required,
                 seed=seed,
                 n_boot=n_boot,
+                confidence=quality_confidence,
             )
     known = {c.name for c in config.candidates}
     for name in sorted(set(by_cand) - known):
@@ -384,6 +390,8 @@ def build_report(
         quality_per_cost=None if quality_per_cost is None else float(quality_per_cost),
         approvals=approval_summary,
         base_rate=base_rate,
+        quality_confidence=quality_confidence if quality_cfg is not None else None,
+        quality_cost_tolerance=cost_tolerance if quality_cfg is not None else None,
         calls_per_day=None if calls_per_day is None else float(calls_per_day),
         days_per_month=None if calls_per_day is None else float(days),
         noise_floor=noise,
@@ -694,7 +702,7 @@ def base_rate_summary(report: EvalReport) -> str:
     e = b.error_rate
     return head + (
         f": {_pct(e.estimate)} [{_pct(e.low)}, {_pct(e.high)}] "
-        f"({b.n_errors} of {b.n_judged} rejected; Wilson 95%)"
+        f"({b.n_errors} of {b.n_judged} rejected; Wilson {e.confidence:.0%})"
     )
 
 
@@ -883,9 +891,11 @@ def _gate_rule(report: EvalReport) -> str:
     if report.max_cost_ratio is not None:
         rule += f" and cost <= {report.max_cost_ratio:g}x the reference"
     if report.quality_per_cost is not None:
+        tol = report.quality_cost_tolerance or 0.0
+        conf = report.quality_confidence if report.quality_confidence is not None else 0.95
         rule += (
-            f" and a costlier candidate cuts errors by at least {report.quality_per_cost:g}x "
-            "its extra cost, by human approvals"
+            f" and a candidate costing over {1 + tol:g}x cuts errors by at least "
+            f"{report.quality_per_cost:g}x its extra cost, by human approvals at {conf:.0%}"
         )
     return rule
 

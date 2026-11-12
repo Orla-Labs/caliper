@@ -59,6 +59,21 @@
           "default": null,
           "title": "Quality Per Cost",
           "description": "A candidate that costs more than the reference must be better by at least this many times its extra cost, judged by human approvals (needs [quality]): 1.0 means 10% more cost needs at least 10% fewer errors than the reference."
+        },
+        "quality_confidence": {
+          "default": 0.95,
+          "exclusiveMaximum": 1,
+          "minimum": 0,
+          "title": "Quality Confidence",
+          "type": "number",
+          "description": "How sure the quality rule must be: the confidence of the intervals it reads. 0.95 puts the burden of proof on the costlier candidate; 0.8 is more lenient; 0 compares point estimates."
+        },
+        "quality_cost_tolerance": {
+          "default": 0.02,
+          "minimum": 0,
+          "title": "Quality Cost Tolerance",
+          "type": "number",
+          "description": "Cost ratios up to 1 + this are treated as token-count noise, not extra cost."
         }
       },
       "title": "CIConfig",

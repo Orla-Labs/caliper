@@ -324,13 +324,30 @@ project, say) judges nothing and is reported.
 The **relative improvement** divides the two, conservatively: its low end is the
 improvement's low end over the error rate's high end.
 
-**The gate.** `[ci] quality_per_cost = k`: a candidate that costs `ratio > 1` times
-the reference must make at least `k x (ratio - 1)` fewer errors, relative to the
-reference's. With `k = 1`, 10% more cost needs at least 10% fewer errors. It passes
-when the relative improvement's low end reaches that share and the improvement's
-low end is above 0. The burden of proof is on the more expensive candidate: one
-that is exactly as much better as it costs more fails while there is any
-uncertainty, and passes once enough rows are reviewed to show it.
+**The gate.** `[ci] quality_per_cost = k`: a candidate that costs `ratio` times the
+reference must make at least `k x (ratio - 1)` fewer errors, relative to the
+reference's. With `k = 1`, 10% more cost needs at least 10% fewer errors, and
+exactly 10% fewer is a pass. It passes when the relative improvement's low end
+reaches that share and the improvement's low end is above 0.
+
+```toml
+[ci]
+quality_per_cost = 1.0          # 10% more cost needs at least 10% fewer errors
+quality_confidence = 0.95       # default; how sure the rule must be
+quality_cost_tolerance = 0.02   # default; up to 1.02x counts as token noise, not extra cost
+```
+
+`quality_confidence` decides who carries the burden of proof. At 0.95 (the
+default) it is on the more expensive candidate: one that is exactly as much better
+as it costs more fails while there is real uncertainty, and passes once enough rows
+are reviewed to show it. 0.8 is more lenient. 0 compares point estimates: the
+candidate passes when its measured improvement reaches the bar, which also lets
+through candidates that only look better by chance. The intervals in the report's
+quality section use the same level.
+
+`quality_cost_tolerance` exists because the cost ratio comes from token counts,
+which vary from run to run. A candidate within it (1.02x by default) is not judged
+by this rule.
 
 It fails, with a next step, when a changed row is unreviewed, when the base sample
 is not fully reviewed, or when the cost cannot be compared (no price). Paying more
@@ -661,6 +678,8 @@ require = "non_inferiority"       # or "no_evidence_of_regression" (see CI gate)
 max_error_rate = 0.0
 # max_cost_ratio = 1.25           # optional: fail above 1.25x the reference's cost per row
 # quality_per_cost = 1.0          # optional, needs [quality]: X% more cost needs X% fewer errors
+# quality_confidence = 0.95       # how sure the quality rule must be (0 = point estimates)
+# quality_cost_tolerance = 0.02   # cost ratios up to 1.02x are not judged by it
 
 # [quality]                       # optional: human approvals of outcomes
 # approvals = ["approvals.jsonl"] # files from `caliper review` + `caliper label export`
