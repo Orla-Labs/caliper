@@ -282,3 +282,84 @@ caliper-compile --target trl --grader inv/graders.py:fixed_grader \
 **Verify:** `caliper kappa` prints `kappa +0.868` for this example (add `--json` to parse
 it); `caliper-compile` prints `wrote inv/trl/train.jsonl` and `wrote inv/trl/reward_funcs.py`
 and exits `0`. The concepts are in [Compile targets](/graders/compile-targets/).
+
+## 10. Is the more expensive model worth it?
+
+**Goal:** a candidate that costs more than the reference passes only if people's
+verdicts show it makes proportionally fewer errors (10% more cost, at least 10% fewer
+errors), and the report says by how much.
+
+The regression gate treats the reference as right, so it cannot show "better". Human
+verdicts on outcomes can, and only rows where the two sides **decide differently** need
+them. The verdicts must come from a person: do not write approvals yourself or with a
+model.
+
+1. Add the rule and where verdicts live to `caliper.toml`:
+
+   ```toml
+   [ci]
+   max_regression = 0.10
+   quality_per_cost = 1.0     # X% more cost needs at least X% fewer errors
+   # quality_confidence = 0.95   (default) how sure; your user's call, not yours
+
+   [quality]
+   approvals = []             # filled in at step 4
+   golden_labels = true       # human golden labels already count as verdicts
+   base_sample = 300          # random rows that measure the reference's error rate;
+                              # 30 (the default) is a first look, a decision needs hundreds
+   ```
+
+2. Run the eval without `--ci` (this is the paid step; see [What costs money](/agents/spending/)):
+
+   ```bash
+   caliper eval --config caliper.toml --out build/eval
+   ```
+
+3. List the outcomes that need a verdict (free) and hand them to your user:
+
+   ```bash
+   caliper review --config caliper.toml --eval-out build/eval --out build/review-1
+   caliper label build/review-1          # your user answers Yes / No / Unsure per card
+   ```
+
+   Each card shows the request and one outcome, never the model. The list holds both
+   outcomes of every changed row with no verdict, plus the reference's outcome on the
+   `base_sample` rows (drawn at random with the config's `seed`), which measure how
+   often the reference is wrong.
+
+4. When your user is done, export and register the verdicts:
+
+   ```bash
+   caliper label export build/review-1 --format jsonl --out build/review-1/approvals.jsonl
+   ```
+
+   `caliper review` printed the exact line to add, with the path relative to the config:
+
+   ```toml
+   [quality]
+   approvals = ["build/review-1/approvals.jsonl"]
+   ```
+
+5. Gate. The same `--out` resumes, so no model is called again, and the new verdicts
+   make it a new measurement rather than a test re-touch:
+
+   ```bash
+   caliper eval --config caliper.toml --out build/eval --ci --summary-md build/summary.md
+   ```
+
+**Verify:**
+
+```bash
+jq '.base_rate.error_rate, (.candidates[] | select(.quality) | {name, cost_vs_reference,
+    changed: .quality.n_changed, reviewed: .quality.n_changed_reviewed,
+    fixed: .quality.fixed, broken: .quality.broken, improvement: .quality.improvement,
+    relative: .quality.relative_improvement, required: .quality.required_relative})' \
+    build/eval/report.json
+```
+
+`base_rate.error_rate` is not null, `reviewed` equals `changed` for every candidate,
+and a costlier candidate passes only when `relative.low` is at least `required` and
+`improvement.low` is above 0. If `reviewed < changed`, run `caliper review`
+again into a new folder (`build/review-2`): it lists only what is still missing. Try it
+offline first: `caliper example catalog_cleanup` then
+`caliper eval --config catalog_cleanup/caliper.quality.toml --out catalog_cleanup/out-q --ci`.

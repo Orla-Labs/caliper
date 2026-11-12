@@ -3,7 +3,7 @@
 # The workspace members' own pyproject files are for local development only.
 [project]
 name = "orlalabs-caliper"
-version = "0.1.2"
+version = "0.1.3"
 description = "Know when a model or prompt change breaks your AI feature, before your users do: replay a golden set, measure against replay noise, gate CI on regression and cost."
 requires-python = ">=3.12"
 license = "Apache-2.0"
@@ -84,6 +84,8 @@ packages = [
 [tool.hatch.build.targets.wheel.force-include]
 "examples/catalog_cleanup/README.md" = "caliper_eval/_examples/catalog_cleanup/README.md"
 "examples/catalog_cleanup/caliper.preflight.toml" = "caliper_eval/_examples/catalog_cleanup/caliper.preflight.toml"
+"examples/catalog_cleanup/caliper.quality.toml" = "caliper_eval/_examples/catalog_cleanup/caliper.quality.toml"
+"examples/catalog_cleanup/approvals.jsonl" = "caliper_eval/_examples/catalog_cleanup/approvals.jsonl"
 "examples/catalog_cleanup/caliper.real.toml" = "caliper_eval/_examples/catalog_cleanup/caliper.real.toml"
 "examples/catalog_cleanup/caliper.toml" = "caliper_eval/_examples/catalog_cleanup/caliper.toml"
 "examples/catalog_cleanup/decide.py" = "caliper_eval/_examples/catalog_cleanup/decide.py"

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://caliper.orlalabs.com/schemas/approval.schema.json",
+  "$comment": "approvals JSONL: Human verdicts on outcomes, one per line, listed in `[quality] approvals`. `caliper label export --format jsonl` of a `caliper review` project writes them in its own shape (`item.row_id`, `item.outcome`, `item.request_sha256`, `approved`, `source`, `labeller`), which `caliper eval` reads as well.",
+  "$defs": {
+    "LabelSource": {
+      "description": "Who produced a label. Agreement with LLM_TEACHER is 'teacher agreement', never accuracy.",
+      "enum": [
+        "human_end_user",
+        "internal_reviewer",
+        "llm_teacher",
+        "heuristic",
+        "adjudicated"
+      ],
+      "title": "LabelSource",
+      "type": "string"
+    }
+  },
+  "description": "One person's verdict on one outcome for one golden row.",
+  "properties": {
+    "row_id": {
+      "title": "Row Id",
+      "type": "string",
+      "description": "golden row id"
+    },
+    "outcome": {
+      "title": "Outcome",
+      "type": "string",
+      "description": "the decided outcome being judged"
+    },
+    "approved": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Approved",
+      "description": "true: a person would accept it; null: unsure (no verdict)"
+    },
+    "source": {
+      "$ref": "#/$defs/LabelSource",
+      "default": "internal_reviewer",
+      "description": "who judged it; only human sources count"
+    },
+    "request_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Request Sha256",
+      "description": "the request the reviewer saw; stale when it changed"
+    },
+    "reviewer": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reviewer",
+      "description": "free-form reviewer name"
+    }
+  },
+  "required": [
+    "row_id",
+    "outcome",
+    "approved"
+  ],
+  "title": "Approval",
+  "type": "object"
+}

@@ -26,6 +26,7 @@ Caliper is for teams shipping an LLM feature on a frontier API: classification, 
 - **Calibration against human approvals.** If your feature emits a confidence score and people review some outputs, Caliper sweeps the auto-accept threshold on `val`. It recommends the lowest one that reaches your target precision and reports it on `test`.
 - **Know who labelled what.** Every label carries its source. Agreement with an LLM teacher is reported as teacher agreement, never as accuracy. Hard cases get named slice gates of their own.
 - **Cost is part of the verdict.** Every reply is priced from the provider's own published prices where one exists (live AWS Price List for Bedrock, by region and inference tier). The report shows cost per row against the incumbent and, given your traffic, dollars per month. `[ci] max_cost_ratio` fails a change that costs too much, and a reply with no known price fails it too instead of reading as free.
+- **Better, not just different.** Every other measure treats the incumbent as right, so it can only say "the same" or "worse". People's verdicts on outcomes show which side is right where the two differ, and only those rows need review: `caliper review` lists them, blind to the model, as a `caliper label` project. With `[ci] quality_per_cost = 1`, a candidate that costs 10% more must make at least 10% fewer errors (shown at 95% by default, or at the confidence you set), or the gate fails it.
 - **Practical plumbing.** It replays the request exactly as stored, enforces a budget guard, keeps results resumable, and has a stratified sampler that builds golden sets from production logs without losing the rare cases.
 
 ## Install
@@ -123,7 +124,7 @@ steps:
       GH_TOKEN: ${{ github.token }}
 ```
 
-`--ci` exits 1 when any candidate's paired excess over the noise floor can exceed `[ci].max_regression` (upper bound of its 95% CI, by default), fails a named slice, costs more than `[ci].max_cost_ratio` times the reference per row (or has no known price), errors more than `[ci].max_error_rate`, was answered by a different model than requested, or touches the test split again without `--allow-test-retouch`. `budget_usd` caps what one run can spend. A stopped run resumes from `results.jsonl`.
+`--ci` exits 1 when any candidate's paired excess over the noise floor can exceed `[ci].max_regression` (upper bound of its 95% CI, by default), fails a named slice, costs more than `[ci].max_cost_ratio` times the reference per row (or has no known price), costs more without being at least `[ci].quality_per_cost` times that much better by human approvals, errors more than `[ci].max_error_rate`, was answered by a different model than requested, or touches the test split again without `--allow-test-retouch`. `budget_usd` caps what one run can spend. A stopped run resumes from `results.jsonl`.
 
 ## Label your data: `caliper label`
 

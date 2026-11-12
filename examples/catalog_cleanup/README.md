@@ -42,6 +42,8 @@ is not "does the small model answer like the big one". It is "would the
 | `tests/test_parity.py` | `assert_parity` proves `decide.py` matches `feature_rule.py` on every sequence of 0 to 3 replies from a 12-shape alphabet. The alphabet covers a score exactly at the threshold, `true` and `NaN` confidences, truncated JSON, errors and parsed-only replies. A second test shows an off-by-one mirror gets caught. |
 | `fake_models.py` | The deterministic fake provider: `respond(...)` plus a `supports(...)` preflight. |
 | `caliper.toml` | Offline eval: `baseline` (fake-large, the reference), `small` (fake-small), `small-thinking` (fake-small with thinking on). Also the paired gate allowance, the operating point and two named slices. |
+| `caliper.quality.toml` | `caliper.toml` plus `[quality]` and `[ci] quality_per_cost = 1`: is a costlier candidate *better*, by human verdicts? |
+| `approvals.jsonl` | One review round: a fictional reviewer's verdicts on the 15 outcomes `caliper review` listed for `caliper.quality.toml` (8 on rows a candidate changed, 7 on base-sample rows, none of which had a human label), judged by the synthetic truth. |
 | `caliper.preflight.toml` | A candidate shape the fake provider rejects (fake-small, thinking on and `json_schema` output). Preflight stops it before any spend. |
 | `caliper.real.toml` | The same golden set on real providers: Claude Sonnet 5.5 as baseline, Claude Haiku 5.5 with thinking off and on, and an OpenAI-compatible endpoint. Needs keys and costs money. Not run in CI. |
 | `generate.py` | Regenerates both JSONL files deterministically. |
@@ -173,6 +175,35 @@ starts from an empty `build/` each time, so its output never changes.
 **CI verdict.** `caliper eval --ci` exits 1: `small` fails the aggregate gate
 and both slices, and `small-thinking` fails the `rare_code` slice. `summary.md`
 is the markdown a CI step posts on the pull request.
+
+**Better, not just different (`caliper.quality.toml`).** The numbers above treat
+the baseline as right, so they can only say "worse". `caliper.quality.toml` adds
+people's verdicts on outcomes: the 63 human golden labels, plus `approvals.jsonl`
+for the outcomes that had none.
+
+```bash
+caliper eval --config catalog_cleanup/caliper.quality.toml --out catalog_cleanup/out-quality --ci
+```
+
+On its 30-row random base sample, the baseline's error rate is 30.0% [16.7%, 47.9%]
+(Wilson 95%). `small-thinking` costs 1.04x the baseline, so `quality_per_cost = 1`
+asks it to make at least 3.8% fewer errors. Of the 4 rows where it decides
+differently, it fixes 1 and breaks 3: -8.3% [-45.0%, +15.0%] of the baseline's
+errors, so the gate fails it on quality as well. `small` is cheaper, so this rule
+does not judge it; on human verdicts it makes more errors (5 fixed, 15 broken).
+Its 5 fixes no longer count as regressions, and the same rule applies to the
+baseline's replay noise, which moves `small`'s paired excess from 0.263 to 0.181;
+it still fails.
+
+To make your own approvals, start from an eval run without `[quality]` approvals:
+
+```bash
+caliper review --config catalog_cleanup/caliper.toml --eval-out catalog_cleanup/out \
+    --out catalog_cleanup/review-1
+caliper label catalog_cleanup/review-1        # needs orlalabs-caliper[label]
+caliper label export catalog_cleanup/review-1 --format jsonl \
+    --out catalog_cleanup/review-1/approvals.jsonl
+```
 
 ## What this example does not show
 

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://caliper.orlalabs.com/schemas/review-item.schema.json",
+  "$comment": "REVIEW/items.jsonl: The outcomes `caliper review` asks a person to judge, shuffled. The card shows `outcome` and `request` only.",
+  "additionalProperties": false,
+  "description": "One outcome on one golden row, for a person to approve or reject.",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string",
+      "description": "hash of (row_id, outcome); reveals nothing about the model"
+    },
+    "row_id": {
+      "title": "Row Id",
+      "type": "string",
+      "description": "golden row id"
+    },
+    "outcome": {
+      "title": "Outcome",
+      "type": "string",
+      "description": "the outcome to judge"
+    },
+    "request_sha256": {
+      "title": "Request Sha256",
+      "type": "string",
+      "description": "the request shown; a later change makes the verdict stale"
+    },
+    "request": {
+      "additionalProperties": true,
+      "title": "Request",
+      "type": "object",
+      "description": "the golden row's request, as the feature sent it"
+    }
+  },
+  "required": [
+    "id",
+    "row_id",
+    "outcome",
+    "request_sha256",
+    "request"
+  ],
+  "title": "ReviewItem",
+  "type": "object"
+}

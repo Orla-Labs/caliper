@@ -120,6 +120,11 @@ golden.jsonl ──► each candidate ──► replies ──► decide(replies
    directory.
 8. **After editing `decide.py` or a fake script, pass `--no-resume`.** Resume detects
    changed requests and candidate settings, not changed code.
+9. **Approvals come from people, never from you.** `[quality]` approvals are human
+   verdicts. Do not write them yourself or with a model: non-human sources are ignored,
+   and labelling model output as `internal_reviewer` defeats the gate. Run
+   `caliper review`, then hand the labelling to your user
+   ([recipe 10](/agents/recipes/#10-is-the-more-expensive-model-worth-it)).
 
 ## Where to go next
 

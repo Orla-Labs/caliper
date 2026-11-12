@@ -29,7 +29,12 @@ Conventions (documented because the CI gate and the demo diff depend on them):
 ``config`` is duck-typed: any object with ``reference``, ``noise_replays``,
 ``seed``, ``costs``, ``candidates`` (``Candidate``), ``ci.max_regression``
 and ``calibration.thresholds`` works (``caliper_eval.config.EvalConfig``);
-``ci.require``, ``operating_point`` and ``slices`` are optional.
+``ci.require``, ``operating_point``, ``slices``, ``quality`` and
+``ci.quality_per_cost`` are optional.
+
+* ``quality`` (with ``[quality]``) compares each candidate with the reference
+  on human approvals of their outcomes (:mod:`caliper_eval.quality`); the
+  approvals also stop an approved change from counting in ``paired_excess``.
 """
 
 from __future__ import annotations
@@ -40,11 +45,13 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from ._stats import DEFAULT_N_BOOT, nearest_rank
+from .approvals import Approval, ApprovalSummary, build_verdicts
 from .calibration import Calibration, SourceMetrics, compute_calibration
 from .config import GateRequirement
 from .noise import NoiseFloor, compute_noise_floor, index_results
 from .operating_point import MatchedOperatingPoint, compute_matched_operating_point
 from .provenance import ProvenanceSummary, summarize
+from .quality import BaseRate, QualityComparison, compute_base_rate, compute_quality
 from .slices import SliceDef, SliceResult, describe_slices, evaluate_slices
 from .transitions import PairedExcess, Transitions, compute_paired_excess, compute_transitions
 from .types import Candidate, GoldenRow, RowResult, candidate_sha256, request_sha256
@@ -92,6 +99,7 @@ class CandidateReport(BaseModel):
     calibration: Calibration | None = None  # precision/coverage by score threshold
     matched_operating_point: MatchedOperatingPoint | None = None
     slices: list[SliceResult] = Field(default_factory=list)  # per-slice pass/fail
+    quality: QualityComparison | None = None  # vs the reference on human approvals ([quality])
 
 
 class EvalReport(BaseModel):
@@ -105,6 +113,11 @@ class EvalReport(BaseModel):
     max_regression: float  # [ci] max_regression
     require: str = GateRequirement.NON_INFERIORITY.value  # [ci] require
     max_cost_ratio: float | None = None  # [ci] max_cost_ratio
+    quality_per_cost: float | None = None  # [ci] quality_per_cost
+    quality_confidence: float | None = None  # [ci] quality_confidence (with [quality])
+    quality_cost_tolerance: float | None = None  # [ci] quality_cost_tolerance (with [quality])
+    approvals: ApprovalSummary | None = None  # human approvals in use ([quality])
+    base_rate: BaseRate | None = None  # the reference's error rate on the base sample
     calls_per_day: float | None = None  # [cost_projection] calls_per_day
     days_per_month: float | None = None  # [cost_projection] days_per_month
     noise_floor: NoiseFloor | None  # the reference's own replay-to-replay variation
@@ -198,8 +211,13 @@ def build_report(
     *,
     n_boot: int = DEFAULT_N_BOOT,
     target_precision: float | None = None,
+    approvals: Sequence[Approval] = (),
 ) -> EvalReport:
-    """Aggregate ``results`` into an :class:`EvalReport` (pure, deterministic)."""
+    """Aggregate ``results`` into an :class:`EvalReport` (pure, deterministic).
+
+    ``approvals`` are the lines of the ``[quality] approvals`` files (read by the
+    caller); they are used only when the config has a ``[quality]`` section.
+    """
     golden = list(golden)
     latest = list(index_results(results).values())  # resume duplicates: last wins
     reference: str = config.reference
@@ -211,7 +229,32 @@ def build_report(
     op = _get(config, "operating_point")
     auto_outcomes = list(_get(op, "auto_outcomes", default=[]))
     slice_cfgs = list(_get(config, "slices", default=[]))
+    quality_cfg = _get(config, "quality")
+    quality_per_cost = _get(config, "ci", "quality_per_cost")
+    quality_confidence = float(_get(config, "ci", "quality_confidence", default=0.95))
+    cost_tolerance = float(_get(config, "ci", "quality_cost_tolerance", default=0.02))
     warnings: list[str] = []
+    verdicts = None
+    approval_summary = None
+    base_rate = None
+    if quality_cfg is not None:
+        verdicts, approval_summary = build_verdicts(
+            golden,
+            approvals,
+            files=list(_get(quality_cfg, "approvals", default=[])),
+            golden_labels=bool(_get(quality_cfg, "golden_labels", default=True)),
+            outcomes={r.decision.outcome for r in latest if r.decision is not None},
+        )
+        warnings += _approval_warnings(approval_summary)
+        base_rate = compute_base_rate(
+            golden,
+            latest,
+            verdicts,
+            reference,
+            size=int(_get(quality_cfg, "base_sample", default=30)),
+            seed=seed,
+            confidence=quality_confidence,
+        )
 
     noise = compute_noise_floor(latest, reference, costs=costs, seed=seed, n_boot=n_boot)
     if noise is None:
@@ -263,7 +306,13 @@ def build_report(
                 latest, cand.name, reference, costs=costs, seed=seed, n_boot=n_boot
             )
             rep.paired_excess = compute_paired_excess(
-                latest, cand.name, reference, costs=costs, seed=seed, n_boot=n_boot
+                latest,
+                cand.name,
+                reference,
+                costs=costs,
+                seed=seed,
+                n_boot=n_boot,
+                verdicts=verdicts,
             )
             if auto_outcomes:
                 rep.matched_operating_point = compute_matched_operating_point(
@@ -288,6 +337,7 @@ def build_report(
                     auto_outcomes=auto_outcomes,
                     seed=seed,
                     n_boot=n_boot,
+                    verdicts=verdicts,
                 )
         rep.calibration = compute_calibration(
             golden,
@@ -301,6 +351,30 @@ def build_report(
     calls_per_day = _get(projection, "calls_per_day")
     days = _get(projection, "days_per_month", default=30.0)
     _cost_comparison(reports, calls_per_day, days)
+    if verdicts is not None:
+        for rep in reports:
+            if rep.is_reference:
+                continue
+            required = None
+            ratio = rep.cost_vs_reference
+            # Float slack: 0.00102 / 0.001 must count as 1.02x, inside a 2% tolerance.
+            if (
+                quality_per_cost is not None
+                and ratio is not None
+                and ratio > 1 + cost_tolerance + 1e-9
+            ):
+                required = float(quality_per_cost) * (ratio - 1)
+            rep.quality = compute_quality(
+                latest,
+                verdicts,
+                rep.name,
+                reference,
+                base=base_rate,
+                required_relative=required,
+                seed=seed,
+                n_boot=n_boot,
+                confidence=quality_confidence,
+            )
     known = {c.name for c in config.candidates}
     for name in sorted(set(by_cand) - known):
         warnings.append(f"results for unknown candidate '{name}' ignored")
@@ -318,6 +392,11 @@ def build_report(
         max_regression=max_regression,
         require=require.value,
         max_cost_ratio=_get(config, "ci", "max_cost_ratio"),
+        quality_per_cost=None if quality_per_cost is None else float(quality_per_cost),
+        approvals=approval_summary,
+        base_rate=base_rate,
+        quality_confidence=quality_confidence if quality_cfg is not None else None,
+        quality_cost_tolerance=cost_tolerance if quality_cfg is not None else None,
         calls_per_day=None if calls_per_day is None else float(calls_per_day),
         days_per_month=None if calls_per_day is None else float(days),
         noise_floor=noise,
@@ -326,6 +405,44 @@ def build_report(
         candidates=reports,
         warnings=warnings,
     )
+
+
+def _approval_warnings(s: ApprovalSummary) -> list[str]:
+    """One warning per kind of approval line that was set aside."""
+    out = []
+    if s.not_human:
+        out.append(
+            f"approvals: {s.not_human} lines from a non-human source ignored "
+            "(agreement with a model is not evidence of being right)"
+        )
+    if s.stale:
+        out.append(
+            f"approvals: {s.stale} lines judged a request that has changed since; "
+            "ignored (review those rows again)"
+        )
+    if s.unknown_rows:
+        out.append(f"approvals: {s.unknown_rows} lines for row ids not in the golden set ignored")
+    if s.labels_not_outcomes:
+        out.append(
+            f"approvals: {s.labels_not_outcomes} human golden labels are not an outcome any "
+            "candidate decided (e.g. a yes/no label); they judge nothing and are ignored"
+        )
+    if s.outranked:
+        out.append(
+            f"approvals: {s.outranked} approval lines were outranked by an adjudicated golden "
+            "label (only an adjudicated approval can override it)"
+        )
+    if s.overrides:
+        out.append(
+            f"approvals: {s.overrides} approval verdicts differ from the row's golden label; "
+            "the approval wins"
+        )
+    if s.conflicts:
+        out.append(
+            f"approvals: {s.conflicts} (row, outcome) pairs have contradicting verdicts; "
+            "they count as unreviewed (an adjudicated approval settles a pair)"
+        )
+    return out
 
 
 def _cost_comparison(
@@ -552,6 +669,107 @@ def _mop_lines(report: EvalReport, c: CandidateReport) -> list[str]:
     return lines
 
 
+def points_ci(ci: Any) -> str:
+    """A CI of a share as signed per-100 numbers."""
+    return f"{100 * ci.estimate:+.1f} [{100 * ci.low:+.1f}, {100 * ci.high:+.1f}]"
+
+
+def row_ids(rows: Sequence[str], total: int, limit: int = 4) -> str:
+    """The first ``limit`` of ``rows``, with "+N more" up to ``total``."""
+    more = total - min(len(rows), limit)
+    return ", ".join(rows[:limit]) + (f" +{more} more" if more > 0 else "")
+
+
+def _approvals_head(report: EvalReport) -> str:
+    a = report.approvals
+    assert a is not None
+    parts = [f"{a.used} approval lines"]
+    if a.golden_labels:
+        parts.append(f"{a.from_golden_labels} human golden labels")
+    conf = report.quality_confidence
+    if conf is not None and conf != 0.95:
+        parts.append(f"{conf:.0%} intervals" if conf > 0 else "point estimates")
+    return "quality vs human approvals (" + ", ".join(parts) + ")"
+
+
+def _bounds(b: Any) -> str:
+    def pct(x: float | None, unbounded: str) -> str:
+        return unbounded if x is None else f"{100 * x:+.1f}%"
+
+    return f"{pct(b.estimate, 'n/a')} [{pct(b.low, '-inf')}, {pct(b.high, '+inf')}]"
+
+
+def base_rate_summary(report: EvalReport) -> str:
+    """One line: the reference's error rate on the base sample, or what is missing."""
+    b = report.base_rate
+    assert b is not None
+    head = f"{report.reference} error rate on a random sample of {b.n_sample} rows"
+    if b.n_sample == 0:
+        return head + ": none drawn ([quality] base_sample = 0), so no relative numbers"
+    if b.error_rate is None:
+        missing = b.n_sample - b.n_not_run - b.n_undecided - b.n_judged
+        return head + (
+            f": {missing} rows still need a verdict on {report.reference}'s outcome "
+            f"({row_ids(b.unreviewed_rows, missing)}), so no relative numbers yet"
+        )
+    e = b.error_rate
+    left_out = b.n_not_run + b.n_undecided
+    return head + (
+        f": {_pct(e.estimate)} [{_pct(e.low)}, {_pct(e.high)}] "
+        f"({b.n_errors} of {b.n_judged} rejected; "
+        + (f"Wilson {e.confidence:.0%}" if e.confidence > 0 else "point estimate")
+        + (f"; {left_out} with no {report.reference} decision left out" if left_out else "")
+        + ")"
+    )
+
+
+def relative_ci(b: Any) -> str:
+    """Relative improvement bounds as signed percent."""
+    return _bounds(b)
+
+
+def quality_summary(report: EvalReport, c: CandidateReport) -> str:
+    """One line: what people's verdicts say about ``c`` against the reference."""
+    q = c.quality
+    assert q is not None
+    if q.n_rows == 0:
+        return "no row run by both sides"
+    left_out = (
+        f"; {q.n_reference_undecided} rows left out: {report.reference} has no decision there "
+        "(`--retry-errors` re-runs provider failures)"
+        if q.n_reference_undecided
+        else ""
+    )
+    if q.n_changed_reviewed < q.n_changed:
+        missing = q.n_changed - q.n_changed_reviewed
+        return (
+            f"{q.n_changed} changed rows, {missing} without a verdict on both outcomes "
+            f"({row_ids(q.unreviewed_rows, missing)}): unknown until reviewed" + left_out
+        )
+    parts = [
+        f"{q.n_changed} changed rows: {q.fixed} fixed, {q.broken} broken, "
+        f"{q.both_approved} both ok, {q.both_rejected} both wrong"
+    ]
+    if q.improvement is not None:
+        reduction = f"{points_ci(q.improvement)} fewer errors per 100 rows"
+        if q.relative_improvement is not None:
+            reduction += f", {relative_ci(q.relative_improvement)} of {report.reference}'s errors"
+        parts.append(reduction + " (negative: more errors)")
+    return "; ".join(parts) + left_out
+
+
+def _quality_lines(report: EvalReport) -> list[str]:
+    qs = [c for c in report.candidates if c.quality is not None]
+    if not qs or report.approvals is None:
+        return []
+    lines = ["", _approvals_head(report) + ":"]
+    if report.base_rate is not None:
+        lines.append(f"  {base_rate_summary(report)}")
+    for c in qs:
+        lines.append(f"  {c.name}: {quality_summary(report, c)}")
+    return lines
+
+
 def render_text(report: EvalReport, gate: Any = None) -> str:
     """Terminal rendering. Deterministic: no paths, timestamps or run ids."""
     lines = [
@@ -676,6 +894,8 @@ def render_text(report: EvalReport, gate: Any = None) -> str:
             )
         lines += _cal_report_lines(cal, "  ")
 
+    lines += _quality_lines(report)
+
     if gate is not None:
         lines += ["", f"CI gate: {'PASS' if gate.passed else 'FAIL'} ({_gate_rule(report)})"]
         for cg in gate.candidates:
@@ -693,6 +913,14 @@ def _gate_rule(report: EvalReport) -> str:
         rule = f"pass when paired excess upper bound <= {report.max_regression:g}"
     if report.max_cost_ratio is not None:
         rule += f" and cost <= {report.max_cost_ratio:g}x the reference"
+    if report.quality_per_cost is not None:
+        tol = report.quality_cost_tolerance or 0.0
+        conf = report.quality_confidence if report.quality_confidence is not None else 0.95
+        rule += (
+            f" and a candidate costing over {1 + tol:g}x cuts errors by at least "
+            f"{report.quality_per_cost:g}x its extra cost, by human approvals "
+            + (f"at {conf:.0%}" if conf > 0 else "by point estimates")
+        )
     return rule
 
 
@@ -793,6 +1021,12 @@ def render_markdown(report: EvalReport, gate: Any = None) -> str:
                 f"- `{c.name}` at {at} (reference coverage {_pct(m.reference_coverage)} on "
                 f"{m.selection_split}), on {m.report_split}: " + "; ".join(parts)
             )
+    quals = [c for c in report.candidates if c.quality is not None]
+    if quals and report.approvals is not None:
+        lines += ["", f"**{_approvals_head(report)[0].upper()}{_approvals_head(report)[1:]}**", ""]
+        if report.base_rate is not None:
+            lines.append(f"- {base_rate_summary(report)}")
+        lines += [f"- `{c.name}`: {quality_summary(report, c)}" for c in quals]
     cals = [c for c in report.candidates if c.calibration is not None]
     if cals:
         lines += ["", "**Calibration** (auto-accept when score >= threshold)", ""]
@@ -814,7 +1048,12 @@ __all__ = [
     "CandidateReport",
     "EvalReport",
     "Tokens",
+    "base_rate_summary",
     "build_report",
+    "points_ci",
+    "quality_summary",
+    "relative_ci",
     "render_markdown",
     "render_text",
+    "row_ids",
 ]

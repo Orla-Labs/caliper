@@ -77,6 +77,7 @@ def cmd_eval(args: argparse.Namespace) -> int:
         config = _select_candidates(config, _csv(args.candidates))
         golden = load_golden(config.golden_path)
         decide = config.load_decide()
+        approvals = _load_approvals(config)
     except (OSError, ValueError, ImportError, AttributeError) as exc:
         _err(f"caliper eval: {exc}")
         return EXIT_USAGE
@@ -129,11 +130,13 @@ def cmd_eval(args: argparse.Namespace) -> int:
         golden,
         n_boot=args.n_boot,
         target_precision=None if target is None else float(target),
+        approvals=approvals,
     )
     for name, warning in sorted(pricing_warnings(config.candidates, config.pricing).items()):
         report.warnings.append(f"pricing {name}: {warning}")
 
-    retouched = _record_test_touches(args, config, golden)
+    approvals_key = report.approvals.fingerprint if report.approvals is not None else None
+    retouched = _record_test_touches(args, config, golden, approvals_key)
 
     gate = None
     if args.ci:
@@ -162,13 +165,29 @@ def cmd_eval(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-def _record_test_touches(args: argparse.Namespace, config: Any, golden: Any) -> dict[str, int]:
+def _load_approvals(config: Any) -> list[Any]:
+    """Every line of the ``[quality] approvals`` files; ``[]`` without ``[quality]``."""
+    from caliper_eval.approvals import read_approvals
+
+    if config.quality is None:
+        return []
+    out = []
+    for path in config.quality.approvals:
+        out += read_approvals(config.resolve(path))
+    return out
+
+
+def _record_test_touches(
+    args: argparse.Namespace, config: Any, golden: Any, approvals_key: str | None = None
+) -> dict[str, int]:
     """Append this run's test-split touches to the ledger; warn on stderr about re-touches."""
     from caliper_eval.ledger import record_touches
 
     path = args.test_ledger or os.path.join(args.out, "test_ledger.jsonl")
     try:
-        retouches = record_touches(path, config.candidates, golden, config.reference)
+        retouches = record_touches(
+            path, config.candidates, golden, config.reference, approvals_key=approvals_key
+        )
     except (OSError, ValueError) as exc:
         _err(f"warning: could not update the test ledger {path}: {exc}")
         return {}
@@ -319,9 +338,10 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("dir", nargs="?", default=None, help="destination (default: NAME)")
     x.set_defaults(func=cmd_example)
 
-    from caliper_eval import cli_kappa
+    from caliper_eval import cli_kappa, review
 
     cli_kappa.register(sub)
+    review.register(sub)
 
     try:  # `caliper label` lives in caliper-label (optional; lazy heavy imports)
         from caliper_label.cli import register as register_label

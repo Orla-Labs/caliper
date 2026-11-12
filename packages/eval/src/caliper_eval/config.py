@@ -48,6 +48,16 @@ class CIConfig(BaseModel):
     # reference's (1.0 = "no more expensive"). A candidate or reference with replies
     # priced at $0 fails too: an unknown price must not read as free.
     max_cost_ratio: float | None = Field(default=None, gt=0)
+    # A candidate that costs more than the reference must be better by at least this
+    # many times its extra cost, judged by human approvals (needs [quality]):
+    # 1.0 means 10% more cost needs at least 10% fewer errors than the reference.
+    quality_per_cost: float | None = Field(default=None, gt=0)
+    # How sure the quality rule must be: the confidence of the intervals it reads.
+    # 0.95 puts the burden of proof on the costlier candidate; 0.8 is more lenient;
+    # 0 compares point estimates.
+    quality_confidence: float = Field(default=0.95, ge=0, lt=1)
+    # Cost ratios up to 1 + this are treated as token-count noise, not extra cost.
+    quality_cost_tolerance: float = Field(default=0.02, ge=0)
 
 
 class CostProjectionConfig(BaseModel):
@@ -117,6 +127,23 @@ class SliceConfig(BaseModel):
         return self
 
 
+class QualityConfig(BaseModel):
+    """Human approvals of outcomes, to measure "better" (``[quality]``).
+
+    See :mod:`caliper_eval.approvals` for the file format and what counts.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Approval JSONL files, relative to the config file (`caliper review` builds them).
+    approvals: list[str] = Field(default_factory=list)
+    # Also count human golden labels: the labelled outcome is approved, any other rejected.
+    golden_labels: bool = True
+    # Rows drawn uniformly at random (config seed) to measure the reference's error rate,
+    # which "X% fewer errors" needs; `caliper review` lists the same rows.
+    base_sample: int = Field(default=30, ge=0)
+
+
 class CalibrationConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -145,6 +172,7 @@ class EvalConfig(BaseModel):
     operating_point: OperatingPointConfig | None = None  # [operating_point]
     cost_projection: CostProjectionConfig | None = None  # [cost_projection], for $/month
     slices: list[SliceConfig] = Field(default_factory=list)  # [[slices]] with their own rules
+    quality: QualityConfig | None = None  # [quality]: human approvals, to measure "better"
     config_dir: Path = Field(default=Path("."), exclude=True)
 
     @model_validator(mode="after")
@@ -167,6 +195,11 @@ class EvalConfig(BaseModel):
             raise ValueError(
                 f"slices {needs_op} use must_not_lose/min_precision, which need "
                 "[operating_point] auto_outcomes"
+            )
+        if self.ci.quality_per_cost is not None and self.quality is None:
+            raise ValueError(
+                "[ci] quality_per_cost needs a [quality] section (approvals and/or "
+                "golden_labels) to measure quality against"
             )
         for key in self.costs:
             if "->" not in key:

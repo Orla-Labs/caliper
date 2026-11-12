@@ -21,6 +21,14 @@ Errors go to stderr as one line (sometimes followed by a hint), prefixed with th
 | 4 | `budget exceeded: spent $X + next row ~$Y > limit $Z` | The budget cap stopped the run. Results so far are kept. | Re-run the same command to resume; raise `--budget-usd` only with your user's agreement. |
 | 1 | `test split re-touched: NAME was already reported on this test set Nx` | A `--ci` run into an `--out` whose ledger already has this candidate and test set. | Use a fresh `--out`. If re-reporting is intended, `--allow-test-retouch`. |
 | 1 | `cost unknown: N replies priced at $0 for MODEL (no price found)` | `[ci] max_cost_ratio` is set and a candidate has no price. | Add `[pricing."MODEL"]` ([recipe 5](/agents/recipes/#5-price-a-model-caliper-cannot-price)). |
+| 2 | `[ci] quality_per_cost needs a [quality] section (approvals and/or golden_labels)` | `quality_per_cost` is set with nothing to measure quality against. | Add `[quality]` ([recipe 10](/agents/recipes/#10-is-the-more-expensive-model-worth-it)). |
+| 2 | `FILE:N: invalid approval: FIELD: ...` | Line `N` of an approvals file is not an approval (the message names the fields). | Each line needs `row_id`, `outcome` and `approved`; see the [approval schema](/agents/files/#approvals-jsonl). |
+| 2 | `caliper review: no OUT/results.jsonl; run caliper eval --out OUT first` | `--eval-out` is not a `caliper eval` output folder. | Point `--eval-out` at the eval's `--out`. |
+| 2 | `caliper review: DIR is not an empty folder (use a new folder per review round)` | `--out` exists and holds files. | Use a new folder for each review round. |
+| 2 | `caliper review: unknown or reference candidates [...]` | `--candidates` names the reference or a missing candidate. | Name non-reference candidates from the config. |
+| 1 | `costs Rx the reference, so it must make at least P% fewer errors ...; N of M changed rows have no human verdict on both outcomes` | `[ci] quality_per_cost`: rows where the candidate decides differently have not been judged. | `caliper review`, have your user label, export, add the file to `[quality] approvals` ([recipe 10](/agents/recipes/#10-is-the-more-expensive-model-worth-it)). |
+| 1 | `...; REF's error rate is unknown: N of the M base-sample rows have no verdict on its outcome` | "P% fewer errors" needs the reference's error rate, measured on `[quality] base_sample` random rows; some are not reviewed yet. | `caliper review` lists them; have your user label them and add the export to `[quality] approvals`. |
+| 1 | `...; measured X% [L%, H%] of REF's errors (...): not shown at C%` | The candidate costs more and is not shown to be at least that much better (the interval's low end must reach the required share; `C` is `[ci] quality_confidence`). | A real result. More rows, and a larger `base_sample`, narrow the interval. Do not lower `quality_per_cost` or `quality_confidence` to pass it without your user's decision. |
 | 1 | `N results recorded for a different request or candidate settings than the current config` | `OUT/results.jsonl` holds results from an older config or golden set. | Re-run with `--no-resume`, or use a fresh `--out`. |
 | 1 | `N replies served by a model other than requested` | The provider answered with another model (a fallback or alias). | Request the exact model id the provider reports; check the `served_models` field. |
 | 1 | `error rate X% > allowed Y%` | Replies failed or `decide()` raised. | Look at `error` in `OUT/results.jsonl`; `--retry-errors` re-runs provider failures; fix `decide()` for decision errors, or set `[ci] max_error_rate`. |
@@ -39,6 +47,18 @@ Errors go to stderr as one line (sometimes followed by a hint), prefixed with th
 | `unpriced x240` in the `$/row` column | No price for that model. Cost shows `$0`. See recipe 5. |
 | `note: added reference '...' to --candidates` | The reference always runs; it is the baseline for noise and transitions. |
 | An eval finishes instantly with no new spend | Resume found every row already in `OUT/results.jsonl`. |
+| `warning: approvals: N lines from a non-human source ignored` | Approvals from `llm_teacher` or `heuristic` do not count as evidence. |
+| `warning: approvals: N lines judged a request that has changed since; ignored` | The golden row's request changed after the review; review those rows again. |
+| `warning: approvals: N (row, outcome) pairs have contradicting verdicts` | Two verdicts disagree; the pair counts as unreviewed until an adjudicated approval settles it. |
+| `warning: approvals: N human golden labels are not an outcome any candidate decided` | A label like `yes` from a yes/no project cannot judge an outcome; it is ignored. |
+| `warning: approvals: N approval lines were outranked by an adjudicated golden label` | An adjudicated label can only be overridden by an adjudicated approval. |
+| `...; the base sample shows no REF errors, so a relative improvement cannot be measured` | With `quality_confidence = 0` and no reference errors in the base sample, "X% fewer errors" has no denominator. Enlarge `[quality] base_sample`. |
+| `warning: approvals: N approval verdicts differ from the row's golden label` | An explicit approval overrides the golden label for that outcome. |
+| `-8.3% [-45.0%, +15.0%] of REF's errors (negative: more errors)` | The candidate makes more errors than the reference on human verdicts (here, not shown at 95%). |
+| `N rows left out: REF has no decision there` | The reference failed on those rows (usually provider errors); they are not counted for or against anyone. `--retry-errors` re-runs them. |
+| A base-sample row comes back in every `caliper review` | It was answered Unsure. Someone has to decide it (or adjudicate it) before the error rate is known. |
+| `caliper review` lists 0 outcomes | Every changed row and the base sample already have verdicts. Re-run `caliper eval`. |
+| `regression ... (N rows flipped, K of them fixes that cost 0)` | With `[quality]`, a change from a rejected to an approved outcome is not a regression. |
 
 ## Environment variables
 

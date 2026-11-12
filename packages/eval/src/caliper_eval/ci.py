@@ -30,6 +30,15 @@ A candidate fails when any of these holds:
 8. **cost** (only with ``[ci] max_cost_ratio``): its cost per execution is
    above ``max_cost_ratio`` x the reference's, or either side has replies
    priced at $0 (an unknown price must not pass as free).
+9. **quality per cost** (only with ``[ci] quality_per_cost = k``): it costs
+   more than ``1 + quality_cost_tolerance`` (default 1.02) times the reference
+   (``ratio``), and human approvals at ``quality_confidence`` (default 95%) do not show it at
+   least ``k * (ratio - 1)`` better, relative to the reference's error rate
+   (:mod:`caliper_eval.quality`): the relative improvement's low end must reach
+   that share and the improvement's low end must be above 0. It also fails when
+   a changed row has no verdict on both outcomes, when the reference's error
+   rate is unknown (base sample not reviewed), or when the cost cannot be
+   compared (no price).
 
 Rules 2-5 also apply to the reference. Exit code 0 = pass, 1 = fail.
 """
@@ -41,7 +50,8 @@ from collections.abc import Mapping
 from pydantic import BaseModel, ConfigDict, Field
 
 from .config import GateRequirement
-from .report import CandidateReport, EvalReport
+from .quality import quality_passes
+from .report import CandidateReport, EvalReport, relative_ci, row_ids
 
 EXIT_PASS = 0
 EXIT_FAIL = 1
@@ -64,6 +74,7 @@ class GateResult(BaseModel):
     max_error_rate: float
     require: str
     max_cost_ratio: float | None = None
+    quality_per_cost: float | None = None
     candidates: list[CandidateGate] = Field(default_factory=list)
 
     @property
@@ -96,7 +107,9 @@ def evaluate_gate(
                     f"paired excess regression {d.estimate:.3f} [{d.low:.3f}, {d.high:.3f}]: "
                     f"{'upper' if upper else 'lower'} bound {bound:.3f} > allowed "
                     f"{max_reg:.3f} (regression {p.regression:.3f} - noise {p.noise:.3f}; "
-                    f"{flipped} rows flipped)"
+                    f"{flipped} rows flipped"
+                    + (f", {p.n_fixes} of them fixes that cost 0" if p.n_fixes else "")
+                    + ")"
                 )
         if t is not None:
             if t.n_missing:
@@ -121,6 +134,10 @@ def evaluate_gate(
                 reasons.append(f"slice {r.slice} ({r.rule}): {r.detail}")
         if report.max_cost_ratio is not None and not c.is_reference:
             reasons += _cost_reasons(report, c, report.max_cost_ratio)
+        if report.quality_per_cost is not None and not c.is_reference:
+            if report.max_cost_ratio is None:
+                reasons += _cost_reasons(report, c, float("inf"))
+            reasons += _quality_reasons(report, c, report.quality_per_cost)
         if retouched and c.name in retouched:
             n = retouched[c.name]
             reasons.append(
@@ -136,6 +153,7 @@ def evaluate_gate(
         max_error_rate=max_error_rate,
         require=require.value,
         max_cost_ratio=report.max_cost_ratio,
+        quality_per_cost=report.quality_per_cost,
         candidates=gates,
     )
 
@@ -162,6 +180,56 @@ def _cost_reasons(report: EvalReport, c: CandidateReport, limit: float) -> list[
     return [
         f"cost {c.cost_vs_reference:.2f}x the reference > allowed {limit:g}x "
         f"(${c.cost_per_row:.6f} vs ${ref.cost_per_row:.6f} per row{monthly})"
+    ]
+
+
+def _quality_reasons(report: EvalReport, c: CandidateReport, k: float) -> list[str]:
+    """Why ``c`` fails ``[ci] quality_per_cost``, or nothing when it passes."""
+    ratio = c.cost_vs_reference
+    tolerance = report.quality_cost_tolerance or 0.0
+    if ratio is None or ratio <= 1 + tolerance + 1e-9:
+        return []  # within the cost tolerance, or the cost reasons already say why unknown
+    required = k * (ratio - 1)
+    head = (
+        f"costs {ratio:.3f}x the reference, so it must make at least {required:.1%} fewer "
+        f"errors than {report.reference} by human approvals (quality_per_cost {k:g})"
+    )
+    q = c.quality
+    if q is None or q.n_rows == 0:
+        return [head + "; no row was run by both sides"]
+    missing = q.n_changed - q.n_changed_reviewed
+    if missing:
+        return [
+            head + f"; {missing} of {q.n_changed} changed rows have no human verdict on both "
+            f"outcomes ({row_ids(q.unreviewed_rows, missing)}): run `caliper review` and add "
+            "the approvals to [quality]"
+        ]
+    b = report.base_rate
+    if b is None or b.error_rate is None:
+        if b is None or b.n_sample == 0:
+            why = "[quality] base_sample is 0"
+        else:
+            left = b.n_sample - b.n_not_run - b.n_undecided - b.n_judged
+            why = (
+                f"{left} of the {b.n_sample} base-sample rows have no verdict on its outcome "
+                f"({row_ids(b.unreviewed_rows, left)}); `caliper review` lists them"
+            )
+        return [head + f"; {report.reference}'s error rate is unknown: {why}"]
+    if quality_passes(q):
+        return []
+    conf = report.quality_confidence or 0.0
+    level = f"at {conf:.0%}" if conf > 0 else "by the point estimates"
+    no_errors = b.error_rate.estimate == 0 and q.improvement is not None
+    if conf == 0 and no_errors and q.improvement.estimate > 0:
+        return [
+            head + f"; the base sample shows no {report.reference} errors, so a relative "
+            "improvement cannot be measured: enlarge [quality] base_sample"
+        ]
+    assert q.improvement is not None and q.relative_improvement is not None
+    return [
+        head + f"; measured {relative_ci(q.relative_improvement)} of {report.reference}'s "
+        f"errors ({q.fixed} fixed, {q.broken} broken of {q.n_changed} changed rows, "
+        f"{q.n_rows} rows): not shown {level}"
     ]
 
 

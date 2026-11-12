@@ -65,6 +65,8 @@ TOUCHES = {
     "`CALIPER_PRICING_OFFLINE=1` stops it) and, for Bedrock models, the model's display name "
     "from Bedrock `GetFoundationModel` (free). With only `fake` candidates: offline and free.",
     "caliper sample": "Local files only.",
+    "caliper review": "Local files only, and free: reads the eval's `results.jsonl`, writes "
+    "`items.jsonl` and, with the `label` extra, a `caliper.label.yaml` project. No model calls.",
     "caliper example": "Local files only (copies a bundled project).",
     "caliper kappa": "Local files only. `--grader` imports and runs your Python file.",
     "caliper label": "Starts a local web server and opens a browser. Reads the project's data "
@@ -150,7 +152,7 @@ def _command(title: str, about: str, parser: argparse.ArgumentParser, exits: lis
 
 
 def cli_page() -> str:
-    from caliper_eval import cli, cli_kappa
+    from caliper_eval import cli, cli_kappa, review
     from caliper_label import cli as label_cli
     from caliper_label import cli_init
     from caliper_rft import cli as rft_cli
@@ -168,6 +170,7 @@ def cli_page() -> str:
         f"| `{c}` | {m} |" for c, m in ((0, "Success."), (2, OK_USAGE_EXITS["EXIT_USAGE"]))
     ]
     _exit_rows(cli_kappa, OK_USAGE_EXITS)
+    _exit_rows(review, OK_USAGE_EXITS)
     _exit_rows(label_cli, OK_USAGE_EXITS)
     _exit_rows(cli_init, OK_USAGE_EXITS)
     server_exits = [
@@ -180,6 +183,7 @@ def cli_page() -> str:
     sections = [
         _command("caliper eval", helps["eval"], sub.choices["eval"], eval_exits),
         _command("caliper sample", helps["sample"], sub.choices["sample"], ok_usage),
+        _command("caliper review", helps["review"], sub.choices["review"], ok_usage),
         _command("caliper example", helps["example"], sub.choices["example"], ok_usage),
         _command("caliper kappa", helps["kappa"], sub.choices["kappa"], ok_usage),
         _command(
@@ -313,8 +317,10 @@ def _schema(root: type[BaseModel], name: str, mode: str, about: str) -> dict[str
 
 def schemas() -> list[tuple[str, str, str, dict[str, Any]]]:
     """(name, file, intro, schema) for every documented file."""
+    from caliper_eval.approvals import Approval
     from caliper_eval.config import EvalConfig
     from caliper_eval.report import EvalReport
+    from caliper_eval.review import ReviewItem
     from caliper_eval.types import GoldenRow, LabelRecord, RowResult
     from caliper_label.project import ProjectConfig
     from caliper_sdk.types import EvalRow
@@ -354,6 +360,24 @@ def schemas() -> list[tuple[str, str, str, dict[str, Any]]]:
             "Everything `caliper eval` prints, and more, as JSON. Parse this instead of stdout. "
             "The gate verdict itself is not in it: use the exit code of `--ci`, or "
             "`--summary-md`.",
+        ),
+        (
+            "approval",
+            "approvals JSONL",
+            Approval,
+            "validation",
+            "Human verdicts on outcomes, one per line, listed in `[quality] approvals`. "
+            "`caliper label export --format jsonl` of a `caliper review` project writes them "
+            "in its own shape (`item.row_id`, `item.outcome`, `item.request_sha256`, "
+            "`approved`, `source`, `labeller`), which `caliper eval` reads as well.",
+        ),
+        (
+            "review-item",
+            "REVIEW/items.jsonl",
+            ReviewItem,
+            "serialization",
+            "The outcomes `caliper review` asks a person to judge, shuffled. The card shows "
+            "`outcome` and `request` only.",
         ),
         (
             "label-project",
@@ -490,6 +514,11 @@ def files_page(specs: list[tuple[str, str, str, dict[str, Any]]]) -> str:
         "(resume) | `caliper eval` |",
         "| `OUT/report.json` | [eval-report](/schemas/eval-report.schema.json) | you | "
         "`caliper eval` |",
+        "| approvals JSONL | [approval](/schemas/approval.schema.json) | `caliper eval`, "
+        "`caliper review` (via `[quality] approvals`) | you, or `caliper label export --format "
+        "jsonl` of a review project |",
+        "| `REVIEW/items.jsonl` | [review-item](/schemas/review-item.schema.json) | "
+        "`caliper label` | `caliper review` |",
         "| `caliper.label.yaml` | [label-project](/schemas/label-project.schema.json) | "
         "`caliper label` | `caliper label init`, the setup wizard |",
         "| label records JSONL | [label-record](/schemas/label-record.schema.json) | "
